@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yodalib"
+dynamic = ["version",]
+classifiers = [
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+]
+license = {file = "LICENSE"}
+description = "Your Only Decompiler API Lib - A generic API to script in and out of decompilers"
+readme = {file = "README.txt", content-type = "text/markdown"}
+requires-python = ">=3.6"
+dependencies = [
+   "toml",
+   "pycparser",
+   "setuptools",
+   "prompt_toolkit",
+   "rich",
+]
+
+[project.optional-dependencies]
+test = [
+    "angr-management",
+    "pytest-qt",
+    "pyside6",
+]
+
+[project.scripts]
+yodalib = "yodalib.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/binsync/yodalib"
+
+[tool.setuptools.dynamic]
+version = {attr = "yodalib.__version__"}
