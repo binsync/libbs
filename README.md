@@ -15,7 +15,7 @@ can be used in either the default mode, which assumes a GUI, or `headless` mode.
 start a new process using a specified decompiler. 
 
 ### UI Mode (default)
-To use the same script everywhere, use the convince function `DecompilerInterface.discover_interface()`, which will
+To use the same script everywhere, use the convenience function `DecompilerInterface.discover_interface()`, which will
 auto find the correct interface. Copy the below code into any supported decompiler and it should run without edit.
 ```python
 from yodalib.api import DecompilerInterface
