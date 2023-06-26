@@ -34,8 +34,15 @@ from yodalib.api import DecompilerInterface
 dec = DecompilerInterface.discover_interface(force_decompiler="ida", headless=True)
 ```
 
-## TODO
-- add IDA callbacks
-- add Binja Interface
-- add angr Interface 
-- add Ghidra Java Lib
+## Tasks
+- [X] Generic `DecompilerInterface` 
+- [X] Setters/Getters IDA
+- [ ] IDA Change Callbacks
+- [ ] Setters/Getters Binja
+- [ ] Binja Change Callbacks
+- [ ] Setters/Getters Ghidra
+- [ ] Ghidra Change Callbacks
+- [ ] Setters/Getters angr
+- [ ] angr Change Callbacks
+- [ ] Add all decompilers to auto-detect interface
+

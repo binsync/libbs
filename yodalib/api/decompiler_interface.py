@@ -510,7 +510,7 @@ class DecompilerInterface:
             from yodalib.decompilers.ida.interface import IDAInterface
             dec_controller = IDAInterface(**ctrl_kwargs)
         elif has_binja or force_decompiler == BINJA_DECOMPILER:
-            from yodalib.decompilers.binja.controller import BinjaInterface
+            from yodalib.decompilers.binja.interface import BinjaInterface
             bv = DecompilerInterface._find_global_in_call_frames('bv')
             dec_controller = BinjaInterface(bv=bv, **ctrl_kwargs)
         elif has_angr or force_decompiler == ANGR_DECOMPILER:

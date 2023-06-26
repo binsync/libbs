@@ -77,21 +77,8 @@ class YODALibPlugin(QObject, idaapi.plugin_t):
         # Hook IDB & Decomp Actions in IDA
         self.action_hooks = MasterHook(interface)
 
-    def _get_or_create_deocmpilation_view(self):
-        # casually open a pseudocode window, this prevents magic sync from spawning pseudocode windows
-        # in weird locations upon an initial run
-        func_addr = next(idautils.Functions())
-        if interface.decompiler_available:
-            ida_hexrays.open_pseudocode(func_addr, ida_hexrays.OPF_NO_WAIT | ida_hexrays.OPF_REUSE)
-
-        # then attempt to flip back to IDA View-A
-        twidget = idaapi.find_widget("IDA View-A")
-        if twidget is not None:
-            ida_kernwin.activate_widget(twidget, True)
-
     def init(self):
         self._init_hooks()
-        #self._get_or_create_deocmpilation_view()
         return idaapi.PLUGIN_KEEP
 
     def run(self, arg):
