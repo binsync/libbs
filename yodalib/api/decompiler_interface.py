@@ -38,21 +38,26 @@ class DummyArtifactSetLock:
 
 
 class DecompilerInterface:
-    def __init__(self, artifact_lifter: Optional[ArtifactLifter] = None, headless: bool = False, error_on_artifact_duplicates=False):
+    def __init__(
+        self,
+        artifact_lifter: Optional[ArtifactLifter] = None,
+        headless: bool = False,
+        error_on_artifact_duplicates: bool = False
+    ):
         self.headless = headless
         self.artifact_lifer = artifact_lifter
         self.type_parser = CTypeParser()
-        self._error_on_artifact_duplicates = True
+        self._error_on_artifact_duplicates = error_on_artifact_duplicates
 
         self.artifact_set_lock = threading.Lock()
 
         # artifacts
         self.functions = ArtifactDict(Function, self, error_on_duplicate=error_on_artifact_duplicates)
-        self.stack_vars = ArtifactDict(StackVariable, self, error_on_duplicate=error_on_artifact_duplicates)
         self.comments = ArtifactDict(Comment, self, error_on_duplicate=error_on_artifact_duplicates)
         self.enums = ArtifactDict(Enum, self, error_on_duplicate=error_on_artifact_duplicates)
         self.structs = ArtifactDict(Struct, self, error_on_duplicate=error_on_artifact_duplicates)
         self.patches = ArtifactDict(Patch, self, error_on_duplicate=error_on_artifact_duplicates)
+        #self.stack_vars = ArtifactDict(StackVariable, self, error_on_duplicate=error_on_artifact_duplicates)
 
         if not self.headless:
             self._init_ui_components()

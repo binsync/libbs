@@ -104,6 +104,94 @@ class BinjaInterface(DecompilerInterface):
         self.bv.offset = func_addr
 
     #
+    # Artifact API
+    #
+
+    # functions
+    def _set_function(self, func: Function, **kwargs) -> bool:
+        bn_func = self.bv.get_function_at(func.addr)
+        if bn_func is None:
+            return False
+
+        return super()._set_function(func, bn_func=bn_func, **kwargs)
+
+    def _get_function(self, addr, **kwargs) -> Optional[Function]:
+        bn_func = self.bv.get_function_at(addr)
+        if bn_func is None:
+            return None
+
+        return self.bn_func_to_bs(bn_func)
+
+    def _functions(self) -> Dict[int, Function]:
+        funcs = {}
+        for bn_func in self.bv.functions:
+            if bn_func.symbol.type != SymbolType.FunctionSymbol:
+                continue
+
+            funcs[bn_func.start] = Function(bn_func.start, bn_func.total_bytes)
+            funcs[bn_func.start].name = bn_func.name
+
+        return funcs
+
+    # stack vars
+    def _set_stack_variable(self, svar: StackVariable, bn_func=None, **kwargs) -> bool:
+        return None
+
+    # global variables
+    def _set_global_variable(self, gvar: GlobalVariable, **kwargs) -> bool:
+        return None
+
+    def _get_global_var(self, addr) -> Optional[GlobalVariable]:
+        return compat.global_var(addr)
+
+    def _global_vars(self) -> Dict[int, GlobalVariable]:
+        pass
+
+    # structs
+    def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
+        pass
+
+    def _get_struct(self, name) -> Optional[Struct]:
+        pass
+
+    def _structs(self) -> Dict[str, Struct]:
+        pass
+
+    # enums
+    def _set_enum(self, enum: Enum, **kwargs) -> bool:
+        pass
+
+    def _get_enum(self, name) -> Optional[Enum]:
+        pass
+
+    def _enums(self) -> Dict[str, Enum]:
+        pass
+
+    # patches
+    def _set_patch(self, patch: Patch, **kwargs) -> bool:
+        pass
+
+    def _get_patch(self, addr) -> Optional[Patch]:
+        pass
+
+    def _patches(self) -> Dict[int, Patch]:
+        pass
+
+    # comments
+    def _set_comment(self, comment: Comment, **kwargs) -> bool:
+        pass
+
+    def _get_comment(self, addr) -> Optional[Comment]:
+        pass
+
+    def _comments(self) -> Dict[int, Comment]:
+        pass
+
+    # others...
+    def _set_function_header(self, fheader: FunctionHeader, **kwargs) -> bool:
+        pass
+
+    #
     # Fillers
     #
 
