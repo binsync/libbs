@@ -156,6 +156,9 @@ class DecompilerInterface:
 
         return decompilation
 
+    def get_func_containing(self, addr: int) -> Optional[Function]:
+        raise NotImplementedError
+
     def _decompile(self, function: Function) -> Optional[str]:
         raise NotImplementedError
 
@@ -171,7 +174,7 @@ class DecompilerInterface:
         update = False
         header = func.header
         if header is not None:
-            update = self._set_function_header(header, **kwargs)
+            update |= self._set_function_header(header, **kwargs)
 
         if func.stack_vars:
             for variable in func.stack_vars.values():
@@ -203,7 +206,7 @@ class DecompilerInterface:
 
         return func.stack_vars.get(offset, None)
 
-    def _stack_variables(self, **kwargs) -> Dict[Tuple[int, int], StackVariable]:
+    def _stack_variables(self, **kwargs) -> Dict[int,Dict[int, StackVariable]]:
         stack_vars = defaultdict(dict)
         for addr in self._functions():
             func = self._get_function(addr, **kwargs)

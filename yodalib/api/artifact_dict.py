@@ -56,10 +56,19 @@ class ArtifactDict(dict):
         pass
 
     def __iter__(self):
-        return self._artifact_lister()
+        return iter(self._artifact_lister())
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: {self._artifact_class.__name__} len={self.__len__()}>"
 
     def __str__(self):
-        return f"{self._artifact_getter().items()}"
+        return f"{self._artifact_lister()}"
+
+    def keys(self):
+        return self._artifact_lister().keys()
+
+    def values(self):
+        return self._artifact_lister().values()
+
+    def items(self):
+        return self._artifact_lister().items()

@@ -103,6 +103,17 @@ class BinjaInterface(DecompilerInterface):
     def goto_address(self, func_addr) -> None:
         self.bv.offset = func_addr
 
+    def get_func_containing(self, addr: int) -> Optional[Function]:
+        funcs = self.bv.get_functions_containing(addr)
+        if not funcs:
+            return None
+
+        if len(funcs) > 1:
+            l.warning(f"More than one function contains the the address {addr}")
+
+        bn_func = funcs[0]
+        return self._get_function(bn_func.start)
+
     #
     # Artifact API
     #
@@ -133,86 +144,137 @@ class BinjaInterface(DecompilerInterface):
 
         return funcs
 
+    # function header
+    def _set_function_header(self, fheader: FunctionHeader, bn_func=None, **kwargs) -> bool:
+        updates = False
+        if not fheader:
+            return updates
+
+        # func name
+        if fheader.name and fheader.name != bn_func.name:
+            bn_func.name = fheader.name
+            updates |= True
+
+        # ret type
+        if fheader.type and \
+                fheader.type != bn_func.return_type.get_string_before_name():
+
+            try:
+                new_type, _ = self.bv.parse_type_string(fheader.type)
+            except Exception:
+                new_type = None
+
+            if new_type is not None:
+                bn_func.return_type = new_type
+                updates |= True
+
+        # parameters
+        if not fheader.args:
+            return updates
+
+        # XXX: hacky prototype parsing
+        prototype_tokens = [fheader.type] if fheader.type else [bn_func.return_type.get_string_before_name()]
+        prototype_tokens.append("(")
+        for idx, func_arg in fheader.args.items():
+            prototype_tokens.append(func_arg.type)
+            prototype_tokens.append(func_arg.name)
+            prototype_tokens.append(",")
+
+        if prototype_tokens[-1] == ",":
+            prototype_tokens[-1] = ")"
+
+        prototype_str = " ".join(prototype_tokens)
+
+        try:
+            bn_prototype, _ = self.bv.parse_type_string(prototype_str)
+        except Exception:
+            bn_prototype = None
+
+        if bn_prototype is not None:
+            bn_func.type = bn_prototype
+            updates |= True
+
+        return updates
+
     # stack vars
     def _set_stack_variable(self, svar: StackVariable, bn_func=None, **kwargs) -> bool:
-        return None
+        updates = False
+        existing_stack_vars: Dict[int, Any] = {
+            v.storage: v for v in bn_func.stack_layout
+            if v.source_type == VariableSourceType.StackVariableSourceType
+        }
+
+        bn_offset = svar.offset
+        if bn_offset in existing_stack_vars:
+            if existing_stack_vars[bn_offset].name != svar.name:
+                existing_stack_vars[bn_offset].name = svar.name
+
+            try:
+                type_, _ = self.bv.parse_type_string(svar.type)
+            except Exception:
+                type_ = None
+
+            if type_ is not None:
+                if existing_stack_vars[bn_offset].type != type_:
+                    existing_stack_vars[bn_offset].type = type_
+                try:
+                    bn_func.create_user_stack_var(bn_offset, type_, svar.name)
+                    bn_func.create_auto_stack_var(bn_offset, type_, svar.name)
+                except Exception as e:
+                    l.warning(f"BinSync could not sync stack variable at offset {bn_offset}: {e}")
+
+                updates |= True
+
+        return updates
 
     # global variables
     def _set_global_variable(self, gvar: GlobalVariable, **kwargs) -> bool:
-        return None
+        bn_gvar = self.bv.get_data_var_at(gvar.addr)
+        global_type = self.bv.parse_type_string(gvar.type)
+        changed = False
+
+        if bn_gvar is None:
+            bn_gvar = self.bv.define_user_data_var(gvar.addr, global_type, gvar.name)
+            changed = True
+
+        if bn_gvar:
+            self.bv.define_user_data_var(gvar.addr, global_type, gvar.name)
+            changed = True
+
+        return changed
 
     def _get_global_var(self, addr) -> Optional[GlobalVariable]:
-        return compat.global_var(addr)
+        bn_gvar = self.bv.get_data_var_at(addr)
+        if bn_gvar is None:
+            return None
+
+        return GlobalVariable(
+            addr,
+            self.bv.get_symbol_at(addr) or f"data_{addr:x}",
+            type_=str(bn_gvar.type) if bn_gvar.type is not None else None,
+            size=bn_gvar.type.width
+        )
 
     def _global_vars(self) -> Dict[int, GlobalVariable]:
-        pass
+        return {
+            addr: GlobalVariable(addr, var.name or f"data_{addr:x}")
+            for addr, var in self.bv.data_vars.items()
+        }
 
     # structs
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
-        pass
-
-    def _get_struct(self, name) -> Optional[Struct]:
-        pass
-
-    def _structs(self) -> Dict[str, Struct]:
-        pass
-
-    # enums
-    def _set_enum(self, enum: Enum, **kwargs) -> bool:
-        pass
-
-    def _get_enum(self, name) -> Optional[Enum]:
-        pass
-
-    def _enums(self) -> Dict[str, Enum]:
-        pass
-
-    # patches
-    def _set_patch(self, patch: Patch, **kwargs) -> bool:
-        pass
-
-    def _get_patch(self, addr) -> Optional[Patch]:
-        pass
-
-    def _patches(self) -> Dict[int, Patch]:
-        pass
-
-    # comments
-    def _set_comment(self, comment: Comment, **kwargs) -> bool:
-        pass
-
-    def _get_comment(self, addr) -> Optional[Comment]:
-        pass
-
-    def _comments(self) -> Dict[int, Comment]:
-        pass
-
-    # others...
-    def _set_function_header(self, fheader: FunctionHeader, **kwargs) -> bool:
-        pass
-
-    #
-    # Fillers
-    #
-
-    def fill_struct(self, struct_name, header=True, members=True, artifact=None, **kwargs):
-        bs_struct: Struct = artifact
-        if not bs_struct:
-            l.warning(f"Unable to find the struct: {struct_name} in requested user.")
-            return False
-
         if header:
-            self.bv.define_user_type(struct_name, binaryninja.Type.structure())
+            self.bv.define_user_type(struct.name, binaryninja.Type.structure())
 
         if members:
             # this scope assumes that the type is now defined... if it's not we will error
-            with binaryninja.Type.builder(self.bv, struct_name) as s:
-                s.width = bs_struct.size
+            with binaryninja.Type.builder(self.bv, struct.name) as s:
+                s.width = struct.size
                 members = list()
-                for offset in sorted(bs_struct.members.keys()):
-                    bs_memb = bs_struct.members[offset]
+                for offset in sorted(struct.members.keys()):
+                    bs_memb = struct.members[offset]
                     try:
-                        bn_type = self.bv.parse_type_string(bs_memb.type) if bs_memb.type else None
+                        bn_type = self.bv.parse_type_string(bs_memb.type)[0] if bs_memb.type else None
                     except Exception:
                         bn_type = None
                     finally:
@@ -225,221 +287,103 @@ class BinjaInterface(DecompilerInterface):
 
         return True
 
-    def fill_global_var(self, var_addr, user=None, artifact=None, **kwargs):
-        changed = False
-        bs_global_var: GlobalVariable = artifact
-        bn_global_var: binaryninja.DataVariable = self.bv.get_data_var_at(var_addr)
-        global_type = self.bv.parse_type_string(bs_global_var.type)
-        
-        if bs_global_var and bs_global_var.name:
-            if bn_global_var is None:
-                bn_global_var = self.bv.define_user_data_var(bs_global_var.addr, global_type, bs_global_var.name)
-                changed = True
-        
-            if bn_global_var.name != bs_global_var.name or bn_global_var.type != global_type:
-                bn_global_var = self.bv.define_user_data_var(bs_global_var.addr, global_type, bs_global_var.name)
-                changed = True
-
-        return changed
-
-    @background_and_wait
-    def fill_function(self, func_addr, user=None, artifact=None, **kwargs):
-        """
-        Grab all relevant information from the specified user and fill the @bn_func.
-        """
-        bs_func: Function = artifact
-        bn_func = self.bv.get_function_at(bs_func.addr)
-
-        changes = super(BinjaInterface, self).fill_function(
-            func_addr, user=user, artifact=artifact, bn_func=bn_func, **kwargs
-        )
-        bn_func.reanalyze()
-        return changes
-
-    def fill_function_header(self, func_addr, user=None, artifact=None, bn_func=None, **kwargs):
-        updates = False
-        bs_func_header: FunctionHeader = artifact
-
-        if bs_func_header:
-            # func name
-            if bs_func_header.name and bs_func_header.name != bn_func.name:
-                bn_func.name = bs_func_header.name
-                updates |= True
-
-            # ret type
-            if bs_func_header.type and \
-                    bs_func_header.type != bn_func.return_type.get_string_before_name():
-
-                valid_type = False
-                try:
-                    new_type, _ = self.bv.parse_type_string(bs_func_header.type)
-                    valid_type = True
-                except Exception:
-                    pass
-
-                if valid_type:
-                    bn_func.return_type = new_type
-                    updates |= True
-
-            # parameters
-            if bs_func_header.args:
-                prototype_tokens = [bs_func_header.type] if bs_func_header.type \
-                    else [bn_func.return_type.get_string_before_name()]
-
-                prototype_tokens.append("(")
-                for idx, func_arg in bs_func_header.args.items():
-                    prototype_tokens.append(func_arg.type)
-                    prototype_tokens.append(func_arg.name)
-                    prototype_tokens.append(",")
-
-                if prototype_tokens[-1] == ",":
-                    prototype_tokens[-1] = ")"
-
-                prototype_str = " ".join(prototype_tokens)
-
-                valid_type = False
-                try:
-                    bn_prototype, _ = self.bv.parse_type_string(prototype_str)
-                    valid_type = True
-                except Exception:
-                    pass
-
-                if valid_type:
-                    bn_func.type = bn_prototype
-                    updates |= True
-
-        return updates
-
-    def fill_stack_variable(self, func_addr, offset, user=None, artifact=None, bn_func=None, **kwargs):
-        updates = False
-        bs_stack_var: StackVariable = artifact
-
-        existing_stack_vars: Dict[int, Any] = {
-            v.storage: v for v in bn_func.stack_layout
-            if v.source_type == VariableSourceType.StackVariableSourceType
-        }
-
-        bn_offset = bs_stack_var.offset
-        if bn_offset in existing_stack_vars:
-            if existing_stack_vars[bn_offset].name != bs_stack_var.name:
-                existing_stack_vars[bn_offset].name = bs_stack_var.name
-
-            valid_type = False
-            try:
-                type_, _ = self.bv.parse_type_string(bs_stack_var.type)
-                valid_type = True
-            except Exception:
-                pass
-
-            if valid_type:
-                if existing_stack_vars[bn_offset].type != type_:
-                    existing_stack_vars[bn_offset].type = type_
-                try:
-                    bn_func.create_user_stack_var(bn_offset, type_, bs_stack_var.name)
-                    bn_func.create_auto_stack_var(bn_offset, type_, bs_stack_var.name)
-                except Exception as e:
-                    l.warning(f"BinSync could not sync stack variable at offset {bn_offset}: {e}")
-
-                updates |= True
-
-        return updates
-
-    def fill_comment(self, addr, user=None, artifact=None, bn_func=None, **kwargs):
-        # TODO: check if the comment changed when set!
-        comment: Comment = artifact
-        bn_func.set_comment_at(comment.addr, comment.comment)
-
-        return True
-    
-    def fill_enum(self, name, user=None, artifact=None, ida_code_view=None, **kwargs):
-        bs_enum: Enum = artifact
-        bn_enum: binaryninja.EnumerationType = self.bv.types.get(name)
-        
-        bn_members = []
-        
-        for member_name, value in bs_enum.members.items():
-            bn_members.append({ "name": member_name, "value": value })
-        
-        new_type = binaryninja.TypeBuilder.enumeration(self.bv.arch, bn_members)
-        
-        self.bv.define_user_type(name, new_type)
-            
-        return True
-
-    #
-    # Artifact API
-    #
-
-    def function(self, addr, **kwargs) -> Optional[Function]:
-        bn_func = self.bv.get_function_at(addr)
-        if not bn_func:
-            return None
-
-        return self.bn_func_to_bs(bn_func)
-
-    def functions(self) -> Dict[int, Function]:
-        funcs = {}
-        for bn_func in self.bv.functions:
-            if bn_func.symbol.type != SymbolType.FunctionSymbol:
-                continue
-
-            funcs[bn_func.start] = Function(bn_func.start, bn_func.total_bytes)
-            funcs[bn_func.start].name = bn_func.name
-
-        return funcs
-    
-    def enum(self, name) -> Optional[Enum]:
-        bn_enum = self.bv.types.get(name, None)
-        if bn_enum is None:
-            return None
-        
-        if isinstance(bn_enum, EnumerationType):
-            return self.bn_enum_to_bs(name, bn_enum)
-        
-        return None
-    
-    def enums(self) -> Dict[str, Enum]:                        
-        return {
-            name: self.bn_enum_to_bs(''.join(name.name), t) for name, t in self.bv.types.items()
-            if isinstance(t, EnumerationType)
-        }
-
-    def struct(self, name) -> Optional[Struct]:
+    def _get_struct(self, name) -> Optional[Struct]:
         bn_struct = self.bv.types.get(name, None)
         if bn_struct is None or not isinstance(bn_struct, StructureType):
             return None
 
         return self.bn_struct_to_bs(name, bn_struct)
 
-    def structs(self) -> Dict[str, Struct]:
+    def _structs(self) -> Dict[str, Struct]:
         return {
             name: Struct(''.join(name.name), t.width, {}) for name, t in self.bv.types.items()
             if isinstance(t, StructureType)
         }
 
-    def global_vars(self) -> Dict[int, GlobalVariable]:
-        return {
-            addr: GlobalVariable(addr, var.name or f"data_{addr:x}")
-            for addr, var in self.bv.data_vars.items()
-        }
-    
-    def global_var(self, addr) -> Optional[GlobalVariable]:
-        try:
-            var = self.bv.data_vars[addr]
-        except KeyError:
-            return None 
-            
-        gvar = GlobalVariable(
-            addr, self.bv.get_symbol_at(addr) or f"data_{addr:x}", type_=str(var.type) if var.type is not None else None, size=var.type.width
-        )
-        return gvar
+    # enums
+    def _set_enum(self, enum: Enum, **kwargs) -> bool:
+        bn_members = list(enum.members.items())
+        new_type = binaryninja.TypeBuilder.enumeration(self.bv.arch, bn_members)
+        self.bv.define_user_type(enum.name, new_type)
+        return True
 
-    def _decompile(self, function: Function) -> Optional[str]:
-        funcs = self.bv.get_functions_containing(function.addr)
-        if not funcs:
+    def _get_enum(self, name) -> Optional[Enum]:
+        bn_enum = self.bv.types.get(name, None)
+        if bn_enum is None:
             return None
-        func = funcs[0]
-        return str(func.hlil)
+
+        if isinstance(bn_enum, EnumerationType):
+            return self.bn_enum_to_bs(name, bn_enum)
+
+        return None
+
+    def _enums(self) -> Dict[str, Enum]:
+        return {
+            name: self.bn_enum_to_bs(''.join(name.name), t) for name, t in self.bv.types.items()
+            if isinstance(t, EnumerationType)
+        }
+
+    # patches
+    def _set_patch(self, patch: Patch, **kwargs) -> bool:
+        l.warning(f"Patch setting is unimplemented in Binja")
+        return False
+
+    def _get_patch(self, addr) -> Optional[Patch]:
+        l.warning(f"Patch getting is unimplemented in Binja")
+        return None
+
+    def _patches(self) -> Dict[int, Patch]:
+        l.warning(f"Patch listing is unimplemented in Binja")
+        return {}
+
+    # comments
+    def _set_comment(self, comment: Comment, **kwargs) -> bool:
+        # search for the right function
+        yoda_func = self.get_func_containing(comment.addr)
+        if yoda_func is None:
+            # in the case of the function not existing, just comment in addr space
+            self.bv.set_comment_at(comment.addr, comment.comment)
+            return True
+
+        # func exists for commenting
+        yoda_func.set_comment_at(comment.addr, comment.comment)
+
+    def _get_comment(self, addr) -> Optional[Comment]:
+        non_func_cmt = self.bv.get_comment_at(addr)
+        if non_func_cmt:
+            return Comment(addr, non_func_cmt)
+
+        # search for the right function
+        bn_func = self.get_func_containing(addr)
+        if bn_func is None:
+            return None
+
+        for _addr, cmt in bn_func.comments.items():
+            if addr == _addr:
+                return Comment(
+                    addr,
+                    cmt,
+                    func_addr=bn_func.start,
+                    decompiled=True
+                )
+
+        return None
+
+    def _comments(self) -> Dict[int, Comment]:
+        # search every single function for comments
+        comments = {}
+        for bn_func in self.bv.functions:
+            if bn_func.symbol.type != SymbolType.FunctionSymbol:
+                continue
+
+            comments.update(bn_func.comments)
+
+        # TODO: show non-function based comments
+        return comments
+
+    #
+    # Helper converter functions
+    #
 
     @staticmethod
     def bn_struct_to_bs(name, bn_struct):

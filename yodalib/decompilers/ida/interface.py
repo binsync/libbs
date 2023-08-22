@@ -205,7 +205,8 @@ class IDAInterface(DecompilerInterface):
     # utils
     #
 
-    def _collect_continuous_patches(self, min_addr=None, max_addr=None, stop_after_first=False) -> Dict[int, Patch]:
+    @staticmethod
+    def _collect_continuous_patches(min_addr=None, max_addr=None, stop_after_first=False) -> Dict[int, Patch]:
         patches = {}
 
         def _patch_collector(ea, fpos, org_val, patch_val):

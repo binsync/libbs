@@ -3,7 +3,7 @@ from yodalib.api import ArtifactLifter
 
 class BinjaArtifactLifter(ArtifactLifter):
     lift_map = {
-        "int64_t": "long",
+        "int64_t": "long long",
         "uint64_t": "unsigned long",
         "int32_t": "int",
         "uint32_t": "unsigned int",

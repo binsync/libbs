@@ -7,7 +7,7 @@ l = logging.getLogger(name=__name__)
 
 class IDAArtifactLifter(ArtifactLifter):
     lift_map = {
-        "__int64": "long",
+        "__int64": "long long",
         "__int32": "int",
         "__int16": "short",
         "__int8": "char",
