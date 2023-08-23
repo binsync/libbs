@@ -3,7 +3,7 @@ import logging
 import threading
 from collections import defaultdict
 from functools import wraps
-from typing import Dict, Optional, Union, Tuple
+from typing import Dict, Optional, Union, Tuple, List
 
 import yodalib
 from yodalib.api.artifact_lifter import ArtifactLifter
@@ -155,6 +155,14 @@ class DecompilerInterface:
             decompilation = None
 
         return decompilation
+
+    def xrefs_to(self, artifact: Artifact) -> List[Artifact]:
+        """
+        Returns a list of artifacts that reference the provided artifact.
+        @param artifact: Artifact to find references to
+        @return: List of artifacts that reference the provided artifact
+        """
+        return []
 
     def get_func_containing(self, addr: int) -> Optional[Function]:
         raise NotImplementedError
@@ -489,45 +497,51 @@ class DecompilerInterface:
 
         has_ida = False
         has_binja = False
-        has_angr = False
+        has_angr_man = False
         is_ghidra = False
 
+        # IDA Pro
         try:
             import idaapi
             has_ida = True
         except ImportError:
             pass
+        if has_ida or force_decompiler == IDA_DECOMPILER:
+            from yodalib.decompilers.ida.interface import IDAInterface
+            dec_controller = IDAInterface(**ctrl_kwargs)
+            return dec_controller
 
+        # Binary Ninja
         try:
             import binaryninja
             has_binja = True
         except ImportError:
             pass
-
-        try:
-            import angr
-            import angrmanagement
-            has_angr = DecompilerInterface._find_global_in_call_frames('workspace') is not None
-        except ImportError:
-            pass
-
-        # we assume if we are nothing else, then we are Ghidra
-        is_ghidra = not(has_ida or has_binja or has_angr)
-
-        if has_ida or force_decompiler == IDA_DECOMPILER:
-            from yodalib.decompilers.ida.interface import IDAInterface
-            dec_controller = IDAInterface(**ctrl_kwargs)
-        elif has_binja or force_decompiler == BINJA_DECOMPILER:
+        if has_binja or force_decompiler == BINJA_DECOMPILER:
             from yodalib.decompilers.binja.interface import BinjaInterface
             bv = DecompilerInterface._find_global_in_call_frames('bv')
             dec_controller = BinjaInterface(bv=bv, **ctrl_kwargs)
-        elif has_angr or force_decompiler == ANGR_DECOMPILER:
-            from yodalib.decompilers.angr.controller import AngrInterface
+            return dec_controller
+
+        # angr-management
+        try:
+            import angr
+            import angrmanagement
+            has_angr_man = _find_global_in_call_frames('workspace') is not None
+        except ImportError:
+            pass
+        if has_angr_man or force_decompiler == ANGR_DECOMPILER:
+            from yodalib.decompilers.angr.interface import AngrInterface
             workspace = DecompilerInterface._find_global_in_call_frames('workspace')
             dec_controller = AngrInterface(workspace=workspace, **ctrl_kwargs)
-        elif is_ghidra or force_decompiler == GHIDRA_DECOMPILER:
-            from yodalib.decompilers.ghidra.server.controller import GhidraInterface
-            dec_controller = GhidraInterface(**ctrl_kwargs)
+            return dec_controller
+
+        # Ghidra (over remote)
+        # TODO: make this check do a check to see if a remote port is open and it can connect
+        is_ghidra = True
+        if is_ghidra or force_decompiler == GHIDRA_DECOMPILER:
+            from binsync.decompilers.ghidra.server.controller import GhidraBSController
+            dec_controller = GhidraBSController(**ctrl_kwargs)
         else:
             raise ValueError("Please use YODALib with our supported decompiler set!")
 

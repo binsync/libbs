@@ -53,10 +53,13 @@ info. This also means using `keys`, `values`, or `list` on an artifact dictionar
 G/S: Getters/Setters
 - [ ] Add all decompilers to auto-detect interface
 
+### ALL
+- [ ] Move hook-inits to inside the `Interface` creation for all decompilers?
+  - This could cause issues. What happens when this is done twice?
+
 ### IDA
 - [ ] Change Callbacks
 - [ ] G/S Comments
-- [ ] G/S Function Headers (args and type)
 
 ### Binja
 - [ ] Change Callbacks
@@ -67,7 +70,5 @@ G/S: Getters/Setters
 - [ ] Change Callbacks
 
 ### angr
-- [ ] Generic Interface Outline & Stubs
-- [ ] Every G/S
 - [ ] Change Callbacks
 

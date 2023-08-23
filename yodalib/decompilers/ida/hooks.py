@@ -52,22 +52,11 @@ l = logging.getLogger(__name__)
 #
 
 
-def quite_init_checker(f):
-    @wraps(f)
-    def initcheck(self, *args, **kwargs):
-        if not self.interface.check_client():
-            return 0
-        return f(self, *args, **kwargs)
-    return initcheck
-
-
 def stop_if_syncing(f):
     @wraps(f)
     def _stop_if_syncing(self, *args, **kwargs):
-        if self.interface.sync_lock.locked():
-            return 0
-
-        return f(self, *args, **kwargs)
+        if not self.interface.sync_lock.locked():
+            return f(self, *args, **kwargs)
 
     return _stop_if_syncing
 
@@ -82,13 +71,12 @@ class IDBHooks(ida_idp.IDB_Hooks):
         self.controller: IDAInterface = controller
         self.last_local_type = None
 
-    @quite_init_checker
     @stop_if_syncing
     def local_types_changed(self):
         #print("local type changed")
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def ti_changed(self, ea, type_, fname):
         #print(f"TI CHANGED: {ea}, {type_}, {fname}")
@@ -106,14 +94,14 @@ class IDBHooks(ida_idp.IDB_Hooks):
             _enum
         )
 
-    @quite_init_checker
+
     @stop_if_syncing
     def enum_created(self, enum):
         self.bs_enum_modified(enum)
         return 0
 
     # XXX - use enum_deleted(self, id) instead?
-    @quite_init_checker
+
     @stop_if_syncing
     def deleting_enum(self, id):
         name = ida_enum.get_enum_name(id)
@@ -125,7 +113,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
         return 0
 
     # XXX - use enum_renamed(self, id) instead?
-    @quite_init_checker
+
     @stop_if_syncing
     def renaming_enum(self, id, is_enum, newname):
         if is_enum:
@@ -134,26 +122,26 @@ class IDBHooks(ida_idp.IDB_Hooks):
             self.bs_enum_modified(ida_enum.get_enum_member_enum(id))
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def enum_bf_changed(self, id):
         #print("enum renamed")
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def enum_cmt_changed(self, tid, repeatable_cmt):
         #print("enum renamed")
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def enum_member_created(self, id, cid):
         self.bs_enum_modified(id)
         return 0
 
     # XXX - use enum_member_deleted(self, id, cid) instead?
-    @quite_init_checker
+
     @stop_if_syncing
     def deleting_enum_member(self, id, cid):
         self.bs_enum_modified(id)
@@ -163,7 +151,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     #   Struct Hooks
     #
 
-    @quite_init_checker
+
     @stop_if_syncing
     def struc_created(self, tid):
         #print("struct created")
@@ -173,14 +161,14 @@ class IDBHooks(ida_idp.IDB_Hooks):
         return 0
 
     # XXX - use struc_deleted(self, struc_id) instead?
-    @quite_init_checker
+
     @stop_if_syncing
     def deleting_struc(self, sptr):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id, deleted=True)
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def struc_align_changed(self, sptr):
         if not sptr.is_frame():
@@ -189,7 +177,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
         return 0
 
     # XXX - use struc_renamed(self, sptr) instead?
-    @quite_init_checker
+
     @stop_if_syncing
     def renaming_struc(self, id, oldname, newname):
         sptr = ida_struct.get_struc(id)
@@ -197,7 +185,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
             self.ida_struct_changed(id, old_name=oldname, new_name=newname)
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def struc_expanded(self, sptr):
         #print("struct expanded")
@@ -206,7 +194,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def struc_member_created(self, sptr, mptr):
         #print("struc member created")
@@ -215,7 +203,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def struc_member_deleted(self, sptr, off1, off2):
         #print("struc member deleted")
@@ -224,7 +212,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def struc_member_renamed(self, sptr, mptr):
         #print(f"struc member renamed: {sptr.id}: {mptr.id}")
@@ -271,7 +259,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def struc_member_changed(self, sptr, mptr):
         #print(f"struc member changed: {sptr.id}, {mptr.id}")
@@ -307,7 +295,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def struc_cmt_changed(self, id, repeatable_cmt):
         fullname = ida_struct.get_struc_name(id)
@@ -319,14 +307,14 @@ class IDBHooks(ida_idp.IDB_Hooks):
         cmt = ida_struct.get_struc_cmt(id, repeatable_cmt)
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def sgr_changed(self, start_ea, end_ea, regnum, value, old_value, tag):
         # FIXME: sgr_changed is not triggered when a segment register is
         # being deleted by the user, so we need to sent the complete list
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def renamed(self, ea, new_name, local_name):
         # #print("renamed(ea = %x, new_name = %s, local_name = %d)" % (ea, new_name, local_name))
@@ -353,12 +341,12 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def byte_patched(self, ea, old_value):
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def cmt_changed(self, ea, repeatable_cmt):
         if repeatable_cmt:
@@ -367,7 +355,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
                 self.ida_comment_changed(cmt, ea, "cmt")
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def range_cmt_changed(self, kind, a, cmt, repeatable):
         #print("range cmt changed")
@@ -378,7 +366,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @quite_init_checker
+
     @stop_if_syncing
     def extra_cmt_changed(self, ea, line_idx, cmt):
         #print("extra cmt changed")
@@ -533,7 +521,7 @@ class HexRaysHooks:
         if self._available:
             self._installed = False
 
-    @quite_init_checker
+
     @stop_if_syncing
     def _hxe_callback(self, event, *args):
         if not self._installed:
@@ -566,7 +554,7 @@ class HexRaysHooks:
 
         return 0
 
-    @quite_init_checker
+
     def _push_new_func_header(self, ida_cfunc):
         # on first time seeing it, we dont want a push
         if not self._cached_funcs[ida_cfunc.entry_ea]["header"]:
@@ -607,7 +595,7 @@ class HexRaysHooks:
         ida_hexrays.user_cmts_free(user_cmts)
         return cmts
 
-    @quite_init_checker
+
     def _push_new_comments(self, ea):
         # get the comments for the function
         cmts = HexRaysHooks._get_user_cmts(ea)

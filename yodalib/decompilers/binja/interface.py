@@ -1,6 +1,6 @@
 import threading
 import functools
-from typing import Dict, Tuple, Optional, Iterable, Any
+from typing import Dict, Tuple, Optional, Iterable, Any, List
 import hashlib
 import logging
 
@@ -20,7 +20,7 @@ import yodalib
 from yodalib.data import (
     State, Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch, StructMember, FunctionArgument,
-    Enum, Struct
+    Enum, Struct, Artifact
 )
 
 from .artifact_lifter import BinjaArtifactLifter
@@ -102,6 +102,25 @@ class BinjaInterface(DecompilerInterface):
 
     def goto_address(self, func_addr) -> None:
         self.bv.offset = func_addr
+
+    def xrefs_to(self, artifact: Artifact) -> List[Artifact]:
+        if not isinstance(artifact, Function):
+            l.warning("xrefs_to is only implemented for functions.")
+            return []
+
+        function: Function = self.artifact_lifer.lower(artifact)
+        if not function:
+            return []
+
+        bn_xrefs = self.bv.get_code_refs(function.addr)
+        xrefs = []
+        for bn_xref in bn_xrefs:
+            if bn_xref.function is None:
+                continue
+
+            xrefs.append(Function(bn_xref.function.start, 0))
+
+        return xrefs
 
     def get_func_containing(self, addr: int) -> Optional[Function]:
         funcs = self.bv.get_functions_containing(addr)
@@ -354,9 +373,11 @@ class BinjaInterface(DecompilerInterface):
             return Comment(addr, non_func_cmt)
 
         # search for the right function
-        bn_func = self.get_func_containing(addr)
-        if bn_func is None:
+        funcs = self.bv.get_functions_containing(addr)
+        if not funcs:
             return None
+
+        bn_func = funcs[0]
 
         for _addr, cmt in bn_func.comments.items():
             if addr == _addr:

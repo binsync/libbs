@@ -1,6 +1,6 @@
 import threading
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from collections import OrderedDict, defaultdict
 from functools import wraps
 
@@ -11,7 +11,7 @@ import ida_hexrays
 import yodalib
 from yodalib.api.decompiler_interface import DecompilerInterface, artifact_set_event
 from yodalib.data import (
-    StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch
+    StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact
 )
 from . import compat
 from .artifact_lifter import IDAArtifactLifter
@@ -73,6 +73,26 @@ class IDAInterface(DecompilerInterface):
 
         return self._decompiler_available
 
+    def xrefs_to(self, artifact: Artifact) -> List[Artifact]:
+        if not isinstance(artifact, Function):
+            _l.warning("xrefs_to is only implemented for functions.")
+            return []
+
+        function: Function = self.artifact_lifer.lower(artifact)
+        ida_xrefs = compat.xrefs_to(function.addr)
+        if not ida_xrefs:
+            return []
+
+        xrefs = []
+        for ida_xref in ida_xrefs:
+            from_func_addr = compat.ida_func_addr(ida_xref.frm)
+            if from_func_addr is None:
+                continue
+
+            xrefs.append(Function(from_func_addr, 0))
+
+        return xrefs
+
     def _decompile(self, function: Function) -> Optional[str]:
         try:
             cfunc = ida_hexrays.decompile(function.addr)
@@ -87,6 +107,9 @@ class IDAInterface(DecompilerInterface):
 
     # functions
     def _set_function(self, func: Function, **kwargs) -> bool:
+        """
+        Overrides the normal _set_function for speed optimizations
+        """
         return compat.set_function(func, headless=self.headless, decompiler_available=self.decompiler_available, **kwargs)
 
     def _get_function(self, addr, **kwargs) -> Optional[Function]:
@@ -198,8 +221,7 @@ class IDAInterface(DecompilerInterface):
 
     # others...
     def _set_function_header(self, fheader: FunctionHeader, **kwargs) -> bool:
-        # TODO implement me?!
-        return False
+        return compat.set_function_header(fheader)
 
     #
     # utils

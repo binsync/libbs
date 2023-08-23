@@ -862,6 +862,11 @@ def jumpto(addr):
     idaapi.jumpto(addr)
 
 
+@execute_write
+def xrefs_to(addr):
+    return list(idautils.XrefsTo(addr))
+
+
 def has_older_hexrays_version():
     idc.auto_wait() 
     try:
