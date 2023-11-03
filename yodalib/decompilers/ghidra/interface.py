@@ -136,6 +136,33 @@ class GhidraDecompilerInterface(DecompilerInterface):
         }
         return funcs
 
+    @ghidra_transaction
+    def _set_function_header(self, fheader: FunctionHeader, decompilation=None, **kwargs) -> bool:
+        changes = False
+        func_addr = fheader.addr
+        ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(func_addr)
+        src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
+
+        # func name
+        if fheader.name and fheader.name != ghidra_func.getName():
+            ghidra_func.setName(fheader.name, src_type.USER_DEFINED)
+            changes = True
+
+        # return type
+        if fheader.type and decompilation is not None:
+            parsed_type = self.typestr_to_gtype(fheader.type)
+            if parsed_type is not None and \
+                    parsed_type != str(decompilation.highFunction.getFunctionPrototype().getReturnType()):
+                ghidra_func.setReturnType(parsed_type, src_type.USER_DEFINED)
+                changes = True
+
+        # args
+        if fheader.args and decompilation is not None:
+            # TODO: do arg names and types
+            pass
+
+        return changes
+
 
     #
     # TODO: REMOVE ME THIS IS THE BINSYNC CODE
@@ -147,33 +174,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         changes = super().fill_function(
             func_addr, user=user, artifact=artifact, decompilation=decompilation, **kwargs
         )
-
-        return changes
-
-    @ghidra_transaction
-    def fill_function_header(self, func_addr, user=None, artifact=None, decompilation=None, **kwargs):
-        changes = False
-        func_header: FunctionHeader = artifact
-        ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(func_addr)
-        src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
-
-        # func name
-        if func_header.name and func_header.name != ghidra_func.getName():
-            ghidra_func.setName(func_header.name, src_type.USER_DEFINED)
-            changes = True
-
-        # return type
-        if func_header.type and decompilation is not None:
-            parsed_type = self.typestr_to_gtype(func_header.type)
-            if parsed_type is not None and \
-                    parsed_type != str(decompilation.highFunction.getFunctionPrototype().getReturnType()):
-                ghidra_func.setReturnType(parsed_type, src_type.USER_DEFINED)
-                changes = True
-
-        # args
-        if func_header.args and decompilation is not None:
-            # TODO: do arg names and types
-            pass
 
         return changes
 
