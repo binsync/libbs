@@ -10,7 +10,7 @@ from yodalib.api.artifact_lifter import ArtifactLifter
 from yodalib.api.artifact_dict import ArtifactDict
 from yodalib.api.type_parser import CTypeParser, CType
 from yodalib.data import (
-    State, Artifact,
+    Artifact,
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch,
     Enum, Struct
@@ -171,10 +171,34 @@ class DecompilerInterface:
         raise NotImplementedError
 
     #
-    # Optional Artifact API:
-    # A series of functions that allow public access to live artifacts in the decompiler. As an example,
-    # `function(addr)` will return the current Function at addr that the user would be seeing. This is useful
-    # for having a common interface of reading data from other decompilers.
+    # Override Optional API:
+    # There are API that provide extra introspection for plugins that may rely on YODA Interface
+    #
+
+    def local_variable_names(self, func: Function) -> List[str]:
+        """
+        Returns a list of local variable names for a function. Note, these also include register variables
+        that are normally not liftable in YODA.
+        @param func: Function to get local variable names for
+        @return: List of local variable names
+        """
+        return []
+
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+        """
+        Renames local variables in a function by a name map. Note, these also include register variables
+        that are normally not liftable in YODA.
+        @param func: Function to rename local variables in
+        @param name_map: Dictionary of old name to new name
+        @return: True if any local variables were renamed, False if otherwise
+        """
+        return False
+
+    #
+    # Artifact API:
+    # These functions are the main API for interacting with the decompiler artifacts. Generally, these functions
+    # should all be implemented by the decompiler interface, but in the case that they are not, they should not
+    # crash the YODA Interface.
     #
 
     # functions
@@ -304,7 +328,6 @@ class DecompilerInterface:
     # others...
     def _set_function_header(self, fheader: FunctionHeader, **kwargs) -> bool:
         return False
-
 
     #
     # special
@@ -527,7 +550,7 @@ class DecompilerInterface:
         try:
             import angr
             import angrmanagement
-            has_angr_man = _find_global_in_call_frames('workspace') is not None
+            has_angr_man = DecompilerInterface._find_global_in_call_frames('workspace') is not None
         except ImportError:
             pass
         if has_angr_man or force_decompiler == ANGR_DECOMPILER:
@@ -540,8 +563,8 @@ class DecompilerInterface:
         # TODO: make this check do a check to see if a remote port is open and it can connect
         is_ghidra = True
         if is_ghidra or force_decompiler == GHIDRA_DECOMPILER:
-            from binsync.decompilers.ghidra.server.controller import GhidraBSController
-            dec_controller = GhidraBSController(**ctrl_kwargs)
+            from yodalib.decompilers.ghidra.interface import GhidraDecompilerInterface
+            dec_controller = GhidraDecompilerInterface(**ctrl_kwargs)
         else:
             raise ValueError("Please use YODALib with our supported decompiler set!")
 
