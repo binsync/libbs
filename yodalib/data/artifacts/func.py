@@ -178,14 +178,19 @@ class Function(Artifact):
         "size",
         "header",
         "stack_vars",
+        "dec_obj",
     )
 
-    def __init__(self, addr, size, header=None, stack_vars=None, last_change=None):
+    def __init__(self, addr, size, header=None, stack_vars=None, dec_obj=None, last_change=None):
         super(Function, self).__init__(last_change=last_change)
         self.addr: int = addr
         self.size: int = size
         self.header: Optional[FunctionHeader] = header
         self.stack_vars: Dict[int, StackVariable] = stack_vars or {}
+
+        # a special property which can only be set while running inside the decompiler.
+        # contains a reference to the decompiler object associated with this function.
+        self.dec_obj = dec_obj
 
     def __str__(self):
         if self.header:
@@ -281,7 +286,7 @@ class Function(Artifact):
         return diff_dict
 
     def copy(self):
-        func = Function(self.addr, self.size, last_change=self.last_change)
+        func = Function(self.addr, self.size, last_change=self.last_change, dec_obj=self.dec_obj)
         func.header = self.header.copy() if self.header else None
         func.stack_vars = {k: v.copy() for k, v in self.stack_vars.items()}
 

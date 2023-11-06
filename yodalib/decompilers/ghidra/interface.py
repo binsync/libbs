@@ -3,6 +3,7 @@ import logging
 from functools import wraps
 
 from yodalib.api import DecompilerInterface
+from yodalib.api.decompiler_interface import requires_decompilation
 from yodalib.data import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember
 )
@@ -40,8 +41,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._last_func = None
         self.base_addr = None
 
-    def _init_headless_components(self):
-        self.connect_ghidra_bridge()
+        # connect to the remote bridge, assumes Ghidra is already running!
+        if not self.headless:
+            if not self.connect_ghidra_bridge():
+                raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
 
     #
     # Controller API
@@ -87,7 +90,39 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return self.ghidra.connected
 
     def _decompile(self, function: Function) -> Optional[str]:
-        return None
+        dec_obj = self._get_decompilation_object(function)
+        if dec_obj is None:
+            return None
+
+        dec_func = dec_obj.getDecompiledFunction()
+        if dec_func is None:
+            return None
+
+        return str(dec_func.getC())
+
+    def _get_decompilation_object(self, function: Function) -> Optional[object]:
+        return self._ghidra_decompile(self._get_nearest_function(function.addr))
+
+    #
+    # Override Optional API:
+    # There are API that provide extra introspection for plugins that may rely on YODA Interface
+    #
+
+    def local_variable_names(self, func: Function) -> List[str]:
+        symbols_by_name = self._get_local_variable_symbols(func)
+        return list(symbols_by_name.keys())
+
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+        symbols_by_name = self._get_local_variable_symbols(func)
+        symbols_to_update = {}
+        for name, new_name in name_map.items():
+            if name not in symbols_by_name or symbols_by_name[name].name == new_name or new_name in symbols_by_name:
+                continue
+
+            sym: "HighSymbol" = symbols_by_name[name]
+            symbols_to_update[sym] = (new_name, None)
+
+        return self._update_local_variable_symbols(symbols_to_update) if symbols_to_update else False
 
     #
     # Artifact API
@@ -117,7 +152,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         bs_func = Function(
             func.getEntryPoint().getOffset(), func.getBody().getNumAddresses(),
             header=FunctionHeader(func.getName(), func.getEntryPoint().getOffset()),
-            stack_vars=stack_variables
+            stack_vars=stack_variables, dec_obj=dec
         )
         return bs_func
 
@@ -168,19 +203,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # TODO: REMOVE ME THIS IS THE BINSYNC CODE
     # Filler/Setter API
     #
-
-    def fill_function(self, func_addr, user=None, artifact=None, **kwargs):
-        decompilation = self._ghidra_decompile(self._get_nearest_function(func_addr))
-        changes = super().fill_function(
-            func_addr, user=user, artifact=artifact, decompilation=decompilation, **kwargs
-        )
-
-        return changes
-
-    @ghidra_transaction
-    def fill_struct(self, struct_name, header=True, members=True, artifact=None, **kwargs):
-        struct: Struct = artifact;
-
 
     @ghidra_transaction
     def fill_stack_variable(self, func_addr, offset, user=None, artifact=None, decompilation=None, **kwargs):
@@ -265,7 +287,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return bs_struct
 
     def structs(self) -> Dict[str, Struct]:
-        structures = self.ghidra.currentProgram.getDataTypeManager().getAllStructures()
         name_sizes: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
             "[(s.getPathName(), s.getLength())"
             "for s in currentProgram.getDataTypeManager().getAllStructures()]"
@@ -318,13 +339,37 @@ class GhidraDecompilerInterface(DecompilerInterface):
         bs_stack_var = self._gstack_var_to_bsvar(gstack_var)
         return bs_stack_var
 
-
     #
     # Ghidra Specific API
     #
 
+    @ghidra_transaction
+    def _update_local_variable_symbols(
+        self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]
+    ) -> bool:
+        """
+        @param decompilation:
+        @param symbols: of form [Symbol] = (new_name, new_type)
+        """
+        HighFunctionDBUtil = self.ghidra.import_module_object("ghidra.program.model.pcode", "HighFunctionDBUtil")
+        SourceType = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
+        update_list = self.ghidra.bridge.remote_eval(
+            "[HighFunctionDBUtil.updateDBVariable(sym, updates[0], updates[1], SourceType.ANALYSIS) "
+            "for sym, updates in symbols.items()]",
+            HighFunctionDBUtil=HighFunctionDBUtil, SourceType=SourceType, symbols=symbols
+        )
+        return any([u is not None for u in update_list])
+
+    @requires_decompilation
+    def _get_local_variable_symbols(self, func: Function) -> Dict[str, "HighSymbol"]:
+        high_func = func.dec_obj.getHighFunction()
+        return self.ghidra.bridge.remote_eval(
+            "{sym.name: sym for sym in high_func.getLocalSymbolMap().getSymbols() if sym.name}",
+            high_func=high_func
+        )
+
     def _get_struct_by_name(self, name: str) -> "GhidraStructure":
-        return self.ghidra.currentProgram.getDataTypeManager().getDataType(name);
+        return self.ghidra.currentProgram.getDataTypeManager().getDataType(name)
 
     def _get_nearest_function(self, addr: int) -> "GhidraFunction":
         func_manager = self.ghidra.currentProgram.getFunctionManager()

@@ -21,6 +21,18 @@ from yodalib.decompilers import YODALIB_SUPPORTED_DECOMPILERS, ANGR_DECOMPILER, 
 _l = logging.getLogger(name=__name__)
 
 
+def requires_decompilation(f):
+    @wraps(f)
+    def _requires_decompilation(self, *args, **kwargs):
+        if self._decompiler_available:
+            for arg in args:
+                if isinstance(arg, Function) and arg.dec_obj is None:
+                    arg.dec_obj = self._get_decompilation_object(arg)
+
+        return f(self, *args, **kwargs)
+    return _requires_decompilation
+
+
 def artifact_set_event(f):
     @wraps(f)
     def _artifact_set_event(self: "DecompilerInterface", *args, **kwargs):
@@ -42,7 +54,8 @@ class DecompilerInterface:
         self,
         artifact_lifter: Optional[ArtifactLifter] = None,
         headless: bool = False,
-        error_on_artifact_duplicates: bool = False
+        error_on_artifact_duplicates: bool = False,
+        decompiler_available: bool = True,
     ):
         self.headless = headless
         self.artifact_lifer = artifact_lifter
@@ -59,6 +72,7 @@ class DecompilerInterface:
         self.patches = ArtifactDict(Patch, self, error_on_duplicate=error_on_artifact_duplicates)
         #self.stack_vars = ArtifactDict(StackVariable, self, error_on_duplicate=error_on_artifact_duplicates)
 
+        self._decompiler_available = decompiler_available
         if not self.headless:
             self._init_ui_components()
 
@@ -168,6 +182,9 @@ class DecompilerInterface:
         raise NotImplementedError
 
     def _decompile(self, function: Function) -> Optional[str]:
+        raise NotImplementedError
+
+    def _get_decompilation_object(self, function: Function) -> Optional[object]:
         raise NotImplementedError
 
     #
