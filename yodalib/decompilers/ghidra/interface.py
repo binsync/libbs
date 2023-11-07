@@ -219,7 +219,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return changes
 
+    def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
+        # TODO: implement me
+        return False
+    def _get_struct(self, name) -> Optional[Struct]:
+        # TODO: implement me
+        return None
 
+    def _structs(self) -> Dict[str, Struct]:
+        # TODO: implement me
+        return {}
     #
     # TODO: REMOVE ME THIS IS THE BINSYNC CODE
     # Filler/Setter API
