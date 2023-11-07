@@ -35,7 +35,9 @@ def ghidra_transaction(f):
 class GhidraDecompilerInterface(DecompilerInterface):
     def __init__(self, **kwargs):
         self.ghidra: Optional[GhidraAPIWrapper] = None
-        super(GhidraDecompilerInterface, self).__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), **kwargs)
+        super(GhidraDecompilerInterface, self).__init__(
+            name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs
+        )
 
         self._last_addr = None
         self._last_func = None
@@ -89,6 +91,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.ghidra = GhidraAPIWrapper(self)
         return self.ghidra.connected
 
+    def decompile(self, addr: int) -> Optional[str]:
+        # TODO: allow the super to do this again
+        function = self.functions[addr]
+        return self._decompile(function)
+
     def _decompile(self, function: Function) -> Optional[str]:
         dec_obj = self.get_decompilation_object(function)
         if dec_obj is None:
@@ -107,6 +114,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # Override Optional API:
     # There are API that provide extra introspection for plugins that may rely on YODA Interface
     #
+
+    def undo(self):
+        self.ghidra.currentProgram.undo()
 
     def local_variable_names(self, func: Function) -> List[str]:
         symbols_by_name = self._get_local_variable_symbols(func)
@@ -154,6 +164,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "[(i, sym.getName(), str(sym.getDataType()), sym.getSize()) "
             "for i, sym in enumerate(dec.getHighFunction().getLocalSymbolMap().getSymbols()) "
             "if sym.isParameter()]",
+            dec=dec
         )
         args = {}
         if arg_variable_info:

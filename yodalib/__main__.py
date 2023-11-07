@@ -18,7 +18,7 @@ def run_ghidra_ui():
         return False
 
     sys.path.insert(1, str(decompilers_path))
-    plugin = importlib.import_module(f"ghidra")
+    plugin = importlib.import_module(f"ghidra.file_selector")
     _l.debug(f"Executing Ghidra UI...")
     return plugin.start_ui()
 

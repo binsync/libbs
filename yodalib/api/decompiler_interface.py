@@ -57,11 +57,13 @@ class DecompilerInterface:
         headless: bool = False,
         error_on_artifact_duplicates: bool = False,
         decompiler_available: bool = True,
+        supports_undo: bool = False,
     ):
         self.name = name
         self.headless = headless
         self.artifact_lifer = artifact_lifter
         self.type_parser = CTypeParser()
+        self.supports_undo = supports_undo
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
 
         self.artifact_set_lock = threading.Lock()
@@ -193,6 +195,12 @@ class DecompilerInterface:
     # Override Optional API:
     # There are API that provide extra introspection for plugins that may rely on YODA Interface
     #
+
+    def undo(self):
+        """
+        Undoes the last change made to the decompiler.
+        """
+        raise NotImplementedError
 
     def local_variable_names(self, func: Function) -> List[str]:
         """
