@@ -55,7 +55,7 @@ def background_and_wait(func):
 
 class BinjaInterface(DecompilerInterface):
     def __init__(self, bv=None, **kwargs):
-        super(BinjaInterface, self).__init__(artifact_lifter=BinjaArtifactLifter(self), **kwargs)
+        super(BinjaInterface, self).__init__(name="binja", artifact_lifter=BinjaArtifactLifter(self), **kwargs)
         self.bv: binaryninja.BinaryView = bv
         self.ui_configured = False
 

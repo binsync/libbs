@@ -40,7 +40,7 @@ class AngrInterface(DecompilerInterface):
 
         self.main_instance = workspace.main_instance if workspace else self
         self._binary_path = Path(binary_path) if binary_path is not None else binary_path
-        super().__init__(artifact_lifter=AngrArtifactLifter(self), headless=headless, **kwargs)
+        super().__init__(name="angr", artifact_lifter=AngrArtifactLifter(self), headless=headless, **kwargs)
 
     def _init_headless_components(self):
         if self._binary_path is None or not self._binary_path.exists():

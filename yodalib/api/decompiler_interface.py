@@ -27,7 +27,7 @@ def requires_decompilation(f):
         if self._decompiler_available:
             for arg in args:
                 if isinstance(arg, Function) and arg.dec_obj is None:
-                    arg.dec_obj = self._get_decompilation_object(arg)
+                    arg.dec_obj = self.get_decompilation_object(arg)
 
         return f(self, *args, **kwargs)
     return _requires_decompilation
@@ -52,11 +52,13 @@ class DummyArtifactSetLock:
 class DecompilerInterface:
     def __init__(
         self,
+        name: str = "generic",
         artifact_lifter: Optional[ArtifactLifter] = None,
         headless: bool = False,
         error_on_artifact_duplicates: bool = False,
         decompiler_available: bool = True,
     ):
+        self.name = name
         self.headless = headless
         self.artifact_lifer = artifact_lifter
         self.type_parser = CTypeParser()
@@ -184,7 +186,7 @@ class DecompilerInterface:
     def _decompile(self, function: Function) -> Optional[str]:
         raise NotImplementedError
 
-    def _get_decompilation_object(self, function: Function) -> Optional[object]:
+    def get_decompilation_object(self, function: Function) -> Optional[object]:
         raise NotImplementedError
 
     #
@@ -538,7 +540,6 @@ class DecompilerInterface:
         has_ida = False
         has_binja = False
         has_angr_man = False
-        is_ghidra = False
 
         # IDA Pro
         try:

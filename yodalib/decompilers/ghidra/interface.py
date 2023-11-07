@@ -35,7 +35,7 @@ def ghidra_transaction(f):
 class GhidraDecompilerInterface(DecompilerInterface):
     def __init__(self, **kwargs):
         self.ghidra: Optional[GhidraAPIWrapper] = None
-        super(GhidraDecompilerInterface, self).__init__(GhidraArtifactLifter(self), **kwargs)
+        super(GhidraDecompilerInterface, self).__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), **kwargs)
 
         self._last_addr = None
         self._last_func = None
@@ -90,7 +90,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return self.ghidra.connected
 
     def _decompile(self, function: Function) -> Optional[str]:
-        dec_obj = self._get_decompilation_object(function)
+        dec_obj = self.get_decompilation_object(function)
         if dec_obj is None:
             return None
 
@@ -100,7 +100,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return str(dec_func.getC())
 
-    def _get_decompilation_object(self, function: Function) -> Optional[object]:
+    def get_decompilation_object(self, function: Function) -> Optional[object]:
         return self._ghidra_decompile(self._get_nearest_function(function.addr))
 
     #
@@ -149,9 +149,21 @@ class GhidraDecompilerInterface(DecompilerInterface):
             stack_variables = {
                 offset: StackVariable(offset, name, typestr, size, addr) for offset, name, typestr, size in stack_variable_info
             }
+
+        arg_variable_info: Optional[List[Tuple[int, str, str, int]]] = self.ghidra.bridge.remote_eval(
+            "[(i, sym.getName(), str(sym.getDataType()), sym.getSize()) "
+            "for i, sym in enumerate(dec.getHighFunction().getLocalSymbolMap().getSymbols()) "
+            "if sym.isParameter()]",
+        )
+        args = {}
+        if arg_variable_info:
+            args = {
+                i: FunctionArgument(i, name, typestr, size, addr) for i, name, typestr, size in arg_variable_info
+            }
+
         bs_func = Function(
             func.getEntryPoint().getOffset(), func.getBody().getNumAddresses(),
-            header=FunctionHeader(func.getName(), func.getEntryPoint().getOffset()),
+            header=FunctionHeader(func.getName(), func.getEntryPoint().getOffset(), args=args),
             stack_vars=stack_variables, dec_obj=dec
         )
         return bs_func

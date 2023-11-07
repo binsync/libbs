@@ -25,7 +25,7 @@ _l = logging.getLogger(name=__name__)
 
 class IDAInterface(DecompilerInterface):
     def __init__(self, **kwargs):
-        super(IDAInterface, self).__init__(artifact_lifter=IDAArtifactLifter(self))
+        super(IDAInterface, self).__init__(name="ida", artifact_lifter=IDAArtifactLifter(self))
 
         # view change callback
         self._updated_ctx = None
