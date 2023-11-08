@@ -5,7 +5,7 @@ from pathlib import Path
 import importlib
 import importlib.resources
 
-from yodalib.installer import YODAInstaller
+from yodalib.plugin_installer import YODAPluginInstaller
 
 _l = logging.getLogger(__name__)
 
@@ -18,13 +18,13 @@ def run_ghidra_ui():
         return False
 
     sys.path.insert(1, str(decompilers_path))
-    plugin = importlib.import_module(f"ghidra.file_selector")
+    plugin = importlib.import_module(f"ghidra.gui")
     _l.debug(f"Executing Ghidra UI...")
-    return plugin.start_ui()
+    return plugin.start_file_selector_ui()
 
 
 def install():
-    YODAInstaller().install()
+    YODAPluginInstaller().install()
 
 
 def main():

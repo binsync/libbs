@@ -53,6 +53,7 @@ class DecompilerInterface:
     def __init__(
         self,
         name: str = "generic",
+        qt_version: str = "PySide6",
         artifact_lifter: Optional[ArtifactLifter] = None,
         headless: bool = False,
         error_on_artifact_duplicates: bool = False,
@@ -64,6 +65,7 @@ class DecompilerInterface:
         self.artifact_lifer = artifact_lifter
         self.type_parser = CTypeParser()
         self.supports_undo = supports_undo
+        self.qt_version = qt_version
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
 
         self.artifact_set_lock = threading.Lock()
@@ -85,7 +87,8 @@ class DecompilerInterface:
     #
 
     def _init_ui_components(self):
-        pass
+        from yodalib.ui.version import set_ui_version
+        set_ui_version(self.qt_version)
 
     def active_context(self) -> yodalib.data.Function:
         """

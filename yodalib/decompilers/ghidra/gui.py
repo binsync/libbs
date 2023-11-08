@@ -70,7 +70,7 @@ class FileSelectorDialog(QDialog):
         sys.exit(0)
 
 
-def start_ui():
+def start_file_selector_ui():
     app = QApplication()
     file_selector = FileSelectorDialog()
     file_selector.show()

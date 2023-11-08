@@ -17,13 +17,13 @@ l = logging.getLogger(__name__)
 def ghidra_transaction(f):
     @wraps(f)
     def _ghidra_transaction(self, *args, **kwargs):
-        op_name = str(f.__qualname__)
-        trans_id = self.ghidra.currentProgram.startTransaction(op_name)
+        trans_name = f"{f.__name__}(args={args})"
+        trans_id = self.ghidra.currentProgram.startTransaction(trans_name)
         ret_val = None
         try:
             ret_val = f(self, *args, **kwargs)
         except Exception as e:
-            l.warning(f"Failed to do Ghidra Transaction {op_name} because {e}")
+            l.warning(f"Failed to do Ghidra Transaction {trans_name} because {e}")
         finally:
             self.ghidra.currentProgram.endTransaction(trans_id, True)
 
@@ -35,9 +35,7 @@ def ghidra_transaction(f):
 class GhidraDecompilerInterface(DecompilerInterface):
     def __init__(self, **kwargs):
         self.ghidra: Optional[GhidraAPIWrapper] = None
-        super(GhidraDecompilerInterface, self).__init__(
-            name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs
-        )
+        super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
 
         self._last_addr = None
         self._last_func = None
