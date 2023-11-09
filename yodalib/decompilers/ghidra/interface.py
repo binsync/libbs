@@ -219,16 +219,77 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return changes
 
+    @ghidra_transaction
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
-        # TODO: implement me
-        return False
+        struct: Struct = struct
+        old_ghidra_struct = self._get_struct_by_name('/' + struct.name)
+        data_manager = self.ghidra.currentProgram.getDataTypeManager()
+        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
+        structType = self.ghidra.import_module_object("ghidra.program.model.data", "StructureDataType")
+        byteType = self.ghidra.import_module_object("ghidra.program.model.data", "ByteDataType")
+        ghidra_struct = structType(struct.name, 0)
+        for offset in struct.members:
+            member = struct.members[offset]
+            ghidra_struct.add(byteType.dataType, 1, member.name, "")
+            ghidra_struct.growStructure(member.size - 1)
+            for dtc in ghidra_struct.getComponents():
+                if dtc.getFieldName() == member.name:
+                    gtype = self.typestr_to_gtype(member.type if member.type else 'undefined' + str(member.size))
+                    for i in range(offset, offset + member.size):
+                        ghidra_struct.clearAtOffset(i)
+                    ghidra_struct.replaceAtOffset(offset, gtype, member.size, member.name, "")
+                    break
+        try:
+            if old_ghidra_struct:
+                data_manager.replaceDataType(old_ghidra_struct, ghidra_struct, True)
+            else:
+                data_manager.addDataType(ghidra_struct, handler.DEFAULT_HANDLER)
+            return True
+        except Exception as ex:
+            print(f'Error filling struct {struct.name}: {ex}')
+            return False
+
     def _get_struct(self, name) -> Optional[Struct]:
-        # TODO: implement me
-        return None
+        # TODO: Fix printing errors?????
+        ghidra_struct = self._get_struct_by_name(name)
+        members: Optional[List[Tuple[str, int, str, int]]] = self.ghidra.bridge.remote_eval(
+            "[(m.getFieldName(), m.getOffset(), m.getDataType().getName(), m.getLength()) if m.getFieldName() else "
+            "('field_'+hex(m.getOffset())[2:], m.getOffset(), m.getDataType().getName(), m.getLength()) "
+            "for m in ghidra_struct.getComponents()]",
+            ghidra_struct=ghidra_struct
+        )
+        struct_members = {}
+        if members:
+            struct_members = {
+                offset: StructMember(name, offset, typestr, size) for name, offset, typestr, size in members
+            }
+        bs_struct = Struct(ghidra_struct.getName(), ghidra_struct.getLength(), struct_members)
+        return bs_struct
 
     def _structs(self) -> Dict[str, Struct]:
         # TODO: implement me
-        return {}
+        structures = self.ghidra.currentProgram.getDataTypeManager().getAllStructures()
+        name_sizes: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
+            "[(s.getPathName(), s.getLength())"
+            "for s in currentProgram.getDataTypeManager().getAllStructures()]"
+        )
+        structures = {}
+        if name_sizes:
+            for name, size in name_sizes:
+                ghidra_struct = self.ghidra.currentProgram.getDataTypeManager().getDataType(name)
+                members: Optional[List[Tuple[str, int, str, int]]] = self.ghidra.bridge.remote_eval(
+                    "[(m.getFieldName(), m.getOffset(), m.getDataType().getName(), m.getLength()) if m.getFieldName() else "
+                    "('field_'+hex(m.getOffset())[2:], m.getOffset(), m.getDataType().getName(), m.getLength()) "
+                    "for m in ghidra_struct.getComponents()]",
+                    ghidra_struct=ghidra_struct
+                )
+                struct_members = {}
+                if members:
+                    struct_members = {
+                        offset: StructMember(name, offset, typestr, size) for name, offset, typestr, size in members
+                    }
+                structures[name] = Struct(name, size, members=struct_members)
+        return structures
     #
     # TODO: REMOVE ME THIS IS THE BINSYNC CODE
     # Filler/Setter API
