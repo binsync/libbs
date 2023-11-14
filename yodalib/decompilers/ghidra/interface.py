@@ -6,7 +6,7 @@ from functools import wraps
 from yodalib.api import DecompilerInterface
 from yodalib.api.decompiler_interface import requires_decompilation
 from yodalib.data import (
-    Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember
+    Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
 )
 
 from .artifact_lifter import GhidraArtifactLifter
@@ -269,6 +269,19 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return {
             name: Struct(name, size, members=self._struct_members_from_gstruct(name)) for name, size in name_sizes
         } if name_sizes else {}
+
+    def _set_enum(self, enum: Enum, **kwargs) -> bool:
+        # TODO: Implement me
+        return False
+
+    def _get_enum(self, name) -> Optional[Enum]:
+        # TODO: Implement me
+        return None
+
+    def _enums(self) -> Dict[str, Enum]:
+        # TODO: Implement me
+        return {}
+
 
     #
     # TODO: REMOVE ME THIS IS THE BINSYNC CODE
