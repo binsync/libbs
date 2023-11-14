@@ -255,16 +255,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return bs_struct
 
     def _structs(self) -> Dict[str, Struct]:
-        structures = self.ghidra.currentProgram.getDataTypeManager().getAllStructures()
         name_sizes: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
             "[(s.getPathName(), s.getLength())"
             "for s in currentProgram.getDataTypeManager().getAllStructures()]"
         )
-        structures = {}
-        if name_sizes:
-            for name, size in name_sizes:
-                structures[name] = Struct(name, size, members=self._get_members(name))
-        return structures
+        return {
+            name: Struct(name, size, members=self._get_struct_by_name(name)) for name, size in name_sizes
+        } if name_sizes else {}
 
     #
     # TODO: REMOVE ME THIS IS THE BINSYNC CODE
