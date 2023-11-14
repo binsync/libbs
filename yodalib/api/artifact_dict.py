@@ -21,7 +21,7 @@ class ArtifactDict(dict):
             StackVariable: (self._di._set_stack_variable, self._di._get_stack_variable, self._di._stack_variables),
             GlobalVariable: (self._di._set_global_variable, self._di._get_global_var, self._di._global_vars),
             Struct: (self._di._set_struct, self._di._get_struct, self._di._structs),
-            Enum: (self._di._set_enum, self._di._enums, self._di._enums),
+            Enum: (self._di._set_enum, self._di._get_enum, self._di._enums),
             Comment: (self._di._set_comment, self._di._get_comment, self._di._comments),
             Patch: (self._di._set_patch, self._di._get_patch, self._di._patches)
         }
