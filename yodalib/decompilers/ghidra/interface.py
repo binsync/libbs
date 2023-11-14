@@ -275,13 +275,19 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return False
 
     def _get_enum(self, name) -> Optional[Enum]:
-        # TODO: Implement me
-        return None
+        return Enum(name, self._get_enum_members(name))
 
     def _enums(self) -> Dict[str, Enum]:
-        # TODO: Implement me
-        return {}
-
+        names: Optional[List[str]] = self.ghidra.bridge.remote_eval(
+            "[type(dType)"
+            "for dType in currentProgram.getDataTypeManager().getAllDataTypes()]"
+        )
+        names = [
+                    dType.getPathName()
+                    for dType in self.ghidra.currentProgram.getDataTypeManager().getAllDataTypes()
+                    if str(type(dType)) == "<class 'jfx_bridge.bridge._bridged_ghidra.program.database.data.EnumDB'>"
+        ]
+        return {name: Enum(name, self._get_enum_members(name)) for name in names} if names else {}
 
     #
     # TODO: REMOVE ME THIS IS THE BINSYNC CODE
@@ -353,6 +359,34 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # TODO: REMOVE ME THIS IS ALSO BINSYNC CODE
     # Artifact API
     #
+
+    def struct(self, name) -> Optional[Struct]:
+        ghidra_struct = self._get_struct_by_name(name)
+        members: Optional[List[Tuple[str, int, str, int]]] = self.ghidra.bridge.remote_eval(
+            "[(m.getFieldName(), m.getOffset(), m.getDataType().getName(), m.getLength()) if m.getFieldName() else "
+            "('field_'+hex(m.getOffset())[2:], m.getOffset(), m.getDataType().getName(), m.getLength()) "
+            "for m in ghidra_struct.getComponents()]",
+            ghidra_struct=ghidra_struct
+        )
+        struct_members = {}
+        if members:
+            struct_members = {
+                offset: StructMember(name, offset, typestr, size) for name, offset, typestr, size in members
+            }
+        bs_struct = Struct(ghidra_struct.getName(), ghidra_struct.getLength(), struct_members)
+        return bs_struct
+
+    def structs(self) -> Dict[str, Struct]:
+        name_sizes: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
+            "[(s.getPathName(), s.getLength())"
+            "for s in currentProgram.getDataTypeManager().getAllStructures()]"
+        )
+        structures = {}
+        if name_sizes:
+            structures = {
+                name: Struct(name, size, None) for name, size in name_sizes
+            }
+        return structures
 
     def global_var(self, addr) -> Optional[GlobalVariable]:
         light_global_vars = self.global_vars()
@@ -472,6 +506,15 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return {
             offset: StructMember(name, offset, typestr, size) for name, offset, typestr, size in members
         } if members else {}
+
+    def _get_enum_members(self, name: str) -> Dict[str, int]:
+        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(name)
+        name_vals: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
+            "[(name, ghidra_enum.getValue(name))"
+            "for name in ghidra_enum.getNames()]",
+            ghidra_enum=ghidra_enum
+        )
+        return {name: value for name, value in name_vals} if name_vals else {}
 
     def _get_nearest_function(self, addr: int) -> "GhidraFunction":
         func_manager = self.ghidra.currentProgram.getFunctionManager()
