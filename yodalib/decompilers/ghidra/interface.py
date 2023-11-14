@@ -260,7 +260,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for s in currentProgram.getDataTypeManager().getAllStructures()]"
         )
         return {
-            name: Struct(name, size, members=self._get_struct_by_name(name)) for name, size in name_sizes
+            name: Struct(name, size, members=self._get_members(name)) for name, size in name_sizes
         } if name_sizes else {}
 
     #
