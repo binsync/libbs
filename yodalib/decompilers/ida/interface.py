@@ -13,8 +13,10 @@ from yodalib.api.decompiler_interface import DecompilerInterface, artifact_set_e
 from yodalib.data import (
     StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact
 )
+from yodalib.api.decompiler_interface import requires_decompilation
 from . import compat
 from .artifact_lifter import IDAArtifactLifter
+from .hooks import ContextMenuHooks, ScreenHook
 
 _l = logging.getLogger(name=__name__)
 
@@ -25,14 +27,18 @@ _l = logging.getLogger(name=__name__)
 
 class IDAInterface(DecompilerInterface):
     def __init__(self, **kwargs):
-        super(IDAInterface, self).__init__(name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self))
+        self._ctx_menu_names = []
+        super(IDAInterface, self).__init__(
+            name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self), **kwargs
+        )
 
-        # view change callback
-        self._updated_ctx = None
+        self._max_patch_size = 0xff
         self._decompiler_available = None
         self._crashing_version = False
 
-        self._max_patch_size = 0xff
+        # GUI properties
+        self._updated_ctx = None
+        self._ui_hooks = []
 
     #
     # Controller Interaction
@@ -41,30 +47,11 @@ class IDAInterface(DecompilerInterface):
     def binary_hash(self) -> str:
         return idc.retrieve_input_file_md5().hex()
 
-    def active_context(self):
-        return self._updated_ctx
-
-    def update_active_context(self, addr):
-        if not addr or addr == idaapi.BADADDR:
-            return
-
-        func_addr = compat.ida_func_addr(addr)
-        if func_addr is None:
-            return
-
-        func = yodalib.data.Function(
-            func_addr, 0, header=FunctionHeader(compat.get_func_name(func_addr), func_addr)
-        )
-        self._updated_ctx = func
-
     def binary_path(self) -> Optional[str]:
         return compat.get_binary_path()
 
     def get_func_size(self, func_addr) -> int:
         return compat.get_func_size(func_addr)
-
-    def goto_address(self, func_addr) -> None:
-        compat.jumpto(func_addr)
 
     @property
     def decompiler_available(self) -> bool:
@@ -93,6 +80,13 @@ class IDAInterface(DecompilerInterface):
 
         return xrefs
 
+    def get_decompilation_object(self, function: Function) -> Optional[object]:
+        dec = idaapi.decompile(function.addr)
+        if dec is None:
+            return None
+
+        return dec
+
     def _decompile(self, function: Function) -> Optional[str]:
         try:
             cfunc = ida_hexrays.decompile(function.addr)
@@ -100,6 +94,105 @@ class IDAInterface(DecompilerInterface):
             return None
 
         return str(cfunc)
+
+    #
+    # GUI API
+    #
+
+    def _init_ui_hooks(self):
+        """
+        This function can only be called from inside the compat.GenericIDAPlugin and is meant for IDA code which
+        should be run as a plugin.
+        """
+        self._ui_hooks = [
+            ScreenHook(self),
+            ContextMenuHooks(self, menu_strs=self._ctx_menu_names)
+        ]
+
+        for hook in self._ui_hooks:
+            hook.hook()
+
+    def _init_gui_plugin(self, *args, **kwargs):
+        return compat.GenericIDAPlugin(*args, name=self._plugin_name, interface=self, **kwargs)
+
+    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+        # Function explaining action
+        explain_action = idaapi.action_desc_t(
+            name,
+            action_string,
+            compat.GenericAction(name, callback_func),
+            "",
+            action_string,
+            199
+        )
+        idaapi.register_action(explain_action)
+        idaapi.attach_action_to_menu(
+            f"Edit/{category}/{name}" if category else f"Edit/{name}",
+            name,
+            idaapi.SETMENU_APP
+        )
+        self._ctx_menu_names.append((name, category or ""))
+        return True
+
+    def _ea_to_func(self, addr):
+        if not addr or addr == idaapi.BADADDR:
+            return None
+
+        func_addr = compat.ida_func_addr(addr)
+        if func_addr is None:
+            return None
+
+        func = yodalib.data.Function(
+            func_addr, 0, header=FunctionHeader(compat.get_func_name(func_addr), func_addr)
+        )
+        return func
+
+    def active_context(self):
+        if not self._init_plugin:
+            return self._ea_to_func(compat.get_screen_ea())
+
+        return self._updated_ctx
+
+    def update_active_context(self, addr):
+        self._updated_ctx = self._ea_to_func(addr)
+
+    def goto_address(self, func_addr) -> None:
+        compat.jumpto(func_addr)
+
+    #
+    # Optional API
+    #
+
+    @requires_decompilation
+    def local_variable_names(self, func: Function) -> List[str]:
+        dec = func.dec_obj
+        if dec is None:
+            return []
+
+        return [lvar.name for lvar in dec.get_lvars() if lvar.name]
+
+    @requires_decompilation
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+        dec = func.dec_obj
+        if dec is None:
+            return False
+
+        lvars = {
+            lvar.name: lvar for lvar in dec.get_lvars() if lvar.name
+        }
+        update = False
+        for name, lvar in lvars.items():
+            new_name = name_map.get(name, None)
+            if new_name is None:
+                continue
+
+            lvar.name = new_name
+            update |= True
+
+        if update:
+            dec.refresh_func_ctext()
+
+        return update
 
     #
     # Artifact API

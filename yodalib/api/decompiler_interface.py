@@ -1,5 +1,6 @@
 import inspect
 import logging
+import re
 import threading
 from collections import defaultdict
 from functools import wraps
@@ -52,25 +53,41 @@ class DummyArtifactSetLock:
 class DecompilerInterface:
     def __init__(
         self,
+        # these should usually go unchanged in public API use
         name: str = "generic",
         qt_version: str = "PySide6",
         artifact_lifter: Optional[ArtifactLifter] = None,
-        headless: bool = False,
         error_on_artifact_duplicates: bool = False,
         decompiler_available: bool = True,
         supports_undo: bool = False,
+        # these will be changed often by public API use
+        headless: bool = False,
+        init_plugin: bool = False,
+        plugin_name: str = f"generic_yoda_plugin",
+        # [category/name] = (action_string, callback_func)
+        gui_ctx_menu_actions: Optional[dict] = None,
+        ui_init_args: Optional[Tuple] = None,
+        ui_init_kwargs: Optional[Dict] = None,
     ):
         self.name = name
-        self.headless = headless
         self.artifact_lifer = artifact_lifter
         self.type_parser = CTypeParser()
         self.supports_undo = supports_undo
         self.qt_version = qt_version
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
 
+        # GUI things
+        self.headless = headless
+        self._init_plugin = init_plugin
+        self._unparsed_gui_ctx_actions = gui_ctx_menu_actions or {}
+        # (category, name, action_string, callback_func)
+        self._gui_ctx_menu_actions = []
+        self._plugin_name = plugin_name
+        self.gui_plugin = None
+
         self.artifact_set_lock = threading.Lock()
 
-        # artifacts
+        # artifact dict aliases
         self.functions = ArtifactDict(Function, self, error_on_duplicate=error_on_artifact_duplicates)
         self.comments = ArtifactDict(Comment, self, error_on_duplicate=error_on_artifact_duplicates)
         self.enums = ArtifactDict(Enum, self, error_on_duplicate=error_on_artifact_duplicates)
@@ -80,15 +97,43 @@ class DecompilerInterface:
 
         self._decompiler_available = decompiler_available
         if not self.headless:
-            self._init_ui_components()
+            args = ui_init_args or []
+            kwargs = ui_init_kwargs or {}
+            self._init_ui_components(*args, **kwargs)
 
     #
     # Decompiler GUI API
     #
 
-    def _init_ui_components(self):
+    def _init_ui_components(self, *args, **kwargs):
         from yodalib.ui.version import set_ui_version
         set_ui_version(self.qt_version)
+
+        # register a real plugin in the GUI
+        if self._init_plugin:
+            self.gui_plugin = self._init_gui_plugin(*args, **kwargs)
+
+        # parse all context menu actions
+        #import remote_pdb; remote_pdb.RemotePdb("localhost", 4444).set_trace()
+        for combined_name, items in self._unparsed_gui_ctx_actions.items():
+            slashes = list(re.finditer("/", combined_name))
+            if not slashes:
+                category = ""
+                name = combined_name
+            else:
+                last_slash = slashes[-1]
+                category = combined_name[:last_slash.start()]
+                name = combined_name[last_slash.start()+1:]
+
+            self._gui_ctx_menu_actions.append((category, name,) + items)
+
+        # register all context menu actions
+        for action in self._gui_ctx_menu_actions:
+            category, name, action_string, callback_func = action
+            self.register_ctx_menu_item(name, action_string, callback_func, category=category)
+
+    def _init_gui_plugin(self, *args, **kwargs):
+        return None
 
     def active_context(self) -> yodalib.data.Function:
         """
@@ -106,6 +151,13 @@ class DecompilerInterface:
         @return:
         """
         raise NotImplementedError
+
+    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+        raise NotImplementedError
+
+    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+        raise NotImplementedError
+
 
     #
     # Override Mandatory API:
@@ -196,7 +248,7 @@ class DecompilerInterface:
 
     #
     # Override Optional API:
-    # There are API that provide extra introspection for plugins that may rely on YODA Interface
+    # These are API that provide extra introspection for plugins that may rely on YODA Interface
     #
 
     def undo(self):

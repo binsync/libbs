@@ -23,6 +23,7 @@
 import threading
 from functools import wraps
 import logging
+from typing import TYPE_CHECKING
 
 import ida_bytes
 import ida_funcs
@@ -35,15 +36,18 @@ import ida_enum
 import idaapi
 import idc
 
-from PyQt5 import QtCore
 
 from . import compat
-from .interface import IDAInterface
 from yodalib.data import (
     FunctionHeader, FunctionArgument, StackVariable,
     Comment, GlobalVariable, Enum, Struct
 )
+
+from PyQt5 import QtCore
 from PyQt5.QtGui import QKeyEvent
+
+if TYPE_CHECKING:
+    from .interface import IDAInterface
 
 l = logging.getLogger(__name__)
 
@@ -61,6 +65,44 @@ def stop_if_syncing(f):
     return _stop_if_syncing
 
 #
+# IDA GUI Hooks
+#
+
+
+class ContextMenuHooks(idaapi.UI_Hooks):
+    def __init__(self, *args, menu_strs=None, **kwargs):
+        idaapi.UI_Hooks.__init__(self)
+        self.menu_strs = menu_strs or []
+
+    def finish_populating_widget_popup(self, form, popup):
+        # Add actions to the context menu of the Pseudocode view
+        if idaapi.get_widget_type(form) == idaapi.BWN_PSEUDOCODE or idaapi.get_widget_type(form) == idaapi.BWN_DISASM:
+            for menu_str, category in self.menu_strs:
+                idaapi.attach_action_to_popup(form, popup, menu_str, f"{category}/")
+
+
+class ScreenHook(ida_kernwin.View_Hooks):
+    def __init__(self, interface: "IDAInterface"):
+        self.interface = interface
+        super(ScreenHook, self).__init__()
+
+    def view_click(self, view, event):
+        form_type = idaapi.get_widget_type(view)
+        decomp_view = idaapi.get_widget_vdui(view)
+        if not form_type:
+            return
+
+        # check if view is decomp or disassembly before doing expensive ea lookup
+        if not decomp_view and not form_type == idaapi.BWN_DISASM:
+            return
+
+        ea = idc.get_screen_ea()
+        if not ea:
+            return
+
+        self.interface.update_active_context(ea)
+
+#
 #   IDA Change Hooks
 #
 
@@ -68,7 +110,7 @@ def stop_if_syncing(f):
 class IDBHooks(ida_idp.IDB_Hooks):
     def __init__(self, controller):
         ida_idp.IDB_Hooks.__init__(self)
-        self.controller: IDAInterface = controller
+        self.controller: "IDAInterface" = controller
         self.last_local_type = None
 
     @stop_if_syncing
@@ -502,7 +544,7 @@ class FakeIDACodeView:
 
 class HexRaysHooks:
     def __init__(self, controller):
-        self.controller: IDAInterface = controller
+        self.controller: "IDAInterface" = controller
         super(HexRaysHooks, self).__init__()
         self._available = None
         self._installed = False

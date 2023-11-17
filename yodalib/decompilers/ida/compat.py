@@ -13,7 +13,6 @@ import threading
 from functools import wraps
 import typing
 import logging
-from time import time, sleep
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
     ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum
@@ -22,7 +21,11 @@ import yodalib
 from yodalib.data import (
     Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact
 )
-from .interface import IDAInterface
+
+from PyQt5.Qt import QObject
+
+if typing.TYPE_CHECKING:
+    from .interface import IDAInterface
 
 l = logging.getLogger(__name__)
 
@@ -880,5 +883,59 @@ def has_older_hexrays_version():
     return not vers.startswith("8.2")
 
 
+#
+# IDA Classes
+#
 
+class GenericIDAPlugin(QObject, idaapi.plugin_t):
+    """Plugin entry point. Does most of the skinning magic."""
+    flags = idaapi.PLUGIN_FIX
+
+    def __init__(self, *args, name=None, comment=None, interface=None, **kwargs):
+        QObject.__init__(self, *args, **kwargs)
+        idaapi.plugin_t.__init__(self)
+        self.wanted_name = name or "generic_yoda_plugin"
+        self.comment = comment or "A generic YODA plugin"
+        self.interface: "IDAInterface" = interface
+
+    def init(self):
+        self.interface._init_ui_hooks()
+        return idaapi.PLUGIN_KEEP
+
+    def run(self, arg):
+        pass
+
+    def term(self):
+        del self.interface
+
+
+class GenericAction(idaapi.action_handler_t):
+    def __init__(self, action_target, action_function):
+        idaapi.action_handler_t.__init__(self)
+        self.action_target = action_target
+        self.action_function = action_function
+
+    def activate(self, ctx):
+        if ctx is None or ctx.action != self.action_target:
+            return
+
+        dec_view = ida_hexrays.get_widget_vdui(ctx.widget)
+        # show a thing while we work
+        #prg = QProgressDialog("Querying...", "Stop", 0, 1, None)
+        #prg.show()
+
+        self.action_function()
+
+        # close the panel we showed while running
+        #prg.setValue(1)
+        #prg.close()
+
+        if dec_view is not None:
+            dec_view.refresh_view(False)
+
+        return 1
+
+    # This action is always available.
+    def update(self, ctx):
+        return idaapi.AST_ENABLE_ALWAYS
 
