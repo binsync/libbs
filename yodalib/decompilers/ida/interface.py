@@ -99,6 +99,10 @@ class IDAInterface(DecompilerInterface):
     # GUI API
     #
 
+    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+        resp = idaapi.ask_str("", 0, question)
+        return resp if resp else ""
+
     def _init_ui_hooks(self):
         """
         This function can only be called from inside the compat.GenericIDAPlugin and is meant for IDA code which

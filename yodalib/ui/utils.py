@@ -1,8 +1,36 @@
 import sys
 
 from .qt_objects import (
-    QDialog, QVBoxLayout, QProgressBar, QLabel, QPushButton, Qt, QThread, QApplication, Signal
+    QDialog, QVBoxLayout, QProgressBar, QLabel, QPushButton, Qt, QThread, QApplication, Signal, QLineEdit
 )
+
+
+def gui_ask_for_string(question, title="Plugin Question") -> str:
+    dialog = QDialog()
+    dialog.setWindowTitle(title)
+
+    layout = QVBoxLayout(dialog)
+
+    # Question label
+    label = QLabel(question)
+    layout.addWidget(label)
+
+    # Text input field
+    text_input = QLineEdit()
+    layout.addWidget(text_input)
+
+    # Submit button
+    submit_button = QPushButton("Submit")
+    layout.addWidget(submit_button)
+    submit_button.clicked.connect(dialog.accept)
+
+    dialog.setLayout(layout)
+
+    # Show the dialog and wait for user to submit
+    if dialog.exec():
+        return text_input.text()
+    else:
+        return ""
 
 
 class QProgressBarDialog(QDialog):

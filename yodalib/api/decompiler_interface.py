@@ -114,7 +114,6 @@ class DecompilerInterface:
             self.gui_plugin = self._init_gui_plugin(*args, **kwargs)
 
         # parse all context menu actions
-        #import remote_pdb; remote_pdb.RemotePdb("localhost", 4444).set_trace()
         for combined_name, items in self._unparsed_gui_ctx_actions.items():
             slashes = list(re.finditer("/", combined_name))
             if not slashes:
@@ -156,7 +155,8 @@ class DecompilerInterface:
         raise NotImplementedError
 
     def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        raise NotImplementedError
+        from yodalib.ui.utils import gui_ask_for_string
+        return gui_ask_for_string(question, title=title)
 
 
     #

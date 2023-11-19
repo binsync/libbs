@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import logging
 from functools import wraps
@@ -11,7 +12,7 @@ from yodalib.data import (
 from .artifact_lifter import GhidraArtifactLifter
 from .ghidra_api import GhidraAPIWrapper
 
-l = logging.getLogger(__name__)
+_l = logging.getLogger(__name__)
 
 
 def ghidra_transaction(f):
@@ -23,7 +24,7 @@ def ghidra_transaction(f):
         try:
             ret_val = f(self, *args, **kwargs)
         except Exception as e:
-            l.warning(f"Failed to do Ghidra Transaction {trans_name} because {e}")
+            self.warning(f"Failed to do Ghidra Transaction {trans_name} because {e}")
         finally:
             self.ghidra.currentProgram.endTransaction(trans_id, True)
 
@@ -49,6 +50,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
     # Controller API
     #
+
+    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+        answer = self.ghidra.bridge.remote_eval(
+            "askString(title, question)", title=title, question=question
+        )
+        return answer if answer else ""
 
     def binary_hash(self) -> str:
         return self.ghidra.currentProgram.executableMD5
@@ -184,7 +191,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for f in currentProgram.getFunctionManager().getFunctions(True)]"
         )
         if name_and_sizes is None:
-            l.warning(f"Failed to get any functions from Ghidra. Did something break?")
+            _l.warning(f"Failed to get any functions from Ghidra. Did something break?")
             return {}
 
         funcs = {
@@ -361,6 +368,40 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return bs_stack_var
 
     #
+    # Specialized print handlers
+    #
+
+    def info(self, msg: str):
+        _l.info(msg)
+        self.print(self._fmt_log_msg(msg, "INFO"), print_local=False)
+
+    def debug(self, msg: str):
+        _l.debug(msg)
+        self.print(self._fmt_log_msg(msg, "DEBUG"), print_local=False)
+
+    def warning(self, msg: str):
+        _l.warning(msg)
+        self.print(self._fmt_log_msg(msg, "WARNING"), print_local=False)
+
+    def error(self, msg: str):
+        _l.error(msg)
+        self.print(self._fmt_log_msg(msg, "ERROR"), print_local=False)
+
+    @staticmethod
+    def _fmt_log_msg(msg: str, level: str):
+        full_filepath = Path(__file__)
+        log_path = str(full_filepath.with_suffix("").name)
+        for part in full_filepath.parts[:-1][::-1]:
+            log_path = f"{part}." + log_path
+            if part == "ghidra":
+                break
+
+        return f"[{level}] | {log_path} | {msg}"
+
+    def print(self, string, print_local=True):
+        self.ghidra.print(string, print_local=print_local)
+
+    #
     # Ghidra Specific API
     #
 
@@ -466,7 +507,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         try:
             parsed_type = dt_parser.parse(typestr)
         except Exception as e:
-            l.warning(f"Failed to parse type string: {typestr}")
+            _l.warning(f"Failed to parse type string: {typestr}")
             return None
 
         return parsed_type

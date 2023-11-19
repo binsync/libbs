@@ -59,6 +59,10 @@ class BinjaInterface(DecompilerInterface):
         self.bv: binaryninja.BinaryView = bv
         self.ui_configured = False
 
+    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+        resp = binaryninja.get_text_line_input("Enter you OpenAI API Key: ", "DAILA: Update API Key")
+        return resp if resp else ""
+
     def binary_hash(self) -> str:
         hash_ = ""
         try:
