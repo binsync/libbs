@@ -270,9 +270,27 @@ class GhidraDecompilerInterface(DecompilerInterface):
             name: Struct(name, size, members=self._struct_members_from_gstruct(name)) for name, size in name_sizes
         } if name_sizes else {}
 
+    @ghidra_transaction
     def _set_enum(self, enum: Enum, **kwargs) -> bool:
-        # TODO: Implement me
-        return False
+        old_ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(enum.name)
+        data_manager = self.ghidra.currentProgram.getDataTypeManager()
+        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
+        enumType = self.ghidra.import_module_object("ghidra.program.model.data", "EnumDataType")
+        categoryPath = self.ghidra.import_module_object("ghidra.program.model.data", "CategoryPath")
+        path = categoryPath(enum.name)
+        outer_path = categoryPath(path.getPath())
+        ghidra_enum = enumType(outer_path, path.getName(), 4)
+        for member_name in enum.members.keys():
+            ghidra_enum.add(member_name, enum.members[member_name])
+        try:
+            if old_ghidra_enum:
+                data_manager.replaceDataType(old_ghidra_enum, ghidra_enum, True)
+            else:
+                data_manager.addDataType(ghidra_enum, handler.DEFAULT_HANDLER)
+            return True
+        except Exception as ex:
+            print(f'Error adding enum {enum.name}: {ex}')
+            return False
 
     def _get_enum(self, name) -> Optional[Enum]:
         return Enum(name, self._get_enum_members(name))
