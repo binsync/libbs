@@ -300,6 +300,23 @@ class GhidraDecompilerInterface(DecompilerInterface):
             name: Struct(name, size, members=self._struct_members_from_gstruct(name)) for name, size in name_sizes
         } if name_sizes else {}
 
+    def _set_comment(self, comment: Comment, **kwargs) -> bool:
+        code_unit = self.ghidra.import_module_object("ghidra.program.model.listing", "CodeUnit")
+        set_cmt_cmd_cls = self.ghidra.import_module_object("ghidra.app.cmd.comments", "SetCommentCmd")
+        cmt_type = code_unit.PRE_COMMENT if comment.decompiled else code_unit.EOL_COMMENT
+        if comment.comment:
+            # TODO: check if comment already exists, and append?
+            return set_cmt_cmd_cls(
+                self.ghidra.toAddr(comment.addr), cmt_type, comment.comment
+            ).applyTo(self.ghidra.currentProgram)
+        return True
+
+    def _get_comment(self, addr) -> Optional[Comment]:
+        return None
+
+    def _comments(self) -> Dict[int, Comment]:
+        return {}
+
     @ghidra_transaction
     def _set_enum(self, enum: Enum, **kwargs) -> bool:
         corrected_enum_name = "/" + enum.name
