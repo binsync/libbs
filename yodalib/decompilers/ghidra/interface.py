@@ -251,7 +251,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def _get_struct(self, name) -> Optional[Struct]:
         ghidra_struct = self._get_struct_by_name(name)
-        bs_struct = Struct(ghidra_struct.getName(), ghidra_struct.getLength(), self._get_members(name))
+        bs_struct = Struct(ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(name))
         return bs_struct
 
     def _structs(self) -> Dict[str, Struct]:
@@ -260,7 +260,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for s in currentProgram.getDataTypeManager().getAllStructures()]"
         )
         return {
-            name: Struct(name, size, members=self._get_members(name)) for name, size in name_sizes
+            name: Struct(name, size, members=self._struct_members_from_gstruct(name)) for name, size in name_sizes
         } if name_sizes else {}
 
     #
@@ -407,7 +407,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def _get_struct_by_name(self, name: str) -> "GhidraStructure":
         return self.ghidra.currentProgram.getDataTypeManager().getDataType(name)
 
-    def _get_members(self, name: str) -> Dict[int, StructMember]:
+    def _struct_members_from_gstruct(self, name: str) -> Dict[int, StructMember]:
         ghidra_struct = self._get_struct_by_name(name)
         members: Optional[List[Tuple[str, int, str, int]]] = self.ghidra.bridge.remote_eval(
             "[(m.getFieldName(), m.getOffset(), m.getDataType().getName(), m.getLength()) if m.getFieldName() else "
