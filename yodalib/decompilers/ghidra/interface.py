@@ -277,9 +277,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
         enumType = self.ghidra.import_module_object("ghidra.program.model.data", "EnumDataType")
         categoryPath = self.ghidra.import_module_object("ghidra.program.model.data", "CategoryPath")
-        path = categoryPath(enum.name)
-        outer_path = categoryPath(path.getPath())
-        ghidra_enum = enumType(outer_path, path.getName(), 4)
+        parts = enum.name.split('/')
+        path = categoryPath('/'.join(parts[:-1]))
+        plain_name = parts[-1]
+        ghidra_enum = enumType(path, plain_name, 4)
         for member_name in enum.members.keys():
             ghidra_enum.add(member_name, enum.members[member_name])
         try:
