@@ -31,7 +31,7 @@ class StructMember(Artifact):
         return f"<StructMember: {self.type} {self.name}; @{hex(self.offset)}>"
 
     def __repr__(self):
-        self.__str__()
+        return self.__str__()
 
     @classmethod
     def parse(cls, s):
