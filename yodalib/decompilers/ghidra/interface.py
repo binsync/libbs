@@ -378,35 +378,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # TODO: REMOVE ME THIS IS ALSO BINSYNC CODE
     # Artifact API
     #
-
-    def struct(self, name) -> Optional[Struct]:
-        ghidra_struct = self._get_struct_by_name(name)
-        members: Optional[List[Tuple[str, int, str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(m.getFieldName(), m.getOffset(), m.getDataType().getName(), m.getLength()) if m.getFieldName() else "
-            "('field_'+hex(m.getOffset())[2:], m.getOffset(), m.getDataType().getName(), m.getLength()) "
-            "for m in ghidra_struct.getComponents()]",
-            ghidra_struct=ghidra_struct
-        )
-        struct_members = {}
-        if members:
-            struct_members = {
-                offset: StructMember(name, offset, typestr, size) for name, offset, typestr, size in members
-            }
-        bs_struct = Struct(ghidra_struct.getName(), ghidra_struct.getLength(), struct_members)
-        return bs_struct
-
-    def structs(self) -> Dict[str, Struct]:
-        name_sizes: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(s.getPathName(), s.getLength())"
-            "for s in currentProgram.getDataTypeManager().getAllStructures()]"
-        )
-        structures = {}
-        if name_sizes:
-            structures = {
-                name: Struct(name, size, None) for name, size in name_sizes
-            }
-        return structures
-
     def global_var(self, addr) -> Optional[GlobalVariable]:
         light_global_vars = self.global_vars()
         for offset, global_var in light_global_vars.items():
