@@ -12,13 +12,17 @@ from binaryninjaui import (
     Menu,
 )
 import binaryninja
+from binaryninja import PluginCommand
+from binaryninja import lineardisassembly
+from binaryninja.function import DisassemblySettings
+from binaryninja.enums import DisassemblyOption, LinearDisassemblyLineType, InstructionTextTokenType
 from binaryninja.enums import VariableSourceType
 from binaryninja.types import StructureType, EnumerationType
 
 from yodalib.api.decompiler_interface import DecompilerInterface
 import yodalib
 from yodalib.data import (
-    State, Function, FunctionHeader, StackVariable,
+    Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch, StructMember, FunctionArgument,
     Enum, Struct, Artifact
 )
@@ -55,13 +59,9 @@ def background_and_wait(func):
 
 class BinjaInterface(DecompilerInterface):
     def __init__(self, bv=None, **kwargs):
-        super(BinjaInterface, self).__init__(name="binja", artifact_lifter=BinjaArtifactLifter(self), **kwargs)
         self.bv: binaryninja.BinaryView = bv
-        self.ui_configured = False
-
-    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        resp = binaryninja.get_text_line_input("Enter you OpenAI API Key: ", "DAILA: Update API Key")
-        return resp if resp else ""
+        print("Initializing BinjaInterface...")
+        super(BinjaInterface, self).__init__(name="binja", artifact_lifter=BinjaArtifactLifter(self), **kwargs)
 
     def binary_hash(self) -> str:
         hash_ = ""
@@ -71,25 +71,6 @@ class BinjaInterface(DecompilerInterface):
             pass
 
         return hash_
-
-    def active_context(self):
-        all_contexts = UIContext.allContexts()
-        if not all_contexts:
-            return None
-
-        ctx = all_contexts[0]
-        handler = ctx.contentActionHandler()
-        if handler is None:
-            return None
-
-        actionContext = handler.actionContext()
-        func = actionContext.function
-        if func is None:
-            return None
-
-        return yodalib.data.Function(
-            func.start, 0, header=FunctionHeader(func.name, func.start)
-        )
 
     def binary_path(self) -> Optional[str]:
         try:
@@ -103,9 +84,6 @@ class BinjaInterface(DecompilerInterface):
             return 0
 
         return func.highest_address - func.start
-
-    def goto_address(self, func_addr) -> None:
-        self.bv.offset = func_addr
 
     def xrefs_to(self, artifact: Artifact) -> List[Artifact]:
         if not isinstance(artifact, Function):
@@ -136,6 +114,117 @@ class BinjaInterface(DecompilerInterface):
 
         bn_func = funcs[0]
         return self._get_function(bn_func.start)
+
+    def _decompile(self, function: Function) -> Optional[str]:
+        bv = self.bv
+        if bv is None:
+            print("[DAILA] Warning: was unable to collect the current BinaryView. Please report this issue.")
+            return
+
+        bn_func = self.addr_to_bn_func(bv, function.addr)
+        if bn_func is None:
+            return None
+
+        settings = DisassemblySettings()
+        settings.set_option(DisassemblyOption.ShowVariableTypesWhenAssigned)
+        settings.set_option(DisassemblyOption.GroupLinearDisassemblyFunctions)
+        settings.set_option(DisassemblyOption.WaitForIL)
+
+        decomp = ""
+        obj = lineardisassembly.LinearViewObject.single_function_language_representation(bn_func, settings)
+        cursor = obj.cursor
+        while True:
+            for line in cursor.lines:
+                if line.type in [
+                    LinearDisassemblyLineType.FunctionHeaderStartLineType,
+                    LinearDisassemblyLineType.FunctionHeaderEndLineType,
+                    LinearDisassemblyLineType.AnalysisWarningLineType,
+                ]:
+                    continue
+                for i in line.contents.tokens:
+                    if i.type == InstructionTextTokenType.TagToken:
+                        continue
+
+                    decomp += str(i)
+                decomp += "\n"
+
+            if not cursor.next():
+                break
+
+        return decomp
+
+    def local_variable_names(self, func: Function) -> List[str]:
+        bn_func = self.addr_to_bn_func(self.bv, func.addr)
+        if bn_func is None:
+            return []
+
+        return [str(var.name) for var in bn_func.variables]
+
+    @background_and_wait
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+        bn_func = self.addr_to_bn_func(self.bv, func.addr)
+        if bn_func is None:
+            return False
+
+        lvars = {
+            lvar.name: lvar for lvar in bn_func.vars if lvar.name
+        }
+        update = False
+        for name, lvar in lvars.items():
+            new_name = name_map.get(name, None)
+            if new_name is None:
+                continue
+
+            lvar.name = new_name
+            update |= True
+
+        if update:
+            bn_func.reanalyze()
+
+        return update
+
+    #
+    # GUI API
+    #
+
+    def _init_gui_plugin(self, *args, **kwargs):
+        return self
+
+    def active_context(self):
+        all_contexts = UIContext.allContexts()
+        if not all_contexts:
+            return None
+
+        ctx = all_contexts[0]
+        handler = ctx.contentActionHandler()
+        if handler is None:
+            return None
+
+        actionContext = handler.actionContext()
+        func = actionContext.function
+        if func is None:
+            return None
+
+        return yodalib.data.Function(
+            func.start, 0, header=FunctionHeader(func.name, func.start)
+        )
+
+    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+        resp = binaryninja.get_text_line_input(question, title)
+        return resp.decode() if resp else ""
+
+    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+        # TODO: this needs to have a wrapper function that passes the bv to the current controller
+        PluginCommand.register_for_address(
+            f"{category if category else ''}: {action_string}",
+            action_string,
+            callback_func,
+            is_valid=self.is_bn_func
+        )
+        return True
+
+    def goto_address(self, func_addr) -> None:
+        self.bv.offset = func_addr
 
     #
     # Artifact API
@@ -369,7 +458,8 @@ class BinjaInterface(DecompilerInterface):
             return True
 
         # func exists for commenting
-        yoda_func.set_comment_at(comment.addr, comment.comment)
+        bn_func = self.addr_to_bn_func(self.bv, comment.addr)
+        bn_func.set_comment_at(comment.addr, comment.comment)
 
     def _get_comment(self, addr) -> Optional[Comment]:
         non_func_cmt = self.bv.get_comment_at(addr)
@@ -487,3 +577,19 @@ class BinjaInterface(DecompilerInterface):
                 members[enum_member.name] = enum_member.value
 
         return Enum(name, members)
+
+    @staticmethod
+    def addr_to_bn_func(bv, address):
+        funcs = bv.get_functions_containing(address)
+        try:
+            func = funcs[0]
+        except IndexError:
+            return None
+
+        return func
+
+    def is_bn_func(self, bv, address):
+        # HACK: update the BV whenever this is used in a context menu
+        self.bv = bv
+        func = self.addr_to_bn_func(bv, address)
+        return func is not None

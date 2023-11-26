@@ -12,6 +12,7 @@ from binaryninjaui import (
     Sidebar,
 )
 import binaryninja
+from binaryninja import PluginCommand
 from binaryninja.types import StructureType, EnumerationType
 from binaryninja import SymbolType
 from binaryninja.binaryview import BinaryDataNotification
@@ -136,12 +137,3 @@ class DataMonitor(BinaryDataNotification):
 def start_data_monitor(view, controller):
     notification = DataMonitor(view, controller)
     view.register_notification(notification)
-
-
-class BinjaPlugin:
-    def __init__(self):
-        # controller stored by a binary view
-        self.interfaces = defaultdict(BinjaInterface)
-
-
-BinjaPlugin()
