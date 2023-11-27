@@ -272,17 +272,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @ghidra_transaction
     def _set_enum(self, enum: Enum, **kwargs) -> bool:
-        old_ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(enum.name)
+        corrected_enum_name = "/" + enum.name
+        old_ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
         data_manager = self.ghidra.currentProgram.getDataTypeManager()
         handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
         enumType = self.ghidra.import_module_object("ghidra.program.model.data", "EnumDataType")
         categoryPath = self.ghidra.import_module_object("ghidra.program.model.data", "CategoryPath")
-        parts = enum.name.split('/')
-        path = categoryPath('/'.join(parts[:-1]))
-        plain_name = parts[-1]
-        ghidra_enum = enumType(path, plain_name, 4)
-        for member_name in enum.members.keys():
-            ghidra_enum.add(member_name, enum.members[member_name])
+        ghidra_enum = enumType(categoryPath('/'), enum.name, 4)
+        for m_name, m_val in enum.members.items():
+            ghidra_enum.add(m_name, m_val)
+
         try:
             if old_ghidra_enum:
                 data_manager.replaceDataType(old_ghidra_enum, ghidra_enum, True)
@@ -294,17 +293,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return False
 
     def _get_enum(self, name) -> Optional[Enum]:
-        return Enum(name, self._get_enum_members(name))
+        return Enum(name, self._get_enum_members('/' + name))
 
     def _enums(self) -> Dict[str, Enum]:
-        names: Optional[List[str]] = self.ghidra.bridge.remote_eval(
-            "[type(dType)"
-            "for dType in currentProgram.getDataTypeManager().getAllDataTypes()]"
-        )
         names = [
-                    dType.getPathName()
-                    for dType in self.ghidra.currentProgram.getDataTypeManager().getAllDataTypes()
-                    if str(type(dType)) == "<class 'jfx_bridge.bridge._bridged_ghidra.program.database.data.EnumDB'>"
+            dType.getPathName()
+            for dType in self.ghidra.currentProgram.getDataTypeManager().getAllDataTypes()
+            if str(type(dType)) == "<class 'jfx_bridge.bridge._bridged_ghidra.program.database.data.EnumDB'>"
         ]
         return {name: Enum(name, self._get_enum_members(name)) for name in names} if names else {}
 
@@ -365,6 +360,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         code_unit = self.ghidra.import_module_object("ghidra.program.model.listing", "CodeUnit")
         set_cmt_cmd_cls = self.ghidra.import_module_object("ghidra.app.cmd.comments", "SetCommentCmd")
         cmt_type = code_unit.PRE_COMMENT if comment.decompiled else code_unit.EOL_COMMENT
+        if comment.addr == comment.func_addr:
+            cmt_type = code_unit.PLATE_COMMENT
 
         if comment.comment:
             # TODO: check if comment already exists, and append?
