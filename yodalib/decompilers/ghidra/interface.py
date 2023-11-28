@@ -296,12 +296,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return Enum(name, self._get_enum_members('/' + name))
 
     def _enums(self) -> Dict[str, Enum]:
-        names = [
-            dType.getPathName()
-            for dType in self.ghidra.currentProgram.getDataTypeManager().getAllDataTypes()
-            if str(type(dType)) == "<class 'jfx_bridge.bridge._bridged_ghidra.program.database.data.EnumDB'>"
-        ]
-        return {name: Enum(name, self._get_enum_members(name)) for name in names} if names else {}
+        names: Optional[List[str]] = self.ghidra.bridge.remote_eval(
+            "[dType.getPathName() "
+            "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
+            "if str(type(dType)) == \"<type 'ghidra.program.database.data.EnumDB'>\"]"
+        )
+
+        return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if name.count('/') == 1} if names else {}
 
     #
     # TODO: REMOVE ME THIS IS THE BINSYNC CODE
