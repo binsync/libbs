@@ -312,14 +312,16 @@ def set_function_header(yodalib_header: yodalib.data.FunctionHeader, exit_on_bad
     if yodalib_header.type and yodalib_header.type != cur_ret_type_str:
         old_prototype = str(ida_code_view.cfunc.type).replace("(", f" {func_name}(", 1)
         new_prototype = old_prototype.replace(cur_ret_type_str, yodalib_header.type, 1)
-        success = idc.SetType(func_addr, new_prototype)
+        success = bool(
+            ida_typeinf.apply_tinfo(func_addr, convert_type_str_to_ida_type(new_prototype), ida_typeinf.TINFO_DEFINITE)
+        )
 
         # we may need to reload types
         if success is None and exit_on_bad_type:
             return False
 
         data_changed |= success is True
-        #ida_codeview.refresh_view(data_changed)
+        ida_code_view.refresh_view(data_changed)
 
     #
     # FUNCTION ARGS
