@@ -6,7 +6,7 @@ from functools import wraps
 from yodalib.api import DecompilerInterface
 from yodalib.api.decompiler_interface import requires_decompilation
 from yodalib.data import (
-    Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember
+    Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
 )
 
 from .artifact_lifter import GhidraArtifactLifter
@@ -270,6 +270,40 @@ class GhidraDecompilerInterface(DecompilerInterface):
             name: Struct(name, size, members=self._struct_members_from_gstruct(name)) for name, size in name_sizes
         } if name_sizes else {}
 
+    @ghidra_transaction
+    def _set_enum(self, enum: Enum, **kwargs) -> bool:
+        corrected_enum_name = "/" + enum.name
+        old_ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
+        data_manager = self.ghidra.currentProgram.getDataTypeManager()
+        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
+        enumType = self.ghidra.import_module_object("ghidra.program.model.data", "EnumDataType")
+        categoryPath = self.ghidra.import_module_object("ghidra.program.model.data", "CategoryPath")
+        ghidra_enum = enumType(categoryPath('/'), enum.name, 4)
+        for m_name, m_val in enum.members.items():
+            ghidra_enum.add(m_name, m_val)
+
+        try:
+            if old_ghidra_enum:
+                data_manager.replaceDataType(old_ghidra_enum, ghidra_enum, True)
+            else:
+                data_manager.addDataType(ghidra_enum, handler.DEFAULT_HANDLER)
+            return True
+        except Exception as ex:
+            print(f'Error adding enum {enum.name}: {ex}')
+            return False
+
+    def _get_enum(self, name) -> Optional[Enum]:
+        members = self._get_enum_members('/' + name)
+        return Enum(name, members) if members else None
+
+    def _enums(self) -> Dict[str, Enum]:
+        names: Optional[List[str]] = self.ghidra.bridge.remote_eval(
+            "[dType.getPathName() "
+            "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
+            "if str(type(dType)) == \"<type 'ghidra.program.database.data.EnumDB'>\"]"
+        )
+        return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if name.count('/') == 1} if names else {}
+
     #
     # TODO: REMOVE ME THIS IS THE BINSYNC CODE
     # Filler/Setter API
@@ -327,6 +361,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         code_unit = self.ghidra.import_module_object("ghidra.program.model.listing", "CodeUnit")
         set_cmt_cmd_cls = self.ghidra.import_module_object("ghidra.app.cmd.comments", "SetCommentCmd")
         cmt_type = code_unit.PRE_COMMENT if comment.decompiled else code_unit.EOL_COMMENT
+        if comment.addr == comment.func_addr:
+            cmt_type = code_unit.PLATE_COMMENT
 
         if comment.comment:
             # TODO: check if comment already exists, and append?
@@ -340,7 +376,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # TODO: REMOVE ME THIS IS ALSO BINSYNC CODE
     # Artifact API
     #
-
     def global_var(self, addr) -> Optional[GlobalVariable]:
         light_global_vars = self.global_vars()
         for offset, global_var in light_global_vars.items():
@@ -459,6 +494,17 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return {
             offset: StructMember(name, offset, typestr, size) for name, offset, typestr, size in members
         } if members else {}
+
+    def _get_enum_members(self, name: str) -> Optional[Dict[str, int]]:
+        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(name)
+        if not ghidra_enum:
+            return None
+        name_vals: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
+            "[(name, ghidra_enum.getValue(name))"
+            "for name in ghidra_enum.getNames()]",
+            ghidra_enum=ghidra_enum
+        )
+        return {name: value for name, value in name_vals} if name_vals else {}
 
     def _get_nearest_function(self, addr: int) -> "GhidraFunction":
         func_manager = self.ghidra.currentProgram.getFunctionManager()
