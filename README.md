@@ -1,8 +1,8 @@
 # LibBS
- Your Only Decompiler API Library (LibBS)! 
+The decompiler API that works everywhere!
 
 LibBS is an abstracted decompiler API that enables you to write plugins/scripts that work, with minimal edit, 
-in every decompiler supported by LibBS. 
+in every decompiler supported by LibBS. LibBS was originally designed to work with [BinSync](https://binsync.net).
 
 ## Install
 ```bash
@@ -65,9 +65,8 @@ G/S: Getters/Setters
 - [ ] Change Callbacks
 
 ### Ghidra
-- [ ] Generic Interface Outline & Stubs
-- [ ] Every G/S
 - [ ] Change Callbacks
+- [ ] Get/Set Comments
 
 ### angr
 - [ ] Change Callbacks
