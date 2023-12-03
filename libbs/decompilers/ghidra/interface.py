@@ -315,7 +315,25 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return None
 
     def _comments(self) -> Dict[int, Comment]:
-        return {}
+        listing = self.ghidra.currentProgram.getListing()
+        comments = {}
+        for func in self.ghidra.currentProgram.getFunctionManager().getFunctions(True):
+            addrSet = func.getBody()
+            eol_text_addrs: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_exec(
+                "[(codeUnit.getComment(0), codeUnit.address)"
+                "for codeUnit in currentProgram.getListing().getCodeUnits(addrSet, True)"
+                "if codeUnit.getComment(0)",
+                addrSet=addrSet
+            )
+            pre_text_addrs: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_exec(
+                "[(codeUnit.getComment(1), codeUnit.address)"
+                "for codeUnit in currentProgram.getListing().getCodeUnits(addrSet, True)"
+                "if codeUnit.getComment(1)",
+                addrSet=addrSet
+            )
+            comments |= {addr: Comment(addr, text) for text, addr in eol_text_addrs}
+            comments |= {addr: Comment(addr, text, decompiled=True) for text, addr in pre_text_addrs}
+        return comments
 
     @ghidra_transaction
     def _set_enum(self, enum: Enum, **kwargs) -> bool:
