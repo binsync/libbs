@@ -300,6 +300,41 @@ class GhidraDecompilerInterface(DecompilerInterface):
             name: Struct(name, size, members=self._struct_members_from_gstruct(name)) for name, size in name_sizes
         } if name_sizes else {}
 
+    def _set_comment(self, comment: Comment, **kwargs) -> bool:
+        code_unit = self.ghidra.import_module_object("ghidra.program.model.listing", "CodeUnit")
+        set_cmt_cmd_cls = self.ghidra.import_module_object("ghidra.app.cmd.comments", "SetCommentCmd")
+        cmt_type = code_unit.PRE_COMMENT if comment.decompiled else code_unit.EOL_COMMENT
+        if comment.comment:
+            # TODO: check if comment already exists, and append?
+            return set_cmt_cmd_cls(
+                self.ghidra.toAddr(comment.addr), cmt_type, comment.comment
+            ).applyTo(self.ghidra.currentProgram)
+        return True
+
+    def _get_comment(self, addr) -> Optional[Comment]:
+        return None
+
+    def _comments(self) -> Dict[int, Comment]:
+        listing = self.ghidra.currentProgram.getListing()
+        comments = {}
+        for func in self.ghidra.currentProgram.getFunctionManager().getFunctions(True):
+            addrSet = func.getBody()
+            eol_text_addrs: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_exec(
+                "[(codeUnit.getComment(0), codeUnit.address)"
+                "for codeUnit in currentProgram.getListing().getCodeUnits(addrSet, True)"
+                "if codeUnit.getComment(0)",
+                addrSet=addrSet
+            )
+            pre_text_addrs: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_exec(
+                "[(codeUnit.getComment(1), codeUnit.address)"
+                "for codeUnit in currentProgram.getListing().getCodeUnits(addrSet, True)"
+                "if codeUnit.getComment(1)",
+                addrSet=addrSet
+            )
+            comments |= {addr: Comment(addr, text) for text, addr in eol_text_addrs}
+            comments |= {addr: Comment(addr, text, decompiled=True) for text, addr in pre_text_addrs}
+        return comments
+
     @ghidra_transaction
     def _set_enum(self, enum: Enum, **kwargs) -> bool:
         corrected_enum_name = "/" + enum.name
