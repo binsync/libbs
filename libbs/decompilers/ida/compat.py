@@ -263,6 +263,9 @@ def set_function(func: Function, decompiler_available=True, **kwargs):
         for svar in func.stack_vars.values():
             changes |= set_stack_variable(svar, decompiler_available=decompiler_available, **kwargs)
 
+    if changes and ida_code_view is not None:
+        ida_code_view.refresh_view(changes)
+
     return changes
 
 @execute_write
@@ -368,7 +371,6 @@ def set_function_header(libbs_header: libbs.data.FunctionHeader, exit_on_bad_typ
         return False
 
     data_changed |= success is True
-
     return data_changed
 
 #

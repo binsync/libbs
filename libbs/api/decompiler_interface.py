@@ -558,6 +558,22 @@ class DecompilerInterface:
         return had_changes
 
     #
+    # Special Loggers
+    #
+
+    def info(self, msg: str):
+        _l.info(msg)
+
+    def debug(self, msg: str):
+        _l.debug(msg)
+
+    def warning(self, msg: str):
+        _l.warning(msg)
+
+    def error(self, msg: str):
+        _l.error(msg)
+
+    #
     # Utils
     #
 
