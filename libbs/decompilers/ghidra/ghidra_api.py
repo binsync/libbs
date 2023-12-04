@@ -65,3 +65,14 @@ class GhidraAPIWrapper:
 
         if self.bridge:
             self.bridge.remote_exec(f'print("{string}")')
+
+    def ping(self):
+        connected = False
+        if self.bridge is not None:
+            try:
+                self.bridge.remote_eval("True")
+                connected = True
+            except Exception:
+                pass
+
+        return connected

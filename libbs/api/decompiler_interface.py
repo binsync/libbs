@@ -632,7 +632,7 @@ class DecompilerInterface:
             import angr
             import angrmanagement
             has_angr_man = DecompilerInterface._find_global_in_call_frames('workspace') is not None
-        except ImportError:
+        except Exception:
             pass
         if has_angr_man or force_decompiler == ANGR_DECOMPILER:
             from libbs.decompilers.angr.interface import AngrInterface
