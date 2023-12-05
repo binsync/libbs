@@ -158,7 +158,7 @@ class BinjaInterface(DecompilerInterface):
         if bn_func is None:
             return []
 
-        return [str(var.name) for var in bn_func.variables]
+        return [str(var.name) for var in bn_func.vars]
 
     @background_and_wait
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
@@ -182,6 +182,12 @@ class BinjaInterface(DecompilerInterface):
             bn_func.reanalyze()
 
         return update
+
+    def get_decompilation_object(self, function: Function) -> Optional[object]:
+        """
+        Binary Ninja has no internal object that needs to be refreshed.
+        """
+        return None
 
     #
     # GUI API
