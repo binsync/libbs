@@ -15,6 +15,8 @@ def create_context_action(ghidra: "GhidraAPIWrapper", name, action_string, callb
             threading.Thread(target=callback_func, daemon=True).start()
 
     action = GenericDecompilerCtxAction(name, category)
-    action.setPopupMenuData(MenuData([category, action_string], None, category))
+    category_list = category.split("/") if category else []
+    category_start = category_list[0] if category_list else category
+    action.setPopupMenuData(MenuData(category_list + [action_string], None, category_start))
 
     return action

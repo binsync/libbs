@@ -215,8 +215,12 @@ class BinjaInterface(DecompilerInterface):
 
     def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
         # TODO: this needs to have a wrapper function that passes the bv to the current controller
+        # correct name, category, and action_string for Binja
+        action_string = action_string.replace("/", "\\")
+        category = category.replace("/", "\\") if category else ""
+
         PluginCommand.register_for_address(
-            f"{category if category else ''}: {action_string}",
+            f"{category}\\{action_string}",
             action_string,
             callback_func,
             is_valid=self.is_bn_func

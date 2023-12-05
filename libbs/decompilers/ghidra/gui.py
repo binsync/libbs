@@ -8,6 +8,7 @@ from libbs.ui.qt_objects import (
     QApplication, QWidget, QLabel, QMainWindow, QVBoxLayout, QPushButton, QFileDialog, QGridLayout, QDialog
 )
 
+
 class FileSelectorDialog(QDialog):
     def __init__(self):
         super(FileSelectorDialog, self).__init__()

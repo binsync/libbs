@@ -79,12 +79,12 @@ class PluginInstaller:
     def display_install_instructions(self):
         print(textwrap.dedent("""
         Each decompiler/debugger will be prompted for install below. If you would like to skip install for something
-        you can enter 'n' or just hit enter. Each path prompt has tab completion, so you can tab to autocomplete.
+        you can enter 'n' or just hit enter. Each path prompt has tab path completion.
         Enter nothing in each path prompt to get the default listed.
         """))
 
     def display_epilogue(self):
-        self.good("Install completed! If anything was skipped by mistake, please manually install it.")
+        self.good("Plugin install completed! If anything was skipped by mistake, please manually install it.")
 
     @staticmethod
     def info(msg):
