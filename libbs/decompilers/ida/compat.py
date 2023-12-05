@@ -374,6 +374,32 @@ def set_function_header(libbs_header: libbs.data.FunctionHeader, exit_on_bad_typ
     return data_changed
 
 #
+# Variables
+#
+
+
+@execute_write
+@requires_decompilation
+def rename_local_variables_by_names(func: Function, name_map: typing.Dict[str, str], ida_code_view=None) -> bool:
+    lvars = {
+        lvar.name: lvar for lvar in ida_code_view.cfunc.get_lvars() if lvar.name
+    }
+    update = False
+    for name, lvar in lvars.items():
+        new_name = name_map.get(name, None)
+        if new_name is None:
+            continue
+
+        lvar.name = new_name
+        update |= True
+
+    if update:
+        ida_code_view.cfunc.refresh_func_ctext()
+
+    return update
+
+
+#
 # Stack Vars
 #
 
@@ -784,6 +810,8 @@ def acquire_pseudocode_vdui(addr):
     if func.start_ea != vu.cfunc.entry_ea:
         target_cfunc = idaapi.decompile(func.start_ea)
         vu.switch_to(target_cfunc, False)
+    else:
+        vu.refresh_view(True)
 
     return vu
 

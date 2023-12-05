@@ -177,26 +177,7 @@ class IDAInterface(DecompilerInterface):
 
     @requires_decompilation
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
-        dec = func.dec_obj
-        if dec is None:
-            return False
-
-        lvars = {
-            lvar.name: lvar for lvar in dec.get_lvars() if lvar.name
-        }
-        update = False
-        for name, lvar in lvars.items():
-            new_name = name_map.get(name, None)
-            if new_name is None:
-                continue
-
-            lvar.name = new_name
-            update |= True
-
-        if update:
-            dec.refresh_func_ctext()
-
-        return update
+        return compat.rename_local_variables_by_names(func, name_map)
 
     #
     # Artifact API
