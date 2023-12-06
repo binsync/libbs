@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 import textwrap
-import importlib.resources
+import sys
 import shutil
 from typing import Optional, Union, Tuple
 
@@ -49,6 +49,17 @@ class PluginInstaller:
         self._home = Path(os.getenv("HOME") or "~/").expanduser().absolute()
         self.target_install_paths = target_install_paths or {} #or self._populate_installs_from_config()
         self._successful_installs = {}
+
+    @staticmethod
+    def find_pkg_files(pkg_name):
+        if sys.version_info > (3, 8):
+            import importlib.resources
+            path = str(importlib.resources.files(pkg_name))
+        else:
+            import pkg_resources
+            path = pkg_resources.resource_filename(pkg_name, "")
+
+        return Path(path).absolute()
 
     def _populate_installs_from_config(self):
         config = GlobalConfig.update_or_make(self._home)
@@ -227,7 +238,7 @@ class PluginInstaller:
 class LibBSPluginInstaller(PluginInstaller):
     def __init__(self):
         super().__init__(targets=PluginInstaller.DECOMPILERS)
-        self.plugins_path = Path(str(importlib.resources.files("libbs"))).joinpath("decompiler_stubs")
+        self.plugins_path = self.find_pkg_files("libbs").joinpath("decompiler_stubs")
 
     def display_prologue(self):
         print(textwrap.dedent("""
