@@ -52,7 +52,7 @@ class PluginInstaller:
 
     @staticmethod
     def find_pkg_files(pkg_name):
-        if sys.version_info > (3, 8):
+        if sys.version_info >= (3, 9):
             import importlib.resources
             path = str(importlib.resources.files(pkg_name))
         else:
