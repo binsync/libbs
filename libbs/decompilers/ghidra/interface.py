@@ -230,6 +230,33 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return funcs
 
     @ghidra_transaction
+    def _set_stack_variable(self, svar: StackVariable, **kwargs) -> bool:
+        changes = False
+        decompilation = kwargs.get('decompilation', None) or self._ghidra_decompile(self._get_function(svar.addr))
+        ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(svar.addr)
+        gstack_var = self._get_gstack_var(ghidra_func, svar.offset)
+        src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
+
+        if svar.name and svar.name != gstack_var.getName():
+            gstack_var.setName(svar.name, src_type.USER_DEFINED)
+            changes = True
+
+        if svar.type:
+            parsed_type = self.typestr_to_gtype(svar.type)
+            if parsed_type is not None and parsed_type != str(gstack_var.getDataType()):
+                gstack_var.setDataType(parsed_type, False, True, src_type.USER_DEFINED)
+                changes = True
+
+        return changes
+
+    def _get_stack_variable(self, addr: int, offset: int, **kwargs) -> Optional[StackVariable]:
+        gstack_var = self._get_gstack_var(addr, offset)
+        if gstack_var is None:
+            return None
+
+        return self._gstack_var_to_bsvar(gstack_var)
+
+    @ghidra_transaction
     def _set_function_header(self, fheader: FunctionHeader, decompilation=None, **kwargs) -> bool:
         changes = False
         func_addr = fheader.addr
@@ -319,7 +346,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return None
 
     def _comments(self) -> Dict[int, Comment]:
-        listing = self.ghidra.currentProgram.getListing()
         comments = {}
         for func in self.ghidra.currentProgram.getFunctionManager().getFunctions(True):
             addrSet = func.getBody()
@@ -379,26 +405,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     @ghidra_transaction
-    def fill_stack_variable(self, func_addr, offset, user=None, artifact=None, decompilation=None, **kwargs):
-        stack_var: StackVariable = artifact
-        changes = False
-        ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(func_addr)
-        gstack_var = self._get_gstack_var(ghidra_func, offset)
-        src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
-
-        if stack_var.name and stack_var.name != gstack_var.getName():
-            gstack_var.setName(stack_var.name, src_type.USER_DEFINED)
-            changes = True
-
-        if stack_var.type:
-            parsed_type = self.typestr_to_gtype(stack_var.type)
-            if parsed_type is not None and parsed_type != str(gstack_var.getDataType()):
-                gstack_var.setDataType(parsed_type, False, True, src_type.USER_DEFINED)
-                changes = True
-
-        return changes
-
-    @ghidra_transaction
     def fill_global_var(self, var_addr, user=None, artifact=None, **kwargs):
         changes = False
         global_var: GlobalVariable = artifact
@@ -424,27 +430,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return changes
 
-    @ghidra_transaction
-    def fill_comment(self, addr, user=None, artifact=None, **kwargs):
-        comment: Comment = artifact
-        code_unit = self.ghidra.import_module_object("ghidra.program.model.listing", "CodeUnit")
-        set_cmt_cmd_cls = self.ghidra.import_module_object("ghidra.app.cmd.comments", "SetCommentCmd")
-        cmt_type = code_unit.PRE_COMMENT if comment.decompiled else code_unit.EOL_COMMENT
-        if comment.addr == comment.func_addr:
-            cmt_type = code_unit.PLATE_COMMENT
-
-        if comment.comment:
-            # TODO: check if comment already exists, and append?
-            return set_cmt_cmd_cls(
-                self.ghidra.toAddr(addr), cmt_type, comment.comment
-            ).applyTo(self.ghidra.currentProgram)
-
-        return False
-
-    #
-    # TODO: REMOVE ME THIS IS ALSO BINSYNC CODE
-    # Artifact API
-    #
     def global_var(self, addr) -> Optional[GlobalVariable]:
         light_global_vars = self.global_vars()
         for offset, global_var in light_global_vars.items():
@@ -476,15 +461,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
             addr: GlobalVariable(addr, name) for name, addr in gvar_addr_and_name
         }
         return gvars
-
-    # Potentially unneeded in rework and never called?
-    def stack_variable(self, func_addr, offset) -> Optional[StackVariable]:
-        gstack_var = self._get_gstack_var(func_addr, offset)
-
-        if gstack_var is None:
-            return None
-        bs_stack_var = self._gstack_var_to_bsvar(gstack_var)
-        return bs_stack_var
 
     #
     # Specialized print handlers
