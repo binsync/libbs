@@ -49,7 +49,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         # connect to the remote bridge, assumes Ghidra is already running!
         if self.headless:
             #TODO: Generalize this for all users
-            subprocess.Popen(["/home/flipout/.local/bin/ghidra_10.4_PUBLIC/support/analyzeHeadless",
+            subprocess.Popen([self.headless_binary_path,
                               "/home/flipout/", "ci",
                               "-import", "/home/flipout/Downloads/fauxware",
                               "-scriptPath", "/home/flipout/ghidra_scripts/",
