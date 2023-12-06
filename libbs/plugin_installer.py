@@ -72,8 +72,9 @@ class PluginInstaller:
 
     def install(self, interactive=True, paths_by_target=None):
         self.target_install_paths.update(paths_by_target or {})
+        self.display_prologue()
+
         if interactive:
-            self.display_prologue()
             self.display_install_instructions()
 
         try:
@@ -81,8 +82,7 @@ class PluginInstaller:
         except Exception as e:
             print(f"Stopping Install... because: {e}")
 
-        if interactive:
-            self.display_epilogue()
+        self.display_epilogue()
 
     def display_prologue(self):
         pass
@@ -182,6 +182,9 @@ class PluginInstaller:
             path = self.target_install_paths.get(f"{target}", None)
             if path:
                 path = Path(path).expanduser().absolute()
+
+            if not path and not interactive:
+                continue
 
             res = target_installer(path=path, interactive=interactive)
             if res is None:
