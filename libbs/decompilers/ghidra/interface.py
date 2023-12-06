@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import logging
+import subprocess
 from functools import wraps
 
 from libbs.api import DecompilerInterface
@@ -45,6 +46,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.base_addr = None
 
         self.loop_on_plugin = loop_on_plugin
+        # connect to the remote bridge, assumes Ghidra is already running!
+        if self.headless:
+            #TODO: Generalize this for all users
+            subprocess.Popen(["/home/flipout/.local/bin/ghidra_10.4_PUBLIC/support/analyzeHeadless",
+                              "/home/flipout/", "ci",
+                              "-import", "/home/flipout/Downloads/fauxware",
+                              "-scriptPath", "/home/flipout/ghidra_scripts/",
+                              "-postScript", "ghidra_bridge_server.py"])
+        if not self.connect_ghidra_bridge():
+            raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
 
     def _init_gui_components(self, *args, **kwargs):
         if not self.connect_ghidra_bridge():
