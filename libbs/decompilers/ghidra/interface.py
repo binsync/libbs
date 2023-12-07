@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import logging
 import subprocess
+import tempfile
+import os
 from functools import wraps
 
 from libbs.api import DecompilerInterface
@@ -10,6 +12,7 @@ from libbs.api.decompiler_interface import requires_decompilation
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
 )
+from libbs.plugin_installer import PluginInstaller
 
 from .artifact_lifter import GhidraArtifactLifter
 from .ghidra_api import GhidraAPIWrapper
@@ -46,14 +49,21 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.base_addr = None
 
         self.loop_on_plugin = loop_on_plugin
-        # connect to the remote bridge, assumes Ghidra is already running!
+
+        # Startup headless ghidra binary
         if self.headless:
-            #TODO: Generalize this for all users
-            subprocess.Popen([self.headless_binary_path,
-                              "/home/flipout/", "ci",
-                              "-import", "/home/flipout/Downloads/fauxware",
-                              "-scriptPath", "/home/flipout/ghidra_scripts/",
-                              "-postScript", "ghidra_bridge_server.py"])
+            script_path = PluginInstaller.find_pkg_files("libbs") / "decompiler_stubs" / "ghidra_libbs"
+            tmpdir = tempfile.TemporaryDirectory()
+            self.headless_project = tmpdir
+            subprocess.Popen([str(self.headless_binary_path),
+                              tmpdir.name, "ci",
+                              "-import", str(self.binary),
+                              "-scriptPath", str(script_path),
+                              "-postScript", "ghidra_libbs_mainthread_server.py"],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+
+        # Connect to the remote bridge, assumes Ghidra is already running!
         if not self.connect_ghidra_bridge():
             raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
 
@@ -61,6 +71,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not self.connect_ghidra_bridge():
             raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
         super()._init_gui_components(*args, **kwargs)
+
+    def shutdown(self):
+        self.ghidra.bridge.remote_shutdown()
+        self.headless_project.cleanup()
 
     #
     # GUI
@@ -199,7 +213,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         stack_variables = {}
         if stack_variable_info:
             stack_variables = {
-                offset: StackVariable(offset, name, typestr, size, addr) for offset, name, typestr, size in stack_variable_info
+                offset: StackVariable(offset, name, typestr, size, addr) for offset, name, typestr, size in
+                stack_variable_info
             }
 
         arg_variable_info: Optional[List[Tuple[int, str, str, int]]] = self.ghidra.bridge.remote_eval(
@@ -418,7 +433,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
             "if str(type(dType)) == \"<type 'ghidra.program.artifactsbase.artifacts.EnumDB'>\"]"
         )
-        return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if name.count('/') == 1} if names else {}
+        return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if
+                name.count('/') == 1} if names else {}
 
     @ghidra_transaction
     def fill_global_var(self, var_addr, user=None, artifact=None, **kwargs):
@@ -529,7 +545,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @ghidra_transaction
     def _update_local_variable_symbols(
-        self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]
+            self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]
     ) -> bool:
         """
         @param decompilation:
@@ -591,7 +607,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             gstack_var.getName(),
             str(gstack_var.getDataType()),
             gstack_var.getLength(),
-            gstack_var.getFunction().getEntryPoint().getOffset() # Unsure if this is what is wanted here
+            gstack_var.getFunction().getEntryPoint().getOffset()  # Unsure if this is what is wanted here
         )
         return bs_stack_var
 

@@ -46,8 +46,8 @@ class DecompilerInterface:
         supports_undo: bool = False,
         # these will be changed often by public API use
         headless: bool = False,
-        headless_binary_path: Optional[Path] = None,
-        binary: Optional[Path] = None,
+        headless_binary_path: Optional[str] = None,
+        binary: Optional[str] = None,
         init_plugin: bool = False,
         plugin_name: str = f"generic_libbs_plugin",
         # [category/name] = (action_string, callback_func)
@@ -63,8 +63,15 @@ class DecompilerInterface:
         self.supports_undo = supports_undo
         self.qt_version = qt_version
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
-        self.headless_binary_path = headless_binary_path
-        self.binary = binary
+
+        headless_path = Path(headless_binary_path)
+        bin_path = Path(binary)
+        if not headless_path.exists():
+            raise FileNotFoundError("Path to headless binary not found")
+        if not bin_path.exists():
+            raise FileNotFoundError("Path to binary not found")
+        self.headless_binary_path = headless_path
+        self.binary = bin_path
 
         # GUI things
         self.headless = headless

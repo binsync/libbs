@@ -23,6 +23,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest
         pip install .
+    - name: Install Ghidra and Fauxware binary
+      run: |
+        echo "not yet implemented"
     - name: Pytest
       run: |
         pytest ./tests/tests.py
