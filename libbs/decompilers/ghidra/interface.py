@@ -61,9 +61,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                               "-scriptPath", str(script_path),
                               "-postScript", "ghidra_libbs_mainthread_server.py"],
                              stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL,
-                             env=os.environ.copy(),
-                             shell=True)
+                             stderr=subprocess.DEVNULL)
 
         # Connect to the remote bridge, assumes Ghidra is already running!
         if not self.connect_ghidra_bridge():
