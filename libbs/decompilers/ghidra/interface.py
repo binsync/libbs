@@ -56,12 +56,14 @@ class GhidraDecompilerInterface(DecompilerInterface):
             tmpdir = tempfile.TemporaryDirectory()
             self.headless_project = tmpdir
             subprocess.Popen([str(self.headless_binary_path),
-                              tmpdir.name, "ci",
+                              tmpdir.name, "headless",
                               "-import", str(self.binary),
                               "-scriptPath", str(script_path),
                               "-postScript", "ghidra_libbs_mainthread_server.py"],
                              stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
+                             stderr=subprocess.DEVNULL,
+                             env=os.environ.copy(),
+                             shell=True)
 
         # Connect to the remote bridge, assumes Ghidra is already running!
         if not self.connect_ghidra_bridge():

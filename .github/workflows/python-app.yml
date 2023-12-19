@@ -23,9 +23,22 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest
         pip install .
-    - name: Install Ghidra and Fauxware binary
+    - name: Set up Java 11
+      uses: actions/setup-java@v2
+      with:
+        java-version: "11.0.x"
+        java-package: jdk
+        architecture: x64
+    - name: Install Ghidra
+      uses: er28-0652/setup-ghidra@master
+      with:
+        version: "latest"
+    - name: Download fauxware binary
       run: |
-        echo "not yet implemented"
+        sudo apt-get install git
+        git clone https://github.com/binsync/example.bsproj.git
+        cd example.bsproj
+        git checkout data
     - name: Pytest
       run: |
         pytest ./tests/tests.py

@@ -5,12 +5,11 @@ from libbs.api import DecompilerInterface
 
 class TestHeadlessInterfaces(unittest.TestCase):
     def test_ghidra_interface(self):
-        # TODO: install ghidra and fauxware on ci box for testing
-        ci_headless_binary_path = "/ghidra_10.4_PUBLIC/support/analyzeHeadless" # TODO: update with real path
+        ci_headless_binary_path = "$GHIDRA_INSTALL_DIR/support/analyzeHeadless"
         deci = DecompilerInterface.discover_interface(force_decompiler="ghidra",
                                                       headless=True,
                                                       headless_binary=ci_headless_binary_path,
-                                                      binary="/fauxware"
+                                                      binary="~/example.bsproj/fauxware"
                                                       )
         main = deci.functions[0x400664]
         main.name = "main"
