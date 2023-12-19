@@ -38,6 +38,7 @@ jobs:
         git clone https://github.com/binsync/example.bsproj.git
         cd example.bsproj
         git checkout data
+        cp ./fauxware ~/fauxware
     - name: Pytest
       run: |
         pytest ./tests/tests.py
