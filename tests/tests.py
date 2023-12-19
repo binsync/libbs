@@ -8,7 +8,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         ci_headless_binary_path = "$GHIDRA_INSTALL_DIR/support/analyzeHeadless"
         deci = DecompilerInterface.discover_interface(force_decompiler="ghidra",
                                                       headless=True,
-                                                      headless_binary=ci_headless_binary_path,
+                                                      headless_binary_path=ci_headless_binary_path,
                                                       binary="~/example.bsproj/fauxware"
                                                       )
         main = deci.functions[0x400664]
