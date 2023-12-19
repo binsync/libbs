@@ -30,9 +30,9 @@ jobs:
         java-package: jdk
         architecture: x64
     - name: Install Ghidra
-      uses: er28-0652/setup-ghidra@master
+      uses: er28-0652/setup-ghidra@0.0.6
       with:
-        version: "latest"
+        version: "10.4"
     - name: Download fauxware binary
       run: |
         sudo apt-get install git
