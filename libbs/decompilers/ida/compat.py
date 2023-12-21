@@ -9,6 +9,7 @@
 #
 # ----------------------------------------------------------------------------
 import datetime
+import re
 import threading
 from functools import wraps
 import typing
@@ -113,7 +114,7 @@ def convert_type_str_to_ida_type(type_str) -> typing.Optional['ida_typeinf']:
 
 
 @execute_write
-def ida_to_angr_stack_offset(func_addr, ida_stack_off):
+def ida_to_bs_stack_offset(func_addr, ida_stack_off):
     frame = idaapi.get_frame(func_addr)
     if not frame:
         return ida_stack_off
@@ -291,7 +292,6 @@ def function_header(ida_code_view) -> FunctionHeader:
                                        last_change=datetime.datetime.now(tz=datetime.timezone.utc))
     return ida_function_info
 
-
 @execute_write
 @requires_decompilation
 def set_function_header(libbs_header: libbs.data.FunctionHeader, exit_on_bad_type=False, ida_code_view=None):
@@ -373,9 +373,71 @@ def set_function_header(libbs_header: libbs.data.FunctionHeader, exit_on_bad_typ
     data_changed |= success is True
     return data_changed
 
+
+def bs_header_from_tif(tif, name=None, addr=None):
+    """
+    Takes a ida_typeinf.tinfo_t and converts it into a BinSync FunctionHeader.
+    You can optionally specify the name of the function, which is usually not in the tif, otherwise it will be None.
+
+    TODO: its kinda broken, better to use vdui ptr and grab data
+    """
+    ret_type = str(tif.get_rettype())
+    bs_header = FunctionHeader(name, addr, type_=ret_type, args={})
+
+    nargs = tif.get_nargs()
+    if not nargs:
+        return bs_header
+
+    bs_args = {}
+    # construct a really wack regex which essentially finds where the args are in the prototype
+    proto_str_regex = "\\("
+    for idx in range(nargs):
+        arg_ida_type = tif.get_nth_arg(idx)
+        bs_arg = FunctionArgument(idx, None, str(arg_ida_type), arg_ida_type.get_size())
+        bs_args[bs_arg.offset] = bs_arg
+
+        # make sure the * does not make it into the regex
+        arg_type_str = bs_arg.type.replace("*", "\\*").replace("(", "\\(").replace(")", "")
+        # every arg has some space and a name, group the name
+        proto_str_regex += rf"\s*{arg_type_str}\s*(.+?)"
+        if idx != nargs - 1:
+            proto_str_regex += ","
+
+    proto_str_regex += "\\)"
+    matches = re.findall(proto_str_regex, str(tif))
+    if not matches:
+        l.warning(f"Failed to parse a function header with header: {str(tif)}")
+        return bs_header
+
+    match = matches[0]
+    for i, name in enumerate(match):
+        bs_args[i].name = name
+
+    return bs_header
+
+
 #
 # Variables
 #
+
+
+def lvar_to_bs_var(lvar, vdui=None, var_name=None) -> typing.Optional[FunctionArgument]:
+    # only func args are supported right now
+    if lvar is None or vdui is None or not lvar.is_arg_var or vdui.cfunc is None or not vdui.cfunc.lvars:
+        return None
+
+    # find the offset
+    var_name = var_name or lvar.name
+    for offset, _lvar in enumerate(vdui.cfunc.lvars):
+        if _lvar.name == var_name:
+            break
+    else:
+        return None
+
+    # construct the type
+    type_ = str(_lvar.type())
+    size = _lvar.width
+    return FunctionArgument(offset, var_name, type_, size)
 
 
 @execute_write
@@ -516,7 +578,7 @@ def get_func_stack_var_info(func_addr) -> typing.Dict[int, StackVariable]:
         name = var.name
         
         ida_offset = var.location.stkoff() - decompilation.get_stkoff_delta()
-        bs_offset = ida_to_angr_stack_offset(func_addr, ida_offset)
+        bs_offset = ida_to_bs_stack_offset(func_addr, ida_offset)
         type_str = str(var.type())
         stack_var_info[bs_offset] = StackVariable(
             ida_offset, name, type_str, size, func_addr
@@ -712,6 +774,14 @@ def global_var(addr):
 def set_global_var_name(var_addr, name):
     return idaapi.set_name(var_addr, name)
 
+
+def ida_type_from_serialized(typ: bytes, fields: bytes):
+    tif = ida_typeinf.tinfo_t()
+    if not tif.deserialize(ida_typeinf.get_idati(), typ, fields):
+        tif = None
+
+    return tif
+
 #
 # Enums
 #
@@ -902,8 +972,16 @@ def xrefs_to(addr):
     return list(idautils.XrefsTo(addr))
 
 
+def wait_for_idc_initialization():
+    idc.auto_wait()
+
+
+def initialize_decompiler():
+    return bool(ida_hexrays.init_hexrays_plugin())
+
+
 def has_older_hexrays_version():
-    idc.auto_wait() 
+    wait_for_idc_initialization()
     try:
         vers = ida_hexrays.get_hexrays_version()
     except Exception:

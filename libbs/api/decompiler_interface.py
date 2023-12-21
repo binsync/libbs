@@ -4,7 +4,7 @@ import re
 import threading
 from collections import defaultdict
 from functools import wraps
-from typing import Dict, Optional, Union, Tuple, List
+from typing import Dict, Optional, Union, Tuple, List, Callable, Type
 
 import libbs
 from libbs.api.artifact_lifter import ArtifactLifter
@@ -34,7 +34,7 @@ def requires_decompilation(f):
     return _requires_decompilation
 
 
-def artifact_set_event(f):
+def artifact_write_event(f):
     @wraps(f)
     def _artifact_set_event(self: "DecompilerInterface", *args, **kwargs):
         return self.artifact_set_event_handler(f, *args, **kwargs)
@@ -68,6 +68,8 @@ class DecompilerInterface:
         gui_ctx_menu_actions: Optional[dict] = None,
         ui_init_args: Optional[Tuple] = None,
         ui_init_kwargs: Optional[Dict] = None,
+        # [artifact_class] = list(callback_func)
+        artifact_write_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
     ):
         self.name = name
         self.artifact_lifer = artifact_lifter
@@ -85,7 +87,11 @@ class DecompilerInterface:
         self._plugin_name = plugin_name
         self.gui_plugin = None
 
-        self.artifact_set_lock = threading.Lock()
+        # locks
+        self.artifact_write_lock = threading.Lock()
+
+        # callback functions, keyed by Artifact class
+        self.artifact_write_callbacks = artifact_write_callbacks or defaultdict(list)
 
         # artifact dict aliases
         self.functions = ArtifactDict(Function, self, error_on_duplicate=error_on_artifact_duplicates)
@@ -104,6 +110,26 @@ class DecompilerInterface:
     #
     # Decompiler GUI API
     #
+
+    def start_artifact_watchers(self):
+        """
+        Starts the artifact watchers for the decompiler. This is a special function that is called
+        by the decompiler interface when the decompiler is ready to start watching for changes in the
+        decompiler. This is useful for plugins that want to watch for changes in the decompiler and
+        react to them.
+
+        @return:
+        """
+        pass
+
+    def stop_artifact_watchers(self):
+        """
+        Stops the artifact watchers for the decompiler. This is a special function that is called
+        by the decompiler interface when the decompiler is ready to stop watching for changes in the
+        decompiler. This is useful for plugins that want to watch for changes in the decompiler and
+        react to them.
+        """
+        pass
 
     def _init_ui_components(self, *args, **kwargs):
         from libbs.ui.version import set_ui_version
@@ -204,6 +230,7 @@ class DecompilerInterface:
 
     def decompile(self, addr: int) -> Optional[str]:
         if not self.decompiler_available:
+            _l.error("Decompiler is not available.")
             return None
 
         # TODO: make this a function call after transitioning decompiler artifacts to LiveState
@@ -491,23 +518,29 @@ class DecompilerInterface:
     # all this code should be implemented in the other decompilers or moved to a different project
     #
 
-    def on_function_header_changed(self, fheader: FunctionHeader):
-        pass
+    def function_header_changed(self, fheader: FunctionHeader, **kwargs):
+        for callback_func in self.artifact_write_callbacks[FunctionHeader]:
+            callback_func(fheader, **kwargs)
 
-    def on_stack_variable_changed(self, svar: StackVariable):
-        pass
+    def stack_variable_changed(self, svar: StackVariable, **kwargs):
+        for callback_func in self.artifact_write_callbacks[StackVariable]:
+            callback_func(svar, **kwargs)
 
-    def on_comment_changed(self, comment: Comment):
-        pass
+    def comment_changed(self, comment: Comment, **kwargs):
+        for callback_func in self.artifact_write_callbacks[Comment]:
+            callback_func(comment, **kwargs)
 
-    def on_struct_changed(self, struct: Struct):
-        pass
+    def struct_changed(self, struct: Struct, deleted=False, **kwargs):
+        for callback_func in self.artifact_write_callbacks[Struct]:
+            callback_func(struct, deleted=deleted, **kwargs)
 
-    def on_enum_changed(self, enum: Enum):
-        pass
+    def enum_changed(self, enum: Enum, deleted=False, **kwargs):
+        for callback_func in self.artifact_write_callbacks[Enum]:
+            callback_func(enum, deleted=deleted, **kwargs)
 
-    def on_global_variable_changed(self, gvar: GlobalVariable):
-        pass
+    def global_variable_changed(self, gvar: GlobalVariable, **kwargs):
+        for callback_func in self.artifact_write_callbacks[GlobalVariable]:
+            callback_func(gvar, **kwargs)
 
     #
     # Client API & Shortcuts
@@ -548,7 +581,7 @@ class DecompilerInterface:
         """
 
         lowered_artifact = self.lower_artifact(artifact)
-        lock = self.artifact_set_lock if not self.artifact_set_lock.locked() else DummyArtifactSetLock()
+        lock = self.artifact_write_lock if not self.artifact_write_lock.locked() else DummyArtifactSetLock()
         with lock:
             try:
                 had_changes = setter_func(lowered_artifact, **kwargs)
@@ -561,16 +594,16 @@ class DecompilerInterface:
     # Special Loggers
     #
 
-    def info(self, msg: str):
+    def info(self, msg: str, **kwargs):
         _l.info(msg)
 
-    def debug(self, msg: str):
+    def debug(self, msg: str, **kwargs):
         _l.debug(msg)
 
-    def warning(self, msg: str):
+    def warning(self, msg: str, **kwargs):
         _l.warning(msg)
 
-    def error(self, msg: str):
+    def error(self, msg: str, **kwargs):
         _l.error(msg)
 
     #

@@ -2,17 +2,24 @@
 The decompiler API that works everywhere!
 
 LibBS is an abstracted decompiler API that enables you to write plugins/scripts that work, with minimal edit, 
-in every decompiler supported by LibBS. LibBS was originally designed to work with [BinSync](https://binsync.net).
+in every decompiler supported by LibBS. LibBS was originally designed to work with [BinSync](https://binsync.net), and is the backbone
+for all BinSync based plugins.
 
 ## Install
 ```bash
-pip install -e .
+pip install libbs
 ```
+
+You can optionally also do `libbs --install` after to install generic plugins, but it's not required, since `libbs` 
+files will be installed with plugins that use it. 
 
 ## Usage
 LibBS exposes all decompiler API through the abstract class `DecompilerInterface`. The `DecompilerInterface` 
 can be used in either the default mode, which assumes a GUI, or `headless` mode. In `headless` mode, the interface will 
-start a new process using a specified decompiler. 
+start a new process using a specified decompiler.
+
+You can find various examples using LibBS in the [examples](./examples) folder. Examples that are plugins show off
+more of the complicated API that allows you to use an abstracted UI, artifacts, and more. 
 
 ### UI Mode (default)
 To use the same script everywhere, use the convenience function `DecompilerInterface.discover_interface()`, which will
@@ -53,12 +60,7 @@ info. This also means using `keys`, `values`, or `list` on an artifact dictionar
 G/S: Getters/Setters
 - [ ] Add all decompilers to auto-detect interface
 
-### ALL
-- [ ] Move hook-inits to inside the `Interface` creation for all decompilers?
-  - This could cause issues. What happens when this is done twice?
-
 ### IDA
-- [ ] Change Callbacks
 - [ ] G/S Comments
 
 ### Binja
