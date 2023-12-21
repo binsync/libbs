@@ -9,14 +9,14 @@ import idaapi
 import ida_hexrays
 
 import libbs
-from libbs.api.decompiler_interface import DecompilerInterface, artifact_set_event
+from libbs.api.decompiler_interface import DecompilerInterface, artifact_write_event
 from libbs.data import (
     StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact
 )
 from libbs.api.decompiler_interface import requires_decompilation
 from . import compat
 from .artifact_lifter import IDAArtifactLifter
-from .hooks import ContextMenuHooks, ScreenHook
+from .hooks import ContextMenuHooks, ScreenHook, IDBHooks, IDPHooks, HexraysHooks
 
 _l = logging.getLogger(name=__name__)
 
@@ -27,9 +27,14 @@ _l = logging.getLogger(name=__name__)
 
 class IDAInterface(DecompilerInterface):
     def __init__(self, **kwargs):
+        compat.wait_for_idc_initialization()
         self._ctx_menu_names = []
-        super(IDAInterface, self).__init__(
-            name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self), **kwargs
+        self._ui_hooks = []
+        self._artifact_watcher_hooks = []
+
+        super().__init__(
+            name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self),
+            decompiler_available=compat.initialize_decompiler(), **kwargs
         )
 
         self._max_patch_size = 0xff
@@ -38,7 +43,6 @@ class IDAInterface(DecompilerInterface):
 
         # GUI properties
         self._updated_ctx = None
-        self._ui_hooks = []
 
     #
     # Controller Interaction
@@ -99,6 +103,21 @@ class IDAInterface(DecompilerInterface):
     # GUI API
     #
 
+    def start_artifact_watchers(self):
+        self._artifact_watcher_hooks = [
+            IDBHooks(self),
+            # this hook is special because it relies on the decompiler being present, which can only be checked
+            # after the plugin loading phase. this means the user will need to manually init this hook in the UI
+            # either through scripting or a UI.
+            HexraysHooks(self),
+        ]
+        for hook in self._artifact_watcher_hooks:
+            hook.hook()
+
+    def stop_artifact_watchers(self):
+        for hook in self._artifact_watcher_hooks:
+            hook.unhook()
+
     def gui_ask_for_string(self, question, title="Plugin Question") -> str:
         resp = idaapi.ask_str("", 0, question)
         return resp if resp else ""
@@ -110,9 +129,9 @@ class IDAInterface(DecompilerInterface):
         """
         self._ui_hooks = [
             ScreenHook(self),
-            ContextMenuHooks(self, menu_strs=self._ctx_menu_names)
+            ContextMenuHooks(self, menu_strs=self._ctx_menu_names),
+            IDPHooks(self),
         ]
-
         for hook in self._ui_hooks:
             hook.hook()
 
