@@ -27,7 +27,6 @@ _l = logging.getLogger(name=__name__)
 
 class IDAInterface(DecompilerInterface):
     def __init__(self, **kwargs):
-        compat.wait_for_idc_initialization()
         self._ctx_menu_names = []
         self._ui_hooks = []
         self._artifact_watcher_hooks = []
