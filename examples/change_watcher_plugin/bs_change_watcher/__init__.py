@@ -85,5 +85,10 @@ class BSChangeWatcherInstaller(LibBSPluginInstaller):
         if not path:
             return
 
+        path = path / "plugins" / "bs_change_watcher"
+        path.mkdir(parents=True, exist_ok=True)
+        src = self.pkg_path / "plugin.toml"
+        dst = Path(path) / "plugin.toml"
+        self.link_or_copy(src, dst, symlink=True)
         self._copy_plugin_to_path(path)
         return path
