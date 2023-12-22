@@ -13,6 +13,7 @@ from libbs.data import (
     Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact
 )
 from .artifact_lifter import AngrArtifactLifter
+from .compat import GenericBSAngrManagementPlugin
 
 l = logging.getLogger(__name__)
 
@@ -33,13 +34,14 @@ class AngrInterface(DecompilerInterface):
     """
 
     def __init__(self, workspace=None, headless=False, binary_path: Path = None, **kwargs):
-        self.workspace = workspace
         if workspace is None and not headless:
             l.critical("The workspace provided is None, which will result in a broken BinSync.")
             return
 
+        self.workspace = workspace
         self.main_instance = workspace.main_instance if workspace else self
         self._binary_path = Path(binary_path) if binary_path is not None else binary_path
+        self._ctx_menu_items = []
         super().__init__(name="angr", artifact_lifter=AngrArtifactLifter(self), headless=headless, **kwargs)
 
     def _init_headless_components(self):
@@ -52,25 +54,6 @@ class AngrInterface(DecompilerInterface):
 
     def binary_hash(self) -> str:
         return self.main_instance.project.loader.main_object.md5.hex()
-
-    def active_context(self):
-        curr_view = self.workspace.view_manager.current_tab
-        if not curr_view:
-            return None
-
-        try:
-            func = curr_view.function
-        except NotImplementedError:
-            return None
-
-        if func is None or func.am_obj is None:
-            return None
-
-        func_addr = self.rebase_addr(func.addr)
-
-        return Function(
-            func_addr, 0, header=FunctionHeader(func.name, func_addr)
-        )
 
     def binary_path(self) -> Optional[str]:
         try:
@@ -144,6 +127,43 @@ class AngrInterface(DecompilerInterface):
         return codegen.text
 
     #
+    # GUI API
+    #
+
+    def _init_gui_plugin(self, *args, **kwargs):
+        self.gui_plugin = GenericBSAngrManagementPlugin(self.workspace, self)
+        self.workspace.plugins.register_active_plugin(self._plugin_name, self.gui_plugin)
+        return self.gui_plugin
+
+    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+        if self.gui_plugin is None:
+            l.critical("Cannot register context menu item without a GUI plugin.")
+            return False
+
+        self._ctx_menu_items.append((name, action_string, callback_func, category))
+        self.gui_plugin.context_menu_items = self._ctx_menu_items
+        return True
+
+    def active_context(self):
+        curr_view = self.workspace.view_manager.current_tab
+        if not curr_view:
+            return None
+
+        try:
+            func = curr_view.function
+        except NotImplementedError:
+            return None
+
+        if func is None or func.am_obj is None:
+            return None
+
+        func_addr = self.rebase_addr(func.addr)
+
+        return Function(
+            func_addr, 0, header=FunctionHeader(func.name, func_addr)
+        )
+
+    #
     # Artifact API
     #
 
@@ -181,7 +201,8 @@ class AngrInterface(DecompilerInterface):
 
         func.header.args = self.func_args_as_libbs_args(decompilation)
         # overwrite type again since it can change with decompilation
-        if decompilation.cfunc.functy.returnty:
+        functy = decompilation.cfunc.functy if decompilation.cfunc else None
+        if functy and functy.returnty:
             func.header.type = decompilation.cfunc.functy.returnty.c_repr()
 
         stack_vars = {
@@ -267,8 +288,6 @@ class AngrInterface(DecompilerInterface):
         view.focus()
 
     def _headless_decompile(self, func):
-        cfg = self.project.kb.cfgs.get_most_accurate()
-        self.project.analyses.CompleteCallingConventions(cfg=cfg, recover_variables=True)
         all_optimization_passes = angr.analyses.decompiler.optimization_passes.get_default_optimization_passes(
             "AMD64", "linux"
         )
@@ -276,6 +295,9 @@ class AngrInterface(DecompilerInterface):
             o for o in angr.analyses.decompiler.decompilation_options.options
             if o.param == "structurer_cls"
         ][0], "phoenix")]
+
+        if not func.normalized:
+            func.normalize()
 
         self.main_instance.project.analyses.Decompiler(
             func, flavor='pseudocode', options=options, optimization_passes=all_optimization_passes

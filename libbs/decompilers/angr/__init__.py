@@ -6,6 +6,6 @@ except ImportError:
 
 if AM_PRESENT:
     try:
-        from .plugin import *
+        from .compat import *
     except ImportError:
         pass
