@@ -5,6 +5,10 @@ import typing
 from angrmanagement.plugins import BasePlugin
 from angrmanagement.ui.workspace import Workspace
 
+from libbs.data import (
+    StackVariable, FunctionHeader, Enum, Struct, GlobalVariable, Comment, FunctionArgument
+)
+
 if typing.TYPE_CHECKING:
     from .interface import AngrInterface
 
@@ -89,46 +93,83 @@ class GenericBSAngrManagementPlugin(BasePlugin):
 
         decompilation = self.interface.decompile_function(func)
         stack_var = self.interface.find_stack_var_in_codegen(decompilation, offset)
-        var_type = AngrInterface.stack_var_type_str(decompilation, stack_var)
-        return False
+        self.interface.stack_variable_changed(StackVariable(offset, new_name, None, stack_var.size, func.addr))
+        return True
 
     # pylint: disable=unused-argument
     def handle_stack_var_retyped(self, func, offset, old_type, new_type):
         decompilation = self.interface.decompile_function(func)
         stack_var = self.interface.find_stack_var_in_codegen(decompilation, offset)
-        return False
+        var_type = AngrInterface.stack_var_type_str(decompilation, stack_var)
+        self.interface.stack_variable_changed(StackVariable(offset, stack_var.name, var_type, stack_var.size, func.addr))
+        return True
 
     # pylint: disable=unused-argument
     def handle_func_arg_renamed(self, func, offset, old_name, new_name):
         decompilation = self.interface.decompile_function(func)
         func_args = AngrInterface.func_args_as_libbs_args(decompilation)
-        func_type = decompilation.cfunc.functy.returnty.c_repr()
-        return False
+        self.interface.function_header_changed(
+            FunctionHeader(
+                None,
+                func.addr,
+                type_=None,
+                args={offset: FunctionArgument(offset, new_name, None, func_args[offset].size)},
+            )
+        )
+
+        return True
 
     # pylint: disable=unused-argument
     def handle_func_arg_retyped(self, func, offset, old_type, new_type):
         decompilation = self.interface.decompile_function(func)
         func_args = AngrInterface.func_args_as_libbs_args(decompilation)
-        func_type = decompilation.cfunc.functy.returnty.c_repr()
-        return False
+        self.interface.function_header_changed(
+            FunctionHeader(
+                None,
+                func.addr,
+                type_=None,
+                args={offset: FunctionArgument(offset, None, new_type, func_args[offset].size)},
+            )
+        )
+
+        return True
 
     # pylint: disable=unused-argument,no-self-use
     def handle_global_var_renamed(self, address, old_name, new_name):
-        return False
+        self.interface.global_variable_changed(
+            GlobalVariable(address, new_name, type_=None)
+        )
+        return True
 
     # pylint: disable=unused-argument,no-self-use
     def handle_global_var_retyped(self, address, old_type, new_type):
-        return False
+        self.interface.global_variable_changed(
+            GlobalVariable(address, None, type_=new_type)
+        )
+        return True
 
     # pylint: disable=unused-argument
     def handle_function_renamed(self, func, old_name, new_name):
-        return False
+        if func is None:
+            return False
+
+        self.interface.function_header_changed(FunctionHeader(new_name, func.addr))
+        return True
 
     # pylint: disable=unused-argument,no-self-use
     def handle_function_retyped(self, func, old_type, new_type):
-        return False
+        if func is None:
+            return False
+
+        self.interface.function_header_changed(FunctionHeader(None, func.addr, type_=new_type))
+        return True
 
     # pylint: disable=unused-argument
     def handle_comment_changed(self, address, old_cmt, new_cmt, created: bool, decomp: bool):
+        # comments are only possible in functions in AM
         func_addr = self.interface.get_closest_function(address)
-        return False
+        if func_addr is None:
+            return False
+
+        self.interface.comment_changed(Comment(address, new_cmt, func_addr=func_addr, decompiled=True))
+        return True

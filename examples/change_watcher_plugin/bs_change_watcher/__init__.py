@@ -15,19 +15,20 @@ def create_plugin(*args, **kwargs):
         FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment
     )
 
-    generic_printer = lambda *x, **y: print(f"Changed {x}{y}")
-    callback_handlers = {
-        typ: [generic_printer] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment,)
-    }
     deci = DecompilerInterface.discover_interface(
         plugin_name="ArtifactChangeWatcher",
         init_plugin=True,
-        artifact_write_callbacks=callback_handlers,
         ui_init_args=args,
         ui_init_kwargs=kwargs
     )
+    # create a function to print a string in the decompiler console
+    decompiler_printer = lambda *x, **y: deci.print(f"Changed {x}{y}")
+    # register the callback for all the types we want to print
+    deci.artifact_write_callbacks = {
+        typ: [decompiler_printer] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment,)
+    }
 
-    # register a ctx_menu_item late since we want the callback to be inside the deci
+    # register a menu to open when you right click on the psuedocode view
     deci.register_ctx_menu_item(
         "StartArtifactChangeWatcher",
         "Start watching artifact changes",
@@ -85,7 +86,7 @@ class BSChangeWatcherInstaller(LibBSPluginInstaller):
         if not path:
             return
 
-        path = path / "plugins" / "bs_change_watcher"
+        path = path / "bs_change_watcher"
         path.mkdir(parents=True, exist_ok=True)
         src = self.pkg_path / "plugin.toml"
         dst = Path(path) / "plugin.toml"

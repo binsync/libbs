@@ -223,10 +223,10 @@ class PluginInstaller:
             import angrmanagement
         except ImportError:
             angr_resolved = False
-        default_path = Path(angrmanagement.__file__).parent if angr_resolved else None
+        default_path = Path(angrmanagement.__file__).parent / "plugins" if angr_resolved else None
 
         default_path, skip_ask = self._get_path_without_ask(path, default_path=default_path, interactive=interactive)
-        return self.ask_path("angr-management", "Angr Install Path", default=default_path) if not skip_ask \
+        return self.ask_path("angr-management", "angr-management Plugins Path", default=default_path) if not skip_ask \
             else default_path
 
     def install_gdb(self, path=None, interactive=True):

@@ -44,7 +44,7 @@ else:
         create_plugin()
     elif has_angr:
         from angrmanagement.plugins import BasePlugin
-        class PluginThunkClass(BasePlugin):
+        class AngrBSPluginThunk(BasePlugin):
             def __init__(self, workspace):
                 super().__init__(workspace)
                 globals()["workspace"] = workspace

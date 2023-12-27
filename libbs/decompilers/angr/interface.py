@@ -34,6 +34,7 @@ class AngrInterface(DecompilerInterface):
     """
 
     def __init__(self, workspace=None, headless=False, binary_path: Path = None, **kwargs):
+        plugin_name = kwargs.get("plugin_name", "generic_plugin")
         if workspace is None and not headless:
             l.critical("The workspace provided is None, which will result in a broken BinSync.")
             return
@@ -42,6 +43,12 @@ class AngrInterface(DecompilerInterface):
         self.main_instance = workspace.main_instance if workspace else self
         self._binary_path = Path(binary_path) if binary_path is not None else binary_path
         self._ctx_menu_items = []
+        if not headless:
+            self._am_logger = logging.getLogger(f"angrmanagement.{plugin_name}")
+            self._am_logger.setLevel(logging.INFO)
+        else:
+            self._am_logger = None
+
         super().__init__(name="angr", artifact_lifter=AngrArtifactLifter(self), headless=headless, **kwargs)
 
     def _init_headless_components(self):
@@ -82,9 +89,6 @@ class AngrInterface(DecompilerInterface):
             rebased_addr = addr - base_addr
 
         return rebased_addr
-
-    def goto_address(self, func_addr):
-        self.workspace.jump_to(self.rebase_addr(func_addr, up=True))
 
     def xrefs_to(self, artifact: Artifact) -> List[Artifact]:
         if not isinstance(artifact, Function):
@@ -134,6 +138,9 @@ class AngrInterface(DecompilerInterface):
         self.gui_plugin = GenericBSAngrManagementPlugin(self.workspace, self)
         self.workspace.plugins.register_active_plugin(self._plugin_name, self.gui_plugin)
         return self.gui_plugin
+
+    def goto_address(self, func_addr):
+        self.workspace.jump_to(self.rebase_addr(func_addr, up=True))
 
     def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
         if self.gui_plugin is None:
@@ -280,6 +287,28 @@ class AngrInterface(DecompilerInterface):
     #
     #   Utils
     #
+
+    def info(self, msg: str, **kwargs):
+        if self._am_logger is not None:
+            self._am_logger.info(msg)
+
+    def debug(self, msg: str, **kwargs):
+        if self._am_logger is not None:
+            self._am_logger.debug(msg)
+
+    def warning(self, msg: str, **kwargs):
+        if self._am_logger is not None:
+            self._am_logger.warning(msg)
+
+    def error(self, msg: str, **kwargs):
+        if self._am_logger is not None:
+            self._am_logger.error(msg)
+
+    def print(self, msg: str, **kwargs):
+        if self.headless:
+            print(msg)
+        else:
+            self.info(msg)
 
     def refresh_decompilation(self, func_addr):
         self.main_instance.workspace.jump_to(func_addr)

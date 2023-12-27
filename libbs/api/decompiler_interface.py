@@ -86,6 +86,7 @@ class DecompilerInterface:
         self._gui_ctx_menu_actions = []
         self._plugin_name = plugin_name
         self.gui_plugin = None
+        self._artifact_watchers_started = False
 
         # locks
         self.artifact_write_lock = threading.Lock()
@@ -120,7 +121,8 @@ class DecompilerInterface:
 
         @return:
         """
-        pass
+        self.info("Starting BinSync artifact watchers...")
+        self._artifact_watchers_started = True
 
     def stop_artifact_watchers(self):
         """
@@ -129,7 +131,8 @@ class DecompilerInterface:
         decompiler. This is useful for plugins that want to watch for changes in the decompiler and
         react to them.
         """
-        pass
+        self.info("Stopping BinSync artifact watchers...")
+        self._artifact_watchers_started = False
 
     def _init_ui_components(self, *args, **kwargs):
         from libbs.ui.version import set_ui_version
@@ -591,8 +594,11 @@ class DecompilerInterface:
         return had_changes
 
     #
-    # Special Loggers
+    # Special Loggers and Printers
     #
+
+    def print(self, msg: str, **kwargs):
+        print(msg)
 
     def info(self, msg: str, **kwargs):
         _l.info(msg)
