@@ -466,20 +466,23 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # Specialized print handlers
     #
 
-    def info(self, msg: str):
+    def print(self, msg, print_local=True, **kwargs):
+        self.ghidra.print(msg, print_local=print_local)
+
+    def info(self, msg: str, **kwargs):
         _l.info(msg)
         self.print(self._fmt_log_msg(msg, "INFO"), print_local=False)
 
-    def debug(self, msg: str):
+    def debug(self, msg: str, **kwargs):
         _l.debug(msg)
         if _l.level >= logging.DEBUG:
             self.print(self._fmt_log_msg(msg, "DEBUG"), print_local=False)
 
-    def warning(self, msg: str):
+    def warning(self, msg: str, **kwargs):
         _l.warning(msg)
         self.print(self._fmt_log_msg(msg, "WARNING"), print_local=False)
 
-    def error(self, msg: str):
+    def error(self, msg: str, **kwargs):
         _l.error(msg)
         self.print(self._fmt_log_msg(msg, "ERROR"), print_local=False)
 
@@ -493,9 +496,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 break
 
         return f"[{level}] | {log_path} | {msg}"
-
-    def print(self, string, print_local=True):
-        self.ghidra.print(string, print_local=print_local)
 
     #
     # Ghidra Specific API
