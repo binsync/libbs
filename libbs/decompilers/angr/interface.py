@@ -59,6 +59,10 @@ class AngrInterface(DecompilerInterface):
         cfg = self.project.analyses.CFG(show_progressbar=True, normalize=True, data_references=True)
         self.project.analyses.CompleteCallingConventions(cfg=cfg, recover_variables=True)
 
+    #
+    # Decompiler API
+    #
+
     def binary_hash(self) -> str:
         return self.main_instance.project.loader.main_object.md5.hex()
 
@@ -115,6 +119,15 @@ class AngrInterface(DecompilerInterface):
         return xrefs
 
     def _decompile(self, function: Function) -> Optional[str]:
+        if function.dec_obj is not None:
+            dec_text = function.dec_obj.text
+        else:
+            function.dec_obj = self.get_decompilation_object(function)
+            dec_text = function.dec_obj.text if function.dec_obj else None
+
+        return dec_text
+
+    def get_decompilation_object(self, function: Function) -> Optional[object]:
         func = self.main_instance.project.kb.functions.get(function.addr, None)
         if func is None:
             return None
@@ -125,10 +138,7 @@ class AngrInterface(DecompilerInterface):
             l.warning(f"Failed to decompile {func} because {e}")
             codegen = None
 
-        if not codegen or not codegen.text:
-            return None
-
-        return codegen.text
+        return codegen
 
     def local_variable_names(self, func: Function) -> List[str]:
         codegen = self.decompile_function(self.main_instance.project.kb.functions[func.addr])
@@ -146,7 +156,7 @@ class AngrInterface(DecompilerInterface):
             if v.name in name_map:
                 v.name = name_map[v.name]
 
-        return True
+        return self.refresh_decompilation(func.addr)
 
     #
     # GUI API
@@ -300,7 +310,8 @@ class AngrInterface(DecompilerInterface):
                 self.main_instance.project.kb.comments[comment.addr] = comment.comment
                 changed |= True
 
-        return changed
+        func_addr = comment.func_addr or self.get_closest_function(comment.addr)
+        return changed & self.refresh_decompilation(func_addr)
 
     #
     #   Utils
@@ -328,11 +339,19 @@ class AngrInterface(DecompilerInterface):
         else:
             self.info(msg)
 
+    #
+    # angr-management specific helpers
+    #
+
     def refresh_decompilation(self, func_addr):
+        if self.headless:
+            return False
+
         self.main_instance.workspace.jump_to(func_addr)
         view = self.main_instance.workspace._get_or_create_view("pseudocode", CodeView)
         view.codegen.am_event()
         view.focus()
+        return True
 
     def _headless_decompile(self, func):
         all_optimization_passes = angr.analyses.decompiler.optimization_passes.get_default_optimization_passes(
@@ -390,10 +409,6 @@ class AngrInterface(DecompilerInterface):
                 self.workspace.decompile_current_function()
 
         return decomp
-
-    #
-    # Function Data Helpers
-    #
 
     @staticmethod
     def find_stack_var_in_codegen(decompilation, stack_offset: int) -> Optional[angr.sim_variable.SimStackVariable]:
