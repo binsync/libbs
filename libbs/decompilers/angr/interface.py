@@ -130,6 +130,24 @@ class AngrInterface(DecompilerInterface):
 
         return codegen.text
 
+    def local_variable_names(self, func: Function) -> List[str]:
+        codegen = self.decompile_function(self.main_instance.project.kb.functions[func.addr])
+        if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
+            return []
+
+        return [v.name for v in codegen.cfunc.variable_manager._unified_variables]
+
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+        codegen = self.decompile_function(self.main_instance.project.kb.functions[func.addr])
+        if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
+            return False
+
+        for v in codegen.cfunc.variable_manager._unified_variables:
+            if v.name in name_map:
+                v.name = name_map[v.name]
+
+        return True
+
     #
     # GUI API
     #
