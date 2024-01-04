@@ -70,6 +70,3 @@ G/S: Getters/Setters
 - [ ] Change Callbacks
 - [ ] Get/Set Comments
 
-### angr
-- [ ] Change Callbacks
-

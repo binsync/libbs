@@ -239,8 +239,8 @@ class PluginInstaller:
 
 
 class LibBSPluginInstaller(PluginInstaller):
-    def __init__(self):
-        super().__init__(targets=PluginInstaller.DECOMPILERS)
+    def __init__(self, targets=None, target_install_paths=None):
+        super().__init__(targets=targets or PluginInstaller.DECOMPILERS, target_install_paths=target_install_paths)
         self.plugins_path = self.find_pkg_files("libbs").joinpath("decompiler_stubs")
 
     def display_prologue(self):
