@@ -16,7 +16,7 @@ from libbs.data import (
     Comment, GlobalVariable, Patch,
     Enum, Struct
 )
-from libbs.decompilers import libbs_SUPPORTED_DECOMPILERS, ANGR_DECOMPILER, \
+from libbs.decompilers import SUPPORTED_DECOMPILERS, ANGR_DECOMPILER, \
     BINJA_DECOMPILER, IDA_DECOMPILER, GHIDRA_DECOMPILER
 
 _l = logging.getLogger(name=__name__)
@@ -644,64 +644,74 @@ class DecompilerInterface:
             return None
 
     @staticmethod
-    def discover_interface(force_decompiler: str = None, **ctrl_kwargs) -> Optional["DecompilerInterface"]:
-        """
-        This function is a special API helper that will attempt to detect the decompiler it is running in and
-        return the valid BSController for that decompiler. You may also force the chosen controller.
-
-        @param force_decompiler:    The optional string used to override the BSController returned
-        @return:                    The DecompilerInterface associated with the current decompiler env
-        """
-        if force_decompiler and force_decompiler not in libbs_SUPPORTED_DECOMPILERS:
-            raise ValueError(f"Unsupported decompiler {force_decompiler}")
-
-        has_ida = False
-        has_binja = False
-        has_angr_man = False
-
+    def find_current_decompiler():
         # IDA Pro
         try:
             import idaapi
-            has_ida = True
+            return IDA_DECOMPILER
         except ImportError:
             pass
-        if has_ida or force_decompiler == IDA_DECOMPILER:
-            from libbs.decompilers.ida.interface import IDAInterface
-            dec_controller = IDAInterface(**ctrl_kwargs)
-            return dec_controller
 
         # Binary Ninja
         try:
             import binaryninja
-            has_binja = True
+            if DecompilerInterface._find_global_in_call_frames('bv') is not None:
+                return BINJA_DECOMPILER
         except ImportError:
             pass
-        if has_binja or force_decompiler == BINJA_DECOMPILER:
-            from libbs.decompilers.binja.interface import BinjaInterface
-            bv = DecompilerInterface._find_global_in_call_frames('bv')
-            dec_controller = BinjaInterface(bv=bv, **ctrl_kwargs)
-            return dec_controller
 
         # angr-management
         try:
             import angr
             import angrmanagement
-            has_angr_man = DecompilerInterface._find_global_in_call_frames('workspace') is not None
-        except Exception:
+            if DecompilerInterface._find_global_in_call_frames('workspace') is not None:
+                return ANGR_DECOMPILER
+        except ImportError:
             pass
-        if has_angr_man or force_decompiler == ANGR_DECOMPILER:
-            from libbs.decompilers.angr.interface import AngrInterface
-            workspace = DecompilerInterface._find_global_in_call_frames('workspace')
-            dec_controller = AngrInterface(workspace=workspace, **ctrl_kwargs)
-            return dec_controller
 
-        # Ghidra (over remote)
-        # TODO: make this check do a check to see if a remote port is open and it can connect
-        is_ghidra = True
-        if is_ghidra or force_decompiler == GHIDRA_DECOMPILER:
+        # Ghidra (over remote) is default
+        # TODO: add search for known port being open for remote Ghidra
+        return GHIDRA_DECOMPILER
+
+    @staticmethod
+    def discover_interface(
+        force_decompiler: str = None,
+        interface_overrides: Optional[Dict[str, "DecompilerInterface"]] = None,
+        **interface_kwargs
+    ) -> Optional["DecompilerInterface"]:
+        """
+        This function is a special API helper that will attempt to detect the decompiler it is running in and
+        return the valid BSController for that decompiler. You may also force the chosen controller.
+
+        @param force_decompiler:    The optional string used to force a specific decompiler interface
+        @param interface_overrides: The optional dict used to override the class of a decompiler interface
+        @return:                    The DecompilerInterface associated with the current decompiler env
+        """
+        if force_decompiler and force_decompiler not in SUPPORTED_DECOMPILERS:
+            raise ValueError(f"Unsupported decompiler {force_decompiler}")
+
+        current_decompiler = DecompilerInterface.find_current_decompiler()
+        if force_decompiler == IDA_DECOMPILER or current_decompiler == IDA_DECOMPILER:
+            from libbs.decompilers.ida.interface import IDAInterface
+            deci_class = IDAInterface
+            extra_kwargs = {}
+        elif force_decompiler == BINJA_DECOMPILER or current_decompiler == BINJA_DECOMPILER:
+            from libbs.decompilers.binja.interface import BinjaInterface
+            deci_class = BinjaInterface
+            extra_kwargs = {"bv": DecompilerInterface._find_global_in_call_frames('bv')}
+        elif force_decompiler == ANGR_DECOMPILER or current_decompiler == ANGR_DECOMPILER:
+            from libbs.decompilers.angr.interface import AngrInterface
+            deci_class = AngrInterface
+            extra_kwargs = {"workspace": DecompilerInterface._find_global_in_call_frames('workspace')}
+        elif force_decompiler == GHIDRA_DECOMPILER or current_decompiler == GHIDRA_DECOMPILER:
             from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
-            dec_controller = GhidraDecompilerInterface(**ctrl_kwargs)
+            deci_class = GhidraDecompilerInterface
+            extra_kwargs = {}
         else:
             raise ValueError("Please use LibBS with our supported decompiler set!")
 
-        return dec_controller
+        if interface_overrides is not None and current_decompiler in interface_overrides:
+            deci_class = interface_overrides[current_decompiler]
+
+        interface_kwargs.update(extra_kwargs)
+        return deci_class(**interface_kwargs)
