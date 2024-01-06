@@ -241,7 +241,7 @@ class PluginInstaller:
 class LibBSPluginInstaller(PluginInstaller):
     def __init__(self, targets=None, target_install_paths=None):
         super().__init__(targets=targets or PluginInstaller.DECOMPILERS, target_install_paths=target_install_paths)
-        self.plugins_path = self.find_pkg_files("libbs").joinpath("decompiler_stubs")
+        self._libbs_plugins_path = self.find_pkg_files("libbs").joinpath("decompiler_stubs")
 
     def display_prologue(self):
         print(textwrap.dedent("""
@@ -252,7 +252,7 @@ class LibBSPluginInstaller(PluginInstaller):
         if ida_plugin_path is None:
             return None
 
-        src_ida_libbs_py = self.plugins_path.joinpath("ida_libbs.py")
+        src_ida_libbs_py = self._libbs_plugins_path.joinpath("ida_libbs.py")
         dst_ida_libbs_py = ida_plugin_path.joinpath("ida_libbs.py")
         self.link_or_copy(src_ida_libbs_py, dst_ida_libbs_py)
         return ida_plugin_path
@@ -262,7 +262,7 @@ class LibBSPluginInstaller(PluginInstaller):
         if angr_plugin_path is None:
             return None
 
-        src_angr_libbs_pkg = self.plugins_path.joinpath("angr_libbs")
+        src_angr_libbs_pkg = self._libbs_plugins_path.joinpath("angr_libbs")
         dst_angr_libbs_pkg = angr_plugin_path.joinpath("angr_libbs")
         self.link_or_copy(src_angr_libbs_pkg, dst_angr_libbs_pkg, is_dir=True)
         return angr_plugin_path
@@ -272,7 +272,7 @@ class LibBSPluginInstaller(PluginInstaller):
         if ghidra_path is None:
             return None
 
-        src_ghidra_libbs_pkg = self.plugins_path.joinpath("ghidra_libbs")
+        src_ghidra_libbs_pkg = self._libbs_plugins_path.joinpath("ghidra_libbs")
         src_vendored = src_ghidra_libbs_pkg.joinpath("libbs_vendored")
         src_script = src_ghidra_libbs_pkg.joinpath("ghidra_libbs.py")
         src_script_shutdown = src_ghidra_libbs_pkg.joinpath("ghidra_libbs_shutdown.py")
@@ -291,7 +291,7 @@ class LibBSPluginInstaller(PluginInstaller):
         if binja_plugin_path is None:
             return None
 
-        src_path = self.plugins_path.joinpath("binja_libbs")
+        src_path = self._libbs_plugins_path.joinpath("binja_libbs")
         dst_path = binja_plugin_path.joinpath("binja_libbs")
         self.link_or_copy(src_path, dst_path, is_dir=True)
         return binja_plugin_path
