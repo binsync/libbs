@@ -1,7 +1,7 @@
 from typing import Type
 import logging
 
-from libbs.data import (
+from libbs.artifacts import (
     Artifact, Comment, Enum, FunctionHeader, Function, FunctionArgument,
     GlobalVariable, Patch, StackVariable, Struct, StructMember
 )

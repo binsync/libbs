@@ -11,7 +11,7 @@ def create_plugin(*args, **kwargs):
     """
 
     from libbs.api import DecompilerInterface
-    from libbs.data import (
+    from libbs.artifacts import (
         FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment
     )
 

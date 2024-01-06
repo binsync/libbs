@@ -19,7 +19,7 @@ import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
     ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum
 
 import libbs
-from libbs.data import (
+from libbs.artifacts import (
     Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact
 )
 
@@ -294,7 +294,7 @@ def function_header(ida_code_view) -> FunctionHeader:
 
 @execute_write
 @requires_decompilation
-def set_function_header(libbs_header: libbs.data.FunctionHeader, exit_on_bad_type=False, ida_code_view=None):
+def set_function_header(libbs_header: libbs.artifacts.FunctionHeader, exit_on_bad_type=False, ida_code_view=None):
     data_changed = False
     func_addr = ida_code_view.cfunc.entry_ea
     cur_ida_func = function_header(ida_code_view)
@@ -379,7 +379,7 @@ def bs_header_from_tif(tif, name=None, addr=None):
     Takes a ida_typeinf.tinfo_t and converts it into a BinSync FunctionHeader.
     You can optionally specify the name of the function, which is usually not in the tif, otherwise it will be None.
 
-    TODO: its kinda broken, better to use vdui ptr and grab data
+    TODO: its kinda broken, better to use vdui ptr and grab artifacts
     """
     ret_type = str(tif.get_rettype())
     bs_header = FunctionHeader(name, addr, type_=ret_type, args={})
@@ -738,7 +738,7 @@ def set_ida_struct_member_types(struct: Struct) -> bool:
 @execute_write
 def global_vars():
     gvars = {}
-    known_segs = [".data", ".bss"]
+    known_segs = [".artifacts", ".bss"]
     for seg_name in known_segs:
         seg = idaapi.get_segm_by_name(seg_name)
         if not seg:

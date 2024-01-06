@@ -1,4 +1,4 @@
-""" Handles converting data back and forward between 2 and 3 """
+""" Handles converting artifacts back and forward between 2 and 3 """
 
 from __future__ import unicode_literals  # string literals are all unicode
 
@@ -296,9 +296,9 @@ SIZE_FORMAT = "!I"
 
 
 def write_size_and_data_to_socket(sock, data):
-    """Utility function to pack the size in front of data and send it off
+    """Utility function to pack the size in front of artifacts and send it off
 
-    Note: not thread safe - sock.send can return before all the data is sent, python can swap active threads, and another thread can start sending its data halfway through
+    Note: not thread safe - sock.send can return before all the artifacts is sent, python can swap active threads, and another thread can start sending its artifacts halfway through
     the first one's. Call from BridgeConn.send_data()
     """
 
@@ -309,7 +309,7 @@ def write_size_and_data_to_socket(sock, data):
     total_size = len(size_bytes) + data_size
 
     sent = 0
-    # noted errors sending large blobs of data with sendall, so we'll send as much as send() allows and keep trying
+    # noted errors sending large blobs of artifacts with sendall, so we'll send as much as send() allows and keep trying
     while sent < total_size:
         # send it all off
         bytes_sent = sock.send(package[sent:])
@@ -331,7 +331,7 @@ def read_exactly(sock, num_bytes):
 
 
 def read_size_and_data_from_socket(sock):
-    """Utility function to read the size of a data block, followed by all of that data"""
+    """Utility function to read the size of a artifacts block, followed by all of that artifacts"""
 
     size_bytes = read_exactly(sock, struct.calcsize(SIZE_FORMAT))
     size = struct.unpack(SIZE_FORMAT, size_bytes)[0]
@@ -600,7 +600,7 @@ class BridgeResponse(object):
         self.response_id = response_id  # just for tracking, so we can report it in timeout exception if needed
 
     def set(self, response):
-        """store response data, and let anyone waiting know it's ready"""
+        """store response artifacts, and let anyone waiting know it's ready"""
         self.response = response
         # trigger the event
         self.event.set()
@@ -639,7 +639,7 @@ class BridgeResponseManager(object):
                 # response hasn't been waited for yet. create the entry
                 self.response_dict[response_id] = BridgeResponse(response_id)
 
-            # set the data and trigger the event
+            # set the artifacts and trigger the event
             self.response_dict[response_id].set(response_dict)
 
     def get_response(self, response_id, timeout=None):
@@ -650,7 +650,7 @@ class BridgeResponseManager(object):
                 self.response_dict[response_id] = BridgeResponse(response_id)
             response = self.response_dict[response_id]
 
-        # wait for the data - will throw a BridgeTimeoutException if doesn't get it by timeout
+        # wait for the artifacts - will throw a BridgeTimeoutException if doesn't get it by timeout
         data = response.get(timeout)
 
         if TYPE in data:
@@ -840,7 +840,7 @@ class BridgeConn(object):
             # if it's a partial, possible that it's against a remote function - in that case, instead of sending it back as a BridgedCallable
             # to get remote called back here where we'll issue a call to the original function, we'll send it with the partial's details so
             # it can be reconstructed on the other side (0 round-trips instead of 2 round-trips)
-            # TODO do we have to worry about data.func being from a different bridge connection?
+            # TODO do we have to worry about artifacts.func being from a different bridge connection?
             serialized_dict = {
                 TYPE: PARTIAL,
                 VALUE: self.serialize_to_dict(data.func),
@@ -924,7 +924,7 @@ class BridgeConn(object):
                 serial_dict[VALUE], callable=(serial_dict[TYPE] == CALLABLE_OBJ)
             )
 
-        raise Exception("Unhandled data {}".format(serial_dict))
+        raise Exception("Unhandled artifacts {}".format(serial_dict))
 
     def get_socket(self):
         with self.comms_lock:
@@ -942,13 +942,13 @@ class BridgeConn(object):
             return self.sock
 
     def send_data(self, data):
-        """Handle shipping the data across the bridge. Locked to prevent multiple sends
-        interleaving with each other (e.g., one is halfway through sending it data when
+        """Handle shipping the artifacts across the bridge. Locked to prevent multiple sends
+        interleaving with each other (e.g., one is halfway through sending it artifacts when
         it returns, GIL gives it up and the other begins sending - causing decode errors
         on the other side"""
         with self.comms_lock:
             sock = self.get_socket()
-            # send the data
+            # send the artifacts
             write_size_and_data_to_socket(sock, data)
 
     @stats_time

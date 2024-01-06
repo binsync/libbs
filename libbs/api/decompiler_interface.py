@@ -10,7 +10,7 @@ import libbs
 from libbs.api.artifact_lifter import ArtifactLifter
 from libbs.api.artifact_dict import ArtifactDict
 from libbs.api.type_parser import CTypeParser, CType
-from libbs.data import (
+from libbs.artifacts import (
     Artifact,
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch,
@@ -163,7 +163,7 @@ class DecompilerInterface:
     def _init_gui_plugin(self, *args, **kwargs):
         return None
 
-    def active_context(self) -> libbs.data.Function:
+    def active_context(self) -> libbs.artifacts.Function:
         """
         Returns an libbs Function. Currently only functions are supported as current contexts.
         This function will be called very frequently, so its important that its implementation is fast
@@ -332,8 +332,8 @@ class DecompilerInterface:
     def _functions(self) -> Dict[int, Function]:
         """
         Returns a dict of libbs.Functions that contain the addr, name, and size of each function in the decompiler.
-        Note: this does not contain the live data of the Artifact, only the minimum knowledge to that the Artifact
-        exists. To get live data, use the singleton function of the same name.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
 
         @return:
         """
@@ -369,8 +369,8 @@ class DecompilerInterface:
     def _global_vars(self) -> Dict[int, GlobalVariable]:
         """
         Returns a dict of libbs.GlobalVariable that contain the addr and size of each global var.
-        Note: this does not contain the live data of the Artifact, only the minimum knowledge to that the Artifact
-        exists. To get live data, use the singleton function of the same name.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
 
         @return:
         """
@@ -386,8 +386,8 @@ class DecompilerInterface:
     def _structs(self) -> Dict[str, Struct]:
         """
         Returns a dict of libbs.Structs that contain the name and size of each struct in the decompiler.
-        Note: this does not contain the live data of the Artifact, only the minimum knowledge to that the Artifact
-        exists. To get live data, use the singleton function of the same name.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
 
         @return:
         """
@@ -403,8 +403,8 @@ class DecompilerInterface:
     def _enums(self) -> Dict[str, Enum]:
         """
         Returns a dict of libbs.Enum that contain the name of the enums in the decompiler.
-        Note: this does not contain the live data of the Artifact, only the minimum knowledge to that the Artifact
-        exists. To get live data, use the singleton function of the same name.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
 
         @return:
         """
@@ -420,8 +420,8 @@ class DecompilerInterface:
     def _patches(self) -> Dict[int, Patch]:
         """
         Returns a dict of libbs.Patch that contain the addr of each Patch and the bytes.
-        Note: this does not contain the live data of the Artifact, only the minimum knowledge to that the Artifact
-        exists. To get live data, use the singleton function of the same name.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
 
         @return:
         """
@@ -460,7 +460,7 @@ class DecompilerInterface:
 
     def global_artifact(self, lookup_item: Union[str, int]):
         """
-        Returns a live libbs.data version of the Artifact located at the lookup_item location, which can
+        Returns a live libbs.artifacts version of the Artifact located at the lookup_item location, which can
         lookup any artifact supported in `global_artifacts`
 
         @param lookup_item:
@@ -557,7 +557,7 @@ class DecompilerInterface:
 
     #
     # Fillers:
-    # A filler function is generally responsible for pulling down data from a specific user state
+    # A filler function is generally responsible for pulling down artifacts from a specific user state
     # and reflecting those changes in decompiler view (like the text on the screen). Normally, these changes
     # will also be accompanied by a Git commit to the master users state to save the changes from pull and
     # fill into their BS database. In special cases, a filler may only update the decompiler UI but not directly
@@ -571,7 +571,7 @@ class DecompilerInterface:
         This function handles any event which tries to set an Artifact into the decompiler. This handler does two
         important tasks:
         1. Locks callback handlers, so you don't get infinite callbacks
-        2. "Lowers" the artifact, so it's data types match the decompilers
+        2. "Lowers" the artifact, so it's artifacts types match the decompilers
 
         Because of this, it's recommended that when overriding this function you always call super() at the end of
         your override so it's set correctly in the decompiler.

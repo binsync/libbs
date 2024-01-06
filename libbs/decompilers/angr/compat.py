@@ -1,26 +1,28 @@
 # pylint: disable=wrong-import-position,wrong-import-order
 import logging
-import typing
+from typing import Optional
 
 from angrmanagement.plugins import BasePlugin
 from angrmanagement.ui.workspace import Workspace
 
-from libbs.data import (
+from libbs.artifacts import (
     StackVariable, FunctionHeader, Enum, Struct, GlobalVariable, Comment, FunctionArgument
 )
-
-if typing.TYPE_CHECKING:
-    from .interface import AngrInterface
+from libbs.decompilers.angr.interface import AngrInterface
 
 l = logging.getLogger(__name__)
 
 
 class GenericBSAngrManagementPlugin(BasePlugin):
-    def __init__(self, workspace: Workspace, interface: "AngrInterface", context_menu_items=None):
+    def __init__(self, workspace: Workspace, interface: Optional[AngrInterface] = None, context_menu_items=None):
         super().__init__(workspace)
         # (name, action_string, callback_func, category)
         self.context_menu_items = context_menu_items or []
-        self.interface = interface
+        if interface is None:
+            from libbs.decompilers.angr.interface import AngrInterface
+            self.interface = AngrInterface(workspace)
+        else:
+            self.interface = interface
 
     def teardown(self):
         pass

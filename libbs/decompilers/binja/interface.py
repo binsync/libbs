@@ -21,7 +21,7 @@ from binaryninja.types import StructureType, EnumerationType
 
 from libbs.api.decompiler_interface import DecompilerInterface
 import libbs
-from libbs.data import (
+from libbs.artifacts import (
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch, StructMember, FunctionArgument,
     Enum, Struct, Artifact
@@ -63,6 +63,7 @@ class BinjaInterface(DecompilerInterface):
         print("Initializing BinjaInterface...")
         super(BinjaInterface, self).__init__(name="binja", artifact_lifter=BinjaArtifactLifter(self), **kwargs)
 
+    @property
     def binary_hash(self) -> str:
         hash_ = ""
         try:
@@ -72,6 +73,7 @@ class BinjaInterface(DecompilerInterface):
 
         return hash_
 
+    @property
     def binary_path(self) -> Optional[str]:
         try:
             return self.bv.file.filename
@@ -211,7 +213,7 @@ class BinjaInterface(DecompilerInterface):
         if func is None:
             return None
 
-        return libbs.data.Function(
+        return libbs.artifacts.Function(
             func.start, 0, header=FunctionHeader(func.name, func.start)
         )
 
@@ -380,7 +382,7 @@ class BinjaInterface(DecompilerInterface):
     def _global_vars(self) -> Dict[int, GlobalVariable]:
         return {
             addr: GlobalVariable(addr, var.name or f"data_{addr:x}")
-            for addr, var in self.bv.data_vars.items()
+            for addr, var in self.bv.artifacts_vars.items()
         }
 
     # structs
@@ -559,7 +561,7 @@ class BinjaInterface(DecompilerInterface):
                 var_sizes[var] = var.storage - sorted_stack[i].storage
 
         bs_stack_vars = {
-            off: libbs.data.StackVariable(
+            off: libbs.artifacts.StackVariable(
                 off,
                 var.name,
                 var.type.get_string_before_name(),

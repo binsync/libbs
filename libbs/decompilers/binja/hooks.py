@@ -21,7 +21,7 @@ from collections import defaultdict
 import logging
 
 from .interface import BinjaInterface
-from binsync.data import (
+from binsync.artifacts import (
     Artifact,
     Function, FunctionHeader, FunctionArgument, Comment, GlobalVariable, Enum, StructMember
 )

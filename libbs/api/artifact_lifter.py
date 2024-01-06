@@ -1,6 +1,6 @@
 import logging
 
-from libbs.data import StackVariable, Artifact
+from libbs.artifacts import StackVariable, Artifact
 from libbs.api.type_parser import CTypeParser
 
 _l = logging.getLogger(name=__name__)

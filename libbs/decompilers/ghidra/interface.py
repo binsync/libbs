@@ -6,7 +6,7 @@ from functools import wraps
 
 from libbs.api import DecompilerInterface
 from libbs.api.decompiler_interface import requires_decompilation
-from libbs.data import (
+from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
 )
 
@@ -50,9 +50,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # Controller API
     #
 
+    @property
     def binary_hash(self) -> str:
         return self.ghidra.currentProgram.executableMD5
 
+    @property
     def binary_path(self) -> Optional[str]:
         return self.ghidra.currentProgram.executablePath
 
@@ -288,13 +290,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         struct: Struct = struct
         old_ghidra_struct = self._get_struct_by_name('/' + struct.name)
         data_manager = self.ghidra.currentProgram.getDataTypeManager()
-        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
-        structType = self.ghidra.import_module_object("ghidra.program.model.data", "StructureDataType")
-        byteType = self.ghidra.import_module_object("ghidra.program.model.data", "ByteDataType")
+        handler = self.ghidra.import_module_object("ghidra.program.model.artifacts", "DataTypeConflictHandler")
+        structType = self.ghidra.import_module_object("ghidra.program.model.artifacts", "StructureDataType")
+        byteType = self.ghidra.import_module_object("ghidra.program.model.artifacts", "ByteDataType")
         ghidra_struct = structType(struct.name, 0)
         for offset in struct.members:
             member = struct.members[offset]
-            ghidra_struct.add(byteType.dataType, 1, member.name, "")
+            ghidra_struct.add(byteType.artifactsType, 1, member.name, "")
             ghidra_struct.growStructure(member.size - 1)
             for dtc in ghidra_struct.getComponents():
                 if dtc.getFieldName() == member.name:
@@ -370,9 +372,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         corrected_enum_name = "/" + enum.name
         old_ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
         data_manager = self.ghidra.currentProgram.getDataTypeManager()
-        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
-        enumType = self.ghidra.import_module_object("ghidra.program.model.data", "EnumDataType")
-        categoryPath = self.ghidra.import_module_object("ghidra.program.model.data", "CategoryPath")
+        handler = self.ghidra.import_module_object("ghidra.program.model.artifacts", "DataTypeConflictHandler")
+        enumType = self.ghidra.import_module_object("ghidra.program.model.artifacts", "EnumDataType")
+        categoryPath = self.ghidra.import_module_object("ghidra.program.model.artifacts", "CategoryPath")
         ghidra_enum = enumType(categoryPath('/'), enum.name, 4)
         for m_name, m_val in enum.members.items():
             ghidra_enum.add(m_name, m_val)
@@ -395,7 +397,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         names: Optional[List[str]] = self.ghidra.bridge.remote_eval(
             "[dType.getPathName() "
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
-            "if str(type(dType)) == \"<type 'ghidra.program.database.data.EnumDB'>\"]"
+            "if str(type(dType)) == \"<type 'ghidra.program.artifactsbase.artifacts.EnumDB'>\"]"
         )
         return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if name.count('/') == 1} if names else {}
 
@@ -620,7 +622,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return None
 
         dtm_service_class = self.ghidra.import_module_object("ghidra.app.services", "DataTypeManagerService")
-        dtp_class = self.ghidra.import_module_object("ghidra.util.data", "DataTypeParser")
+        dtp_class = self.ghidra.import_module_object("ghidra.util.artifacts", "DataTypeParser")
         dt_service = self.ghidra.getState().getTool().getService(dtm_service_class)
         dt_parser = dtp_class(dt_service, dtp_class.AllowedDataTypes.ALL)
         try:

@@ -9,11 +9,10 @@ from angr.analyses.decompiler.structured_codegen import DummyStructuredCodeGener
 from libbs.api.decompiler_interface import (
     DecompilerInterface,
 )
-from libbs.data import (
+from libbs.artifacts import (
     Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact
 )
 from .artifact_lifter import AngrArtifactLifter
-from .compat import GenericBSAngrManagementPlugin
 
 l = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ logging.getLogger("cle").setLevel(logging.ERROR)
 
 class AngrInterface(DecompilerInterface):
     """
-    The class used for all pushing/pulling and merging based actions with BinSync data.
+    The class used for all pushing/pulling and merging based actions with BinSync artifacts.
     This class is responsible for handling callbacks that are done by changes from the local user
     and responsible for running a thread to get new changes from other users.
     """
@@ -63,9 +62,11 @@ class AngrInterface(DecompilerInterface):
     # Decompiler API
     #
 
+    @property
     def binary_hash(self) -> str:
         return self.main_instance.project.loader.main_object.md5.hex()
 
+    @property
     def binary_path(self) -> Optional[str]:
         try:
             return self.main_instance.project.loader.main_object.binary
@@ -163,7 +164,8 @@ class AngrInterface(DecompilerInterface):
     #
 
     def _init_gui_plugin(self, *args, **kwargs):
-        self.gui_plugin = GenericBSAngrManagementPlugin(self.workspace, self)
+        from .compat import GenericBSAngrManagementPlugin
+        self.gui_plugin = GenericBSAngrManagementPlugin(self.workspace, interface=self)
         self.workspace.plugins.register_active_plugin(self._plugin_name, self.gui_plugin)
         return self.gui_plugin
 

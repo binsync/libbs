@@ -42,7 +42,7 @@ import idaapi
 import idc
 
 from . import compat
-from libbs.data import (
+from libbs.artifacts import (
     FunctionHeader, FunctionArgument, StackVariable,
     Comment, GlobalVariable, Enum, Struct
 )

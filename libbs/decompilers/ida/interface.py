@@ -10,7 +10,7 @@ import ida_hexrays
 
 import libbs
 from libbs.api.decompiler_interface import DecompilerInterface, artifact_write_event
-from libbs.data import (
+from libbs.artifacts import (
     StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact
 )
 from libbs.api.decompiler_interface import requires_decompilation
@@ -47,9 +47,11 @@ class IDAInterface(DecompilerInterface):
     # Controller Interaction
     #
 
+    @property
     def binary_hash(self) -> str:
         return idc.retrieve_input_file_md5().hex()
 
+    @property
     def binary_path(self) -> Optional[str]:
         return compat.get_binary_path()
 
@@ -164,7 +166,7 @@ class IDAInterface(DecompilerInterface):
         if func_addr is None:
             return None
 
-        func = libbs.data.Function(
+        func = libbs.artifacts.Function(
             func_addr, 0, header=FunctionHeader(compat.get_func_name(func_addr), func_addr)
         )
         return func
@@ -232,8 +234,8 @@ class IDAInterface(DecompilerInterface):
     def _global_vars(self) -> Dict[int, GlobalVariable]:
         """
         Returns a dict of libbs.GlobalVariable that contain the addr and size of each global var.
-        Note: this does not contain the live data of the Artifact, only the minimum knowledge to that the Artifact
-        exists. To get live data, use the singleton function of the same name.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
 
         @return:
         """
@@ -260,8 +262,8 @@ class IDAInterface(DecompilerInterface):
     def _structs(self) -> Dict[str, Struct]:
         """
         Returns a dict of libbs.Structs that contain the name and size of each struct in the decompiler.
-        Note: this does not contain the live data of the Artifact, only the minimum knowledge to that the Artifact
-        exists. To get live data, use the singleton function of the same name.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
 
         @return:
         """
@@ -277,8 +279,8 @@ class IDAInterface(DecompilerInterface):
     def _enums(self) -> Dict[str, Enum]:
         """
         Returns a dict of libbs.Enum that contain the name of the enums in the decompiler.
-        Note: this does not contain the live data of the Artifact, only the minimum knowledge to that the Artifact
-        exists. To get live data, use the singleton function of the same name.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
 
         @return:
         """
@@ -296,8 +298,8 @@ class IDAInterface(DecompilerInterface):
     def _patches(self) -> Dict[int, Patch]:
         """
         Returns a dict of libbs.Patch that contain the addr of each Patch and the bytes.
-        Note: this does not contain the live data of the Artifact, only the minimum knowledge to that the Artifact
-        exists. To get live data, use the singleton function of the same name.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
 
         @return:
         """
