@@ -63,6 +63,10 @@ class BinjaInterface(DecompilerInterface):
         super(BinjaInterface, self).__init__(name="binja", artifact_lifter=BinjaArtifactLifter(self), **kwargs)
 
     @property
+    def binary_base_addr(self) -> int:
+        return self.bv.start
+
+    @property
     def binary_hash(self) -> str:
         hash_ = ""
         try:
@@ -91,7 +95,7 @@ class BinjaInterface(DecompilerInterface):
             l.warning("xrefs_to is only implemented for functions.")
             return []
 
-        function: Function = self.artifact_lifer.lower(artifact)
+        function: Function = self.art_lifter.lower(artifact)
         if not function:
             return []
 
@@ -221,7 +225,7 @@ class BinjaInterface(DecompilerInterface):
         return resp.decode() if resp else ""
 
     def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
-        # TODO: this needs to have a wrapper function that passes the bv to the current controller
+        # TODO: this needs to have a wrapper function that passes the bv to the current deci
         # correct name, category, and action_string for Binja
         action_string = action_string.replace("/", "\\")
         category = category.replace("/", "\\") if category else ""

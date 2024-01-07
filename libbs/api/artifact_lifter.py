@@ -1,14 +1,18 @@
 import logging
+import typing
 
 from libbs.artifacts import StackVariable, Artifact
 from libbs.api.type_parser import CTypeParser
+
+if typing.TYPE_CHECKING:
+    from libbs.api import DecompilerInterface
 
 _l = logging.getLogger(name=__name__)
 
 
 class ArtifactLifter:
-    def __init__(self, controller, types=None):
-        self.controller = controller
+    def __init__(self, deci: "DecompilerInterface", types=None):
+        self.deci = deci
         self.type_parser = CTypeParser(extra_types=types)
 
     #
@@ -29,7 +33,11 @@ class ArtifactLifter:
         pass
 
     def lift_addr(self, addr: int) -> int:
-        pass
+        if addr < self.deci.binary_base_addr:
+            self.deci.warning(f"Lifting an address that appears already lifted: {addr}...")
+            return addr
+        else:
+            return addr - self.deci.binary_base_addr
 
     def lift_stack_offset(self, offset: int, func_addr: int) -> int:
         pass
@@ -38,7 +46,11 @@ class ArtifactLifter:
         pass
 
     def lower_addr(self, addr: int) -> int:
-        pass
+        if addr >= self.deci.binary_base_addr:
+            self.deci.warning(f"Lifting an address that appears already lifted: {addr}...")
+            return addr
+        else:
+            return addr + self.deci.binary_base_addr
 
     def lower_stack_offset(self, offset: int, func_addr: int) -> int:
         pass

@@ -51,6 +51,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     @property
+    def binary_base_addr(self) -> int:
+        return self.ghidra.base_addr
+
+    @property
     def binary_hash(self) -> str:
         return self.ghidra.currentProgram.executableMD5
 
@@ -61,17 +65,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def get_func_size(self, func_addr) -> int:
         gfunc = self._get_nearest_function(func_addr)
         return int(gfunc.getBody().getNumAddresses())
-
-    def rebase_addr(self, addr, up=True):
-        if self.base_addr is None:
-            self.base_addr = self.ghidra.base_addr
-
-        if up:
-            if addr > self.base_addr:
-                return
-            return addr + self.base_addr
-        elif addr > self.base_addr:
-            return addr - self.base_addr
 
     def connect_ghidra_bridge(self):
         self.ghidra = GhidraAPIWrapper(self)

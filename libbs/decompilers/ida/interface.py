@@ -48,6 +48,10 @@ class IDAInterface(DecompilerInterface):
     #
 
     @property
+    def binary_base_addr(self) -> int:
+        return idaapi.get_imagebase()
+
+    @property
     def binary_hash(self) -> str:
         return idc.retrieve_input_file_md5().hex()
 
@@ -70,7 +74,7 @@ class IDAInterface(DecompilerInterface):
             _l.warning("xrefs_to is only implemented for functions.")
             return []
 
-        function: Function = self.artifact_lifer.lower(artifact)
+        function: Function = self.art_lifter.lower(artifact)
         ida_xrefs = compat.xrefs_to(function.addr)
         if not ida_xrefs:
             return []

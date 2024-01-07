@@ -2,7 +2,7 @@
 # This file is more of a library for making compatibility calls to IDA for
 # things such as getting decompiled function names, start addresses, and
 # asking for write permission to ida. This will mostly be called in the
-# controller.
+# deci.
 #
 # Note that anything that requires write permission to IDA will need to pass
 # through this program if it is not running in the main thread.
@@ -35,7 +35,7 @@ l = logging.getLogger(__name__)
 # a special note about these functions:
 # Any operation that needs to do some type of write to the ida db (idb), needs to be in the main thread due to
 # some ida constraints. Sometimes reads also need to be in the main thread. To make things efficient, most heavy
-# things are done in the controller and just setters and getters are done here.
+# things are done in the deci and just setters and getters are done here.
 #
 
 
@@ -603,7 +603,7 @@ def set_stack_vars_types(var_type_dict, ida_code_view) -> bool:
 
     @param var_type_dict:       Dict[stack_offset, ida_typeinf_t]
     @param ida_code_view:           A pointer to a vdui_t screen
-    @param controller:          The libbs controller to do operations on
+    @param deci:          The libbs deci to do operations on
     @return:
     """
 
