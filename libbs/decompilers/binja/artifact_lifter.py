@@ -13,11 +13,8 @@ class BinjaArtifactLifter(ArtifactLifter):
         "uint8_t": "unsigned char",
     }
 
-    def __init__(self, controller):
-        super(BinjaArtifactLifter, self).__init__(controller)
-
-    def lift_addr(self, addr: int) -> int:
-        return addr
+    def __init__(self, deci):
+        super(BinjaArtifactLifter, self).__init__(deci)
 
     def lift_type(self, type_str: str) -> str:
         for bn_t, bs_t in self.lift_map.items():
@@ -27,9 +24,6 @@ class BinjaArtifactLifter(ArtifactLifter):
 
     def lift_stack_offset(self, offset: int, func_addr: int) -> int:
         return offset
-
-    def lower_addr(self, addr: int) -> int:
-        return addr
 
     def lower_type(self, type_str: str) -> str:
         return type_str

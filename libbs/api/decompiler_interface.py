@@ -72,7 +72,7 @@ class DecompilerInterface:
         artifact_write_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
     ):
         self.name = name
-        self.artifact_lifer = artifact_lifter
+        self.art_lifter = artifact_lifter
         self.type_parser = CTypeParser()
         self.supports_undo = supports_undo
         self.qt_version = qt_version
@@ -196,6 +196,14 @@ class DecompilerInterface:
     #
 
     @property
+    def binary_base_addr(self) -> int:
+        """
+        Returns the base address of the binary in the decompiler. This is useful for calculating offsets
+        in the binary. Also mandatory for using the lifting and lowering API.
+        """
+        raise NotImplementedError
+
+    @property
     def binary_hash(self) -> str:
         """
         Returns a hex string of the currently loaded binary in the decompiler. For most cases,
@@ -237,7 +245,7 @@ class DecompilerInterface:
             return None
 
         # TODO: make this a function call after transitioning decompiler artifacts to LiveState
-        for search_addr in (addr, self.artifact_lifer.lower_addr(addr)):
+        for search_addr in (addr, self.art_lifter.lower_addr(addr)):
             func_found = False
             for func_addr, func in self._functions().items():
                 if func.addr <= search_addr < (func.addr + func.size):
@@ -487,7 +495,7 @@ class DecompilerInterface:
 
         >>> func = Function(0xdeadbeef, 0x800)
         >>> func.name = "main"
-        >>> controller.set_artifact(func)
+        >>> deci.set_artifact(func)
 
         @param artifact:
         @param lower:       Wether to convert the Artifacts types and offset into the local decompilers format
@@ -506,7 +514,7 @@ class DecompilerInterface:
         }
 
         if lower:
-            artifact = self.lower_artifact(artifact)
+            artifact = self.art_lifter.lower(artifact)
 
         setter = set_map.get(type(artifact), None)
         if setter is None:
@@ -546,16 +554,6 @@ class DecompilerInterface:
             callback_func(gvar, **kwargs)
 
     #
-    # Client API & Shortcuts
-    #
-
-    def lift_artifact(self, artifact: Artifact) -> Artifact:
-        return self.artifact_lifer.lift(artifact)
-
-    def lower_artifact(self, artifact: Artifact) -> Artifact:
-        return self.artifact_lifer.lower(artifact)
-
-    #
     # Fillers:
     # A filler function is generally responsible for pulling down artifacts from a specific user state
     # and reflecting those changes in decompiler view (like the text on the screen). Normally, these changes
@@ -583,7 +581,7 @@ class DecompilerInterface:
         :return:
         """
 
-        lowered_artifact = self.lower_artifact(artifact)
+        lowered_artifact = self.art_lifter.lower(artifact)
         lock = self.artifact_write_lock if not self.artifact_write_lock.locked() else DummyArtifactSetLock()
         with lock:
             try:
@@ -697,7 +695,7 @@ class DecompilerInterface:
     ) -> Optional["DecompilerInterface"]:
         """
         This function is a special API helper that will attempt to detect the decompiler it is running in and
-        return the valid BSController for that decompiler. You may also force the chosen controller.
+        return the valid BSController for that decompiler. You may also force the chosen deci.
 
         @param force_decompiler:    The optional string used to force a specific decompiler interface
         @param interface_overrides: The optional dict used to override the class of a decompiler interface

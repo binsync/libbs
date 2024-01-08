@@ -63,6 +63,10 @@ class AngrInterface(DecompilerInterface):
     #
 
     @property
+    def binary_base_addr(self) -> int:
+        return self.main_instance.project.loader.main_object.mapped_base
+
+    @property
     def binary_hash(self) -> str:
         return self.main_instance.project.loader.main_object.md5.hex()
 
@@ -81,26 +85,12 @@ class AngrInterface(DecompilerInterface):
         except KeyError:
             return 0
 
-    def rebase_addr(self, addr, up=False):
-        is_pie = self.main_instance.project.loader.main_object.pic
-        if not is_pie:
-            return addr
-
-        base_addr = self.main_instance.project.loader.main_object.mapped_base
-        rebased_addr = addr
-        if up and addr < base_addr:
-            rebased_addr = addr + base_addr
-        elif not up and addr > base_addr:
-            rebased_addr = addr - base_addr
-
-        return rebased_addr
-
     def xrefs_to(self, artifact: Artifact) -> List[Artifact]:
         if not isinstance(artifact, Function):
             l.warning("xrefs_to is only implemented for functions.")
             return []
 
-        function: Function = self.lower_artifact(artifact)
+        function: Function = self.art_lifter.lower(artifact)
         program_cfg = self.main_instance.kb.cfgs.get_most_accurate()
         if program_cfg is None:
             return []
@@ -170,7 +160,7 @@ class AngrInterface(DecompilerInterface):
         return self.gui_plugin
 
     def goto_address(self, func_addr):
-        self.workspace.jump_to(self.rebase_addr(func_addr, up=True))
+        self.workspace.jump_to(self.art_lifter.lower_addr(func_addr))
 
     def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
         if self.gui_plugin is None:
@@ -194,8 +184,7 @@ class AngrInterface(DecompilerInterface):
         if func is None or func.am_obj is None:
             return None
 
-        func_addr = self.rebase_addr(func.addr)
-
+        func_addr = self.art_lifter.lift_addr(func.addr)
         return Function(
             func_addr, 0, header=FunctionHeader(func.name, func_addr)
         )
