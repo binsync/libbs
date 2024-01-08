@@ -299,51 +299,48 @@ class BinjaInterface(DecompilerInterface):
         if not fheader.args:
             return updates
 
-        # XXX: hacky prototype parsing
-        prototype_tokens = [fheader.type] if fheader.type else [bn_func.return_type.get_string_before_name()]
-        prototype_tokens.append("(")
-        for idx, func_arg in fheader.args.items():
-            prototype_tokens.append(func_arg.type)
-            prototype_tokens.append(func_arg.name)
-            prototype_tokens.append(",")
+        for i, bn_var in enumerate(bn_func.parameter_vars):
+            bs_var = fheader.args.get(i, None)
+            if bs_var is None:
+                continue
 
-        if prototype_tokens[-1] == ",":
-            prototype_tokens[-1] = ")"
+            # type
+            if bs_var.type and bs_var.type != self.art_lifter.lift_type(str(bn_var.type)):
+                bn_var.type = bs_var.type
+                updates |= True
+                bn_var = bn_func.parameter_vars[i]
 
-        prototype_str = " ".join(prototype_tokens)
-
-        try:
-            bn_prototype, _ = self.bv.parse_type_string(prototype_str)
-        except Exception:
-            bn_prototype = None
-
-        if bn_prototype is not None:
-            bn_func.type = bn_prototype
-            updates |= True
+            # name
+            if bs_var.name and bs_var.name != str(bn_var.name):
+                bn_var.name = bs_var.name
+                updates |= True
 
         return updates
 
     # stack vars
     def _set_stack_variable(self, svar: StackVariable, bn_func=None, **kwargs) -> bool:
         updates = False
-        existing_stack_vars: Dict[int, Any] = {
+        current_bn_vars: Dict[int, Any] = {
             v.storage: v for v in bn_func.stack_layout
-            if v.source_type == VariableSourceType.StackVariableSourceType
+            if v.source_type == VariableSourceType.StackVariableSourceType and v not in bn_func.parameter_vars
         }
 
         bn_offset = svar.offset
-        if bn_offset in existing_stack_vars:
-            if existing_stack_vars[bn_offset].name != svar.name:
-                existing_stack_vars[bn_offset].name = svar.name
+        if bn_offset in current_bn_vars:
+            # name
+            if str(current_bn_vars[bn_offset].name) != svar.name:
+                current_bn_vars[bn_offset].name = svar.name
+                updates |= True
 
+            # type
             try:
                 type_, _ = self.bv.parse_type_string(svar.type)
             except Exception:
                 type_ = None
 
             if type_ is not None:
-                if existing_stack_vars[bn_offset].type != type_:
-                    existing_stack_vars[bn_offset].type = type_
+                if self.art_lifter.lift_type(str(current_bn_vars[bn_offset].type)) != type_:
+                    current_bn_vars[bn_offset].type = type_
                 try:
                     bn_func.create_user_stack_var(bn_offset, type_, svar.name)
                     bn_func.create_auto_stack_var(bn_offset, type_, svar.name)
@@ -551,7 +548,8 @@ class BinjaInterface(DecompilerInterface):
         #
 
         binja_stack_vars = {
-            v.storage: v for v in bn_func.stack_layout if v.source_type == VariableSourceType.StackVariableSourceType
+            v.storage: v for v in bn_func.stack_layout
+            if v.source_type == VariableSourceType.StackVariableSourceType and v not in bn_func.parameter_vars
         }
         sorted_stack = sorted(bn_func.stack_layout, key=lambda x: x.storage)
         var_sizes = {}
