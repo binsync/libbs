@@ -13,6 +13,25 @@ _l = logging.getLogger(__name__)
 
 
 class ArtifactDict(dict):
+    """
+    The ArtifactDict is a Dictionary wrapper around the getting/setting/listing of artifacts in the decompiler. This
+    allows for a more pythonic interface to the decompiler artifacts. For example, instead of doing:
+    deci._set_function(func)
+
+    You can do:
+    >>> deci.functions[func.addr] = func
+
+    This class is not meant to be instantiated directly, but rather through the DecompilerInterface class.
+    There is currently some interesting affects and caveats to using this class:
+    - When you list artifacts, by calling list(), you will get a light copy of the artifacts. This means that if you
+        modify the artifacts in the list, they will not be reflected in the decompiler. You also do need get current
+        data in the decompiler, only an acknowledgement that the artifact exists.
+    - You must reassign the artifact to the dictionary to update the decompiler.
+    - When assigning something to the dictionary, it must always be in its lifted form. You will also only get lifted
+        artifacts back from the dictionary.
+    - For convience, you can access functions by their lowered address
+    """
+
     def __init__(self, artifact_cls, deci: "DecompilerInterface", error_on_duplicate=False):
         super().__init__()
 
@@ -49,6 +68,9 @@ class ArtifactDict(dict):
     def __setitem__(self, key, value):
         if not isinstance(value, self._artifact_class):
             raise ValueError(f"Attempting to set a value of type {type(value)} to a dict of type {self._artifact_class}")
+
+        if hasattr(value, "addr") and value.addr is None:
+            value.addr = key
 
         art = self._deci.art_lifter.lower(value)
         if not self._artifact_setter(art) and self._error_on_duplicate:
