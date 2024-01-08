@@ -24,21 +24,25 @@ more of the complicated API that allows you to use an abstracted UI, artifacts, 
 ### UI Mode (default)
 To use the same script everywhere, use the convenience function `DecompilerInterface.discover_interface()`, which will
 auto find the correct interface. Copy the below code into any supported decompiler and it should run without edit.
+
 ```python
 from libbs.api import DecompilerInterface
-deci = DecompilerInterface.discover_interface()
+
+deci = DecompilerInterface.discover()
 for function in deci.functions:
     if function.header.type == "void *":
         function.header.type = "long long"
-    
+
     deci.functions[function.addr] = function
 ```
 
 ### Headless Mode 
 To use headless mode you must specify a decompiler to use. You can get the traditional interface using the following:
+
 ```python 
 from libbs.api import DecompilerInterface
-deci = DecompilerInterface.discover_interface(force_decompiler="ida", headless=True)
+
+deci = DecompilerInterface.discover(force_decompiler="ida", headless=True)
 ```
 
 ### Artifact Access Caveats
@@ -56,15 +60,8 @@ for func_addr, light_func in deci.functions.items():
 Notice, when using the `items` function the function is `light`, meaning it does not contain stack vars and other 
 info. This also means using `keys`, `values`, or `list` on an artifact dictionary will have the same affect. 
 
-## TODO
-G/S: Getters/Setters
-- [ ] Add all decompilers to auto-detect interface
-
 ### IDA
 - [ ] G/S Comments
-
-### Binja
-- [ ] Change Callbacks
 
 ### Ghidra
 - [ ] Change Callbacks

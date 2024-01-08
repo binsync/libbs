@@ -644,19 +644,16 @@ class DecompilerInterface:
             return None
 
     @staticmethod
-    def find_current_decompiler():
+    def find_current_decompiler() -> Optional[str]:
+        """
+        Finds the name of the current decompiler that this function is running inside of. Note, this function
+        does not create an interface, but instead finds the name of the decompiler that is currently running.
+        """
+
         # IDA Pro
         try:
             import idaapi
             return IDA_DECOMPILER
-        except ImportError:
-            pass
-
-        # Binary Ninja
-        try:
-            import binaryninja
-            if DecompilerInterface._find_global_in_call_frames('bv') is not None:
-                return BINJA_DECOMPILER
         except ImportError:
             pass
 
@@ -669,12 +666,31 @@ class DecompilerInterface:
         except ImportError:
             pass
 
-        # Ghidra (over remote) is default
-        # TODO: add search for known port being open for remote Ghidra
-        return GHIDRA_DECOMPILER
+        # Ghidra: which is all done over a remote connection check
+        import socket
+        from libbs.decompiler_stubs.ghidra_libbs.libbs_vendored.ghidra_bridge_port import DEFAULT_SERVER_PORT
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)  # 2 Second Timeout
+        try:
+            if sock.connect_ex(('127.0.0.1', DEFAULT_SERVER_PORT)) == 0:
+                return GHIDRA_DECOMPILER
+        except ConnectionError:
+            pass
+
+        # Binary Ninja
+        # this check needs to be done last since there is no way to traverse the stack frame to find the correct
+        # BV at this point in time.
+        try:
+            import binaryninja
+            return BINJA_DECOMPILER
+        except ImportError:
+            pass
+
+        _l.warning("LibBS does not know the current decompiler you are running in... it may not be supported!")
+        return None
 
     @staticmethod
-    def discover_interface(
+    def discover(
         force_decompiler: str = None,
         interface_overrides: Optional[Dict[str, "DecompilerInterface"]] = None,
         **interface_kwargs

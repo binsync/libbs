@@ -15,7 +15,7 @@ def create_plugin(*args, **kwargs):
         FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment
     )
 
-    deci = DecompilerInterface.discover_interface(
+    deci = DecompilerInterface.discover(
         plugin_name="ArtifactChangeWatcher",
         init_plugin=True,
         ui_init_args=args,
