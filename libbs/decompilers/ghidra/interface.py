@@ -52,7 +52,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
-        return self.ghidra.base_addr
+        return self.ghidra.currentProgram.getImageBase().getOffset()
 
     @property
     def binary_hash(self) -> str:
@@ -615,7 +615,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return None
 
         dtm_service_class = self.ghidra.import_module_object("ghidra.app.services", "DataTypeManagerService")
-        dtp_class = self.ghidra.import_module_object("ghidra.util.artifacts", "DataTypeParser")
+        dtp_class = self.ghidra.import_module_object("ghidra.util.data", "DataTypeParser")
         dt_service = self.ghidra.getState().getTool().getService(dtm_service_class)
         dt_parser = dtp_class(dt_service, dtp_class.AllowedDataTypes.ALL)
         try:
