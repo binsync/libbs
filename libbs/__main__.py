@@ -46,11 +46,6 @@ def main():
     parser.add_argument(
         "--single-decompiler-install", nargs=2, metavar=('decompiler', 'path'), help="Install DAILA into a single decompiler. Decompiler must be one of: ida, ghidra, binja, angr."
     )
-    parser.add_argument(
-        "--run-ghidra-ui", action="store_true", help="""
-        Execute the Ghidra file selector UI for running LibBS scripts.
-        """
-    )
     args = parser.parse_args()
 
     if args.single_decompiler_install:
@@ -58,8 +53,6 @@ def main():
         LibBSPluginInstaller().install(interactive=False, paths_by_target={decompiler: path})
     elif args.install:
         install()
-    elif args.run_ghidra_ui:
-        return run_ghidra_ui()
 
 
 if __name__ == "__main__":
