@@ -67,6 +67,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                              #stdout=subprocess.DEVNULL,
                              #stderr=subprocess.DEVNULL)
+            print(' '.join(p.args))
             while True:
                 nl = p.stdout.readline()
                 if nl == '' and p.poll() is not None:
