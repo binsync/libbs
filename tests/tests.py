@@ -6,7 +6,7 @@ from libbs.api import DecompilerInterface
 
 class TestHeadlessInterfaces(unittest.TestCase):
     def test_ghidra_interface(self):
-        ci_headless_binary_path = os.path.expandvars("/home/flipout/.local/bin/ghidra_10.4_PUBLIC//support/analyzeHeadless")
+        ci_headless_binary_path = os.path.expandvars("$GHIDRA_INSTALL_DIR/support/analyzeHeadless")
         fauxware_path = os.path.expandvars("$HOME/fauxware")
         deci = DecompilerInterface.discover(force_decompiler="ghidra",
                                                       headless=True,
