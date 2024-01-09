@@ -69,7 +69,6 @@ class DecompilerInterface:
         if not headless_path.exists():
             raise FileNotFoundError("Path to headless binary not found")
         if not bin_path.exists():
-            print(str(bin_path))
             raise FileNotFoundError("Path to binary not found")
         self.headless_binary_path = headless_path
         self.binary = bin_path

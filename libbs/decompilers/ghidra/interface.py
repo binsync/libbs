@@ -55,13 +55,18 @@ class GhidraDecompilerInterface(DecompilerInterface):
             script_path = PluginInstaller.find_pkg_files("libbs") / "decompiler_stubs" / "ghidra_libbs"
             tmpdir = tempfile.TemporaryDirectory()
             self.headless_project = tmpdir
-            subprocess.Popen([str(self.headless_binary_path),
+            p = subprocess.Popen([str(self.headless_binary_path),
                               tmpdir.name, "headless",
                               "-import", str(self.binary),
                               "-scriptPath", str(script_path),
                               "-postScript", "ghidra_libbs_mainthread_server.py"],
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                             #stdout=subprocess.DEVNULL,
+                             #stderr=subprocess.DEVNULL)
+            print(f'poll: {p.poll}')
+            stdout, stderr = p.communicate()
+            print(f'stdout:\n{stdout}')
+            print(f'stderr:\n{stderr}')
 
         # Connect to the remote bridge, assumes Ghidra is already running!
         if not self.connect_ghidra_bridge():
