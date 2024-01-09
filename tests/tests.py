@@ -12,7 +12,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
                                                       headless=True,
                                                       headless_binary_path=ci_headless_binary_path,
                                                       binary=fauxware_path
-                                                      )
+                                            )
         #main = deci.functions[0x400664]
         #main.name = "main"
         #deci.functions[0x400664] = main
