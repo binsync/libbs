@@ -6,12 +6,20 @@ l = logging.getLogger(name=__name__)
 
 
 class GhidraArtifactLifter(ArtifactLifter):
-    lift_map = {}
+    lift_map = {
+        "undefined64": "long long",
+        "undefined32": "int",
+        "undefined16": "short",
+        "undefined8": "char",
+    }
 
     def __init__(self, deci):
         super(GhidraArtifactLifter, self).__init__(deci)
 
     def lift_type(self, type_str: str) -> str:
+        for ghidra_t, bs_t in self.lift_map.items():
+            type_str = type_str.replace(ghidra_t, bs_t)
+
         return type_str
 
     def lift_stack_offset(self, offset: int, func_addr: int) -> int:

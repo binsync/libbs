@@ -72,7 +72,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def decompile(self, addr: int) -> Optional[str]:
         # TODO: allow the super to do this again
-        function = self.functions[addr]
+        function = self.art_lifter.lower(self.functions[addr])
         return self._decompile(function)
 
     def _decompile(self, function: Function) -> Optional[str]:
@@ -202,25 +202,31 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 i: FunctionArgument(i, name, typestr, size, addr) for i, name, typestr, size in arg_variable_info
             }
 
+        # grab the return type of the function from ghidra
+        type_ = self.ghidra.bridge.remote_eval(
+            "dec.getHighFunction().getFunctionPrototype().getReturnType().getName()",
+            dec=dec
+        )
+
         bs_func = Function(
             func.getEntryPoint().getOffset(), func.getBody().getNumAddresses(),
-            header=FunctionHeader(func.getName(), func.getEntryPoint().getOffset(), args=args),
+            header=FunctionHeader(func.getName(), func.getEntryPoint().getOffset(), args=args, type_=type_),
             stack_vars=stack_variables, dec_obj=dec
         )
         return bs_func
 
     def _functions(self) -> Dict[int, Function]:
         # optimization to speed up remote evaluation
-        name_and_sizes: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(f.getName(), f.getEntryPoint().getOffset()) "
+        func_info: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
+            "[(f.getName(), f.getEntryPoint().getOffset(), f.getBody().getNumAddresses()) "
             "for f in currentProgram.getFunctionManager().getFunctions(True)]"
         )
-        if name_and_sizes is None:
+        if func_info is None:
             _l.warning(f"Failed to get any functions from Ghidra. Did something break?")
             return {}
 
         funcs = {
-            addr: Function(addr, 0, header=FunctionHeader(name, addr)) for name, addr in name_and_sizes
+            addr: Function(addr, size, header=FunctionHeader(name, addr)) for name, addr, size in func_info
         }
         return funcs
 
@@ -230,6 +236,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         decompilation = kwargs.get('decompilation', None) or self._ghidra_decompile(self._get_function(svar.addr))
         ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(svar.addr)
         gstack_var = self._get_gstack_var(ghidra_func, svar.offset)
+        if not gstack_var:
+            return False
+
         src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
 
         if svar.name and svar.name != gstack_var.getName():

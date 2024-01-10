@@ -29,9 +29,10 @@ auto find the correct interface. Copy the below code into any supported decompil
 from libbs.api import DecompilerInterface
 
 deci = DecompilerInterface.discover()
-for function in deci.functions:
-    if function.header.type == "void *":
-        function.header.type = "long long"
+for addr in deci.functions:
+    function = deci.functions[addr]
+    if function.header.type == "void":
+        function.header.type = "int"
 
     deci.functions[function.addr] = function
 ```

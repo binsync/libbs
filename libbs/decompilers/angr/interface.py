@@ -119,7 +119,8 @@ class AngrInterface(DecompilerInterface):
         return dec_text
 
     def get_decompilation_object(self, function: Function) -> Optional[object]:
-        func = self.main_instance.project.kb.functions.get(function.addr, None)
+        func_addr = self.art_lifter.lower_addr(function.addr)
+        func = self.main_instance.project.kb.functions.get(func_addr, None)
         if func is None:
             return None
 
@@ -132,14 +133,18 @@ class AngrInterface(DecompilerInterface):
         return codegen
 
     def local_variable_names(self, func: Function) -> List[str]:
-        codegen = self.decompile_function(self.main_instance.project.kb.functions[func.addr])
+        codegen = self.decompile_function(
+            self.main_instance.project.kb.functions[self.art_lifter.lower_addr(func.addr)]
+        )
         if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
             return []
 
         return [v.name for v in codegen.cfunc.variable_manager._unified_variables]
 
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
-        codegen = self.decompile_function(self.main_instance.project.kb.functions[func.addr])
+        codegen = self.decompile_function(
+            self.main_instance.project.kb.functions[self.art_lifter.lower_addr(func.addr)]
+        )
         if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
             return False
 
@@ -184,9 +189,8 @@ class AngrInterface(DecompilerInterface):
         if func is None or func.am_obj is None:
             return None
 
-        func_addr = self.art_lifter.lift_addr(func.addr)
         return Function(
-            func_addr, 0, header=FunctionHeader(func.name, func_addr)
+            func.addr, 0, header=FunctionHeader(func.name, func.addr)
         )
 
     #
@@ -194,13 +198,14 @@ class AngrInterface(DecompilerInterface):
     #
 
     def _set_function(self, func: Function, **kwargs) -> bool:
-        angr_func = self.main_instance.project.kb.functions[func.addr]
+        func_addr = self.art_lifter.lower_addr(func.addr)
+        angr_func = self.main_instance.project.kb.functions[func_addr]
 
         # re-decompile a function if needed
         decompilation = self.decompile_function(angr_func)
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
         if not self.headless:
-            self.refresh_decompilation(func.addr)
+            self.refresh_decompilation(func_addr)
 
         return changes
 

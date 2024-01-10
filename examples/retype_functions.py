@@ -1,8 +1,13 @@
 from libbs.api import DecompilerInterface
 
 deci = DecompilerInterface.discover()
-for function in deci.functions:
-    if function.header.type == "void *":
-        function.header.type = "long long"
-
-    deci.functions[function.addr] = function
+for addr, func in deci.functions.items():
+    if func.size > 0x30:
+        # decompile the function
+        func = deci.functions[addr]
+        if func.header.type == "void":
+            deci.print(f"Updating {func}")
+            func.header.type = "int"
+            func.name = f"up_{addr}"
+        # reassign to affect the decompiler
+        deci.functions[addr] = func
