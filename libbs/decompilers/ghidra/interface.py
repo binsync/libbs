@@ -62,21 +62,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                               tmpdir.name, "headless",
                               "-import", str(self.binary),
                               "-scriptPath", str(script_path),
-                              "-postScript", "ghidra_libbs_mainthread_server.py"],
-                              shell=True,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                             #stdout=subprocess.DEVNULL,
-                             #stderr=subprocess.DEVNULL)
-            print(' '.join(p.args))
-            while True:
-                nl = p.stdout.readline()
-                if nl == '' and p.poll() is not None:
-                    break
-                sys.stdout.write(nl.decode())
-                sys.stdout.flush()
-                break
-            output = p.communicate()[0]
-            print(output.decode())
+                              "-postScript", "ghidra_libbs_mainthread_server.py"],)
 
         # Connect to the remote bridge, assumes Ghidra is already running!
         if not self.connect_ghidra_bridge():
@@ -89,6 +75,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def shutdown(self):
         self.ghidra.bridge.remote_shutdown()
+        # need to wait a sec for the server to shutdown
+        time.sleep(5)
         self.headless_project.cleanup()
 
     #
