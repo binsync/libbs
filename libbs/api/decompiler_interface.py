@@ -104,6 +104,13 @@ class DecompilerInterface:
             kwargs = gui_init_kwargs or {}
             self._init_gui_components(*args, **kwargs)
 
+    #
+    # Headless
+    #
+
+    def _init_headless_components(self, *args, **kwargs):
+        pass
+
     def _init_gui_components(self, *args, **kwargs):
         from libbs.ui.version import set_ui_version
         set_ui_version(self.qt_version)
@@ -289,6 +296,7 @@ class DecompilerInterface:
 
     #
     # Override Optional API:
+    # These are API that provide extra introspection for plugins that may rely on LibBS Interface
     #
 
     def undo(self):
