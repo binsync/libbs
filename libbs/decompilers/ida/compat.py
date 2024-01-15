@@ -294,7 +294,7 @@ def function_header(ida_code_view) -> FunctionHeader:
 
 @execute_write
 @requires_decompilation
-def set_function_header(libbs_header: libbs.artifacts.FunctionHeader, exit_on_bad_type=False, ida_code_view=None):
+def set_function_header(bs_header: libbs.artifacts.FunctionHeader, exit_on_bad_type=False, ida_code_view=None):
     data_changed = False
     func_addr = ida_code_view.cfunc.entry_ea
     cur_ida_func = function_header(ida_code_view)
@@ -303,8 +303,8 @@ def set_function_header(libbs_header: libbs.artifacts.FunctionHeader, exit_on_ba
     # FUNCTION NAME
     #
 
-    if libbs_header.name and libbs_header.name != cur_ida_func.name:
-        set_ida_func_name(func_addr, libbs_header.name)
+    if bs_header.name and bs_header.name != cur_ida_func.name:
+        set_ida_func_name(func_addr, bs_header.name)
 
     #
     # FUNCTION RET TYPE
@@ -312,9 +312,9 @@ def set_function_header(libbs_header: libbs.artifacts.FunctionHeader, exit_on_ba
 
     func_name = get_func_name(func_addr)
     cur_ret_type_str = str(ida_code_view.cfunc.type.get_rettype())
-    if libbs_header.type and libbs_header.type != cur_ret_type_str:
+    if bs_header.type and bs_header.type != cur_ret_type_str:
         old_prototype = str(ida_code_view.cfunc.type).replace("(", f" {func_name}(", 1)
-        new_prototype = old_prototype.replace(cur_ret_type_str, libbs_header.type, 1)
+        new_prototype = old_prototype.replace(cur_ret_type_str, bs_header.type, 1)
         success = bool(
             ida_typeinf.apply_tinfo(func_addr, convert_type_str_to_ida_type(new_prototype), ida_typeinf.TINFO_DEFINITE)
         )
@@ -331,20 +331,23 @@ def set_function_header(libbs_header: libbs.artifacts.FunctionHeader, exit_on_ba
     #
 
     types_to_change = {}
-    for idx, libbs_arg in libbs_header.args.items():
+    for idx, bs_arg in bs_header.args.items():
+        if not bs_arg:
+            continue
+
         if idx >= len(cur_ida_func.args):
             break
 
         cur_ida_arg = cur_ida_func.args[idx]
 
         # change the name
-        if libbs_arg.name and libbs_arg.name != cur_ida_arg.name:
-            success = ida_code_view.rename_lvar(ida_code_view.cfunc.arguments[idx], libbs_arg.name, 1)
+        if bs_arg.name and bs_arg.name != cur_ida_arg.name:
+            success = ida_code_view.rename_lvar(ida_code_view.cfunc.arguments[idx], bs_arg.name, 1)
             data_changed |= success
 
         # record the type to change
-        if libbs_arg.type and libbs_arg.type != cur_ida_arg.type:
-            types_to_change[idx] = (cur_ida_arg.type, libbs_arg.type)
+        if bs_arg.type and bs_arg.type != cur_ida_arg.type:
+            types_to_change[idx] = (cur_ida_arg.type, bs_arg.type)
 
     # crazy prototype parsing
     func_prototype = str(ida_code_view.cfunc.type).replace("(", f" {func_name}(", 1)

@@ -169,7 +169,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     def _set_function(self, func: Function, **kwargs) -> bool:
-        func_addr = func.header.addr
+        func_addr = self.art_lifter.lower_addr(func.header.addr)
         decompilation = self._ghidra_decompile(self._get_nearest_function(func_addr))
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
         return changes
@@ -233,18 +233,23 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ghidra_transaction
     def _set_stack_variable(self, svar: StackVariable, **kwargs) -> bool:
         changes = False
+        if not svar:
+            return changes
+
         decompilation = kwargs.get('decompilation', None) or self._ghidra_decompile(self._get_function(svar.addr))
         ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(svar.addr)
         gstack_var = self._get_gstack_var(ghidra_func, svar.offset)
         if not gstack_var:
-            return False
+            return changes
 
         src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
 
+        # name
         if svar.name and svar.name != gstack_var.getName():
             gstack_var.setName(svar.name, src_type.USER_DEFINED)
             changes = True
 
+        # type
         if svar.type:
             parsed_type = self.typestr_to_gtype(svar.type)
             if parsed_type is not None and parsed_type != str(gstack_var.getDataType()):

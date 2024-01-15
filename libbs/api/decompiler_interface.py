@@ -100,6 +100,7 @@ class DecompilerInterface:
         self.enums = ArtifactDict(Enum, self, error_on_duplicate=error_on_artifact_duplicates)
         self.structs = ArtifactDict(Struct, self, error_on_duplicate=error_on_artifact_duplicates)
         self.patches = ArtifactDict(Patch, self, error_on_duplicate=error_on_artifact_duplicates)
+        self.global_vars = ArtifactDict(GlobalVariable, self, error_on_duplicate=error_on_artifact_duplicates)
         #self.stack_vars = ArtifactDict(StackVariable, self, error_on_duplicate=error_on_artifact_duplicates)
 
         self._decompiler_available = decompiler_available

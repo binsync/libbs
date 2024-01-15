@@ -268,26 +268,39 @@ class AngrInterface(DecompilerInterface):
 
         if fheader.args:
             for i, arg in fheader.args.items():
+                if not arg:
+                    continue
+
                 if i >= len(decompilation.cfunc.arg_list):
                     break
-                if decompilation.cfunc.arg_list[i].variable.name != arg.name:
-                    decompilation.cfunc.arg_list[i].variable.name = arg.name
+
+                dec_arg = decompilation.cfunc.arg_list[i].variable
+                # TODO: set the types of the args
+                if arg.name and arg.name != dec_arg.name:
+                    dec_arg.name = arg.name
                     changes = True
 
         return changes
 
     def _set_stack_variable(self, svar: StackVariable, decompilation=None, **kwargs) -> bool:
         changed = False
-        code_var = AngrInterface.find_stack_var_in_codegen(decompilation, svar.offset)
-        if code_var:
-            code_var.name = svar.name
-            code_var.renamed = True
+        if not svar or not decompilation:
+            return changed
+
+        dec_svar = AngrInterface.find_stack_var_in_codegen(decompilation, svar.offset)
+        if dec_svar and svar.name and svar.name != dec_svar.name:
+            # TODO: set the types of the stack vars
+            dec_svar.name = svar.name
+            dec_svar.renamed = True
             changed = True
 
         return changed
 
     def _set_comment(self, comment: Comment, decompilation=None, **kwargs) -> bool:
         changed = False
+        if not comment or not comment.comment:
+            return changed
+
         if comment.decompiled and comment.addr != comment.func_addr:
             try:
                 pos = decompilation.map_addr_to_pos.get_nearest_pos(comment.addr)

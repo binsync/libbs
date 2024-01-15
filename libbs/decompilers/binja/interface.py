@@ -328,26 +328,27 @@ class BinjaInterface(DecompilerInterface):
         bn_offset = svar.offset
         if bn_offset in current_bn_vars:
             # name
-            if str(current_bn_vars[bn_offset].name) != svar.name:
+            if svar.name and svar.name != str(current_bn_vars[bn_offset].name):
                 current_bn_vars[bn_offset].name = svar.name
                 updates |= True
 
             # type
-            try:
-                type_, _ = self.bv.parse_type_string(svar.type)
-            except Exception:
-                type_ = None
-
-            if type_ is not None:
-                if self.art_lifter.lift_type(str(current_bn_vars[bn_offset].type)) != type_:
-                    current_bn_vars[bn_offset].type = type_
+            if svar.type:
                 try:
-                    bn_func.create_user_stack_var(bn_offset, type_, svar.name)
-                    bn_func.create_auto_stack_var(bn_offset, type_, svar.name)
-                except Exception as e:
-                    l.warning(f"BinSync could not sync stack variable at offset {bn_offset}: {e}")
+                    bs_svar_type, _ = self.bv.parse_type_string(svar.type)
+                except Exception:
+                    bs_svar_type = None
 
-                updates |= True
+                if bs_svar_type is not None:
+                    if self.art_lifter.lift_type(str(current_bn_vars[bn_offset].type)) != bs_svar_type:
+                        current_bn_vars[bn_offset].type = bs_svar_type
+                    try:
+                        bn_func.create_user_stack_var(bn_offset, bs_svar_type, svar.name)
+                        bn_func.create_auto_stack_var(bn_offset, bs_svar_type, svar.name)
+                    except Exception as e:
+                        l.warning(f"BinSync could not sync stack variable at offset {bn_offset}: {e}")
+
+                    updates |= True
 
         return updates
 
