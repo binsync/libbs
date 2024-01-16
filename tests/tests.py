@@ -13,8 +13,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
         fauxware_path = HOME_DIR + "/fauxware"
         deci = DecompilerInterface.discover(force_decompiler="ghidra",
                                                       headless=True,
-                                                      headless_binary_path=ci_headless_binary_path,
-                                                      binary=fauxware_path
+                                                      decompiler_headless_binary_path=ci_headless_binary_path,
+                                                      project_binary_path=fauxware_path
                                             )
         #main = deci.functions[0x400664]
         #main.name = "main"

@@ -4,9 +4,10 @@ from typing import Optional, Dict, List, Tuple
 import logging
 import subprocess
 import tempfile
-import os
-import sys
+import psutil
 from functools import wraps
+
+
 
 from libbs.api import DecompilerInterface
 from libbs.api.decompiler_interface import requires_decompilation
@@ -69,7 +70,20 @@ class GhidraDecompilerInterface(DecompilerInterface):
                               "-import", str(self.project_binary_path),
                               "-scriptPath", str(script_path),
                               "-postScript", "ghidra_libbs_mainthread_server.py"], )
-        time.sleep(10)
+
+    def _find_headless_proc(self):
+        for proc in psutil.process_iter():
+            try:
+                cmd = " ".join(proc.cmdline())
+            except Exception as e:
+                continue
+
+            if "headless" in cmd and "-import" in cmd and "-postScript" in cmd and "ghidra_libbs_mainthread_server.py" in cmd:
+                break
+        else:
+            proc = None
+
+        return proc
 
         # Connect to the remote bridge, assumes Ghidra is already running!
         if not self.connect_ghidra_bridge():
@@ -82,10 +96,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def shutdown(self):
         self.ghidra.bridge.remote_shutdown()
-        # need to wait a sec for the server to shutdown
-        time.sleep(5)
+        # Wait until headless binary gets shutdown
+        while True:
+            if not self._find_headless_proc():
+                break
+            time.sleep(1)
         self.headless_project.cleanup()
-
 
     #
     # GUI
@@ -156,7 +172,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return int(gfunc.getBody().getNumAddresses())
 
     def connect_ghidra_bridge(self):
-        self.ghidra = GhidraAPIWrapper(self)
+        self.ghidra = GhidraAPIWrapper(self, connection_timeout=25)
         return self.ghidra.connected
 
     def decompile(self, addr: int) -> Optional[str]:
