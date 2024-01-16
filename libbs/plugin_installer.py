@@ -240,32 +240,20 @@ class PluginInstaller:
 
 class LibBSPluginInstaller(PluginInstaller):
     def __init__(self, targets=None, target_install_paths=None):
-        super().__init__(targets=targets or PluginInstaller.DECOMPILERS, target_install_paths=target_install_paths)
+        # only ghidra needs an install
+        supported_targets = {"ghidra"}
+        do_install_targets = []
+        targets = targets or []
+        for target in targets:
+            if target in supported_targets:
+                do_install_targets.append(target)
+
+        super().__init__(targets=do_install_targets, target_install_paths=target_install_paths)
         self._libbs_plugins_path = self.find_pkg_files("libbs").joinpath("decompiler_stubs")
 
     def display_prologue(self):
         print(textwrap.dedent("""
         Now installing LibBS plugins for all supported decompilers..."""))
-
-    def install_ida(self, path=None, interactive=True):
-        ida_plugin_path = super().install_ida(path=path, interactive=interactive)
-        if ida_plugin_path is None:
-            return None
-
-        src_ida_libbs_py = self._libbs_plugins_path.joinpath("ida_libbs.py")
-        dst_ida_libbs_py = ida_plugin_path.joinpath("ida_libbs.py")
-        self.link_or_copy(src_ida_libbs_py, dst_ida_libbs_py)
-        return ida_plugin_path
-
-    def install_angr(self, path=None, interactive=True):
-        angr_plugin_path = super().install_angr(path=path, interactive=interactive)
-        if angr_plugin_path is None:
-            return None
-
-        src_angr_libbs_pkg = self._libbs_plugins_path.joinpath("angr_libbs")
-        dst_angr_libbs_pkg = angr_plugin_path.joinpath("angr_libbs")
-        self.link_or_copy(src_angr_libbs_pkg, dst_angr_libbs_pkg, is_dir=True)
-        return angr_plugin_path
 
     def install_ghidra(self, path=None, interactive=True):
         ghidra_path = super().install_ghidra(path=path, interactive=interactive)
@@ -285,13 +273,3 @@ class LibBSPluginInstaller(PluginInstaller):
         self.link_or_copy(src_script, dst_ghidra_script)
         self.link_or_copy(src_script_shutdown, dst_script_shutdown)
         return ghidra_path
-
-    def install_binja(self, path=None, interactive=True):
-        binja_plugin_path = super().install_binja(path=path, interactive=interactive)
-        if binja_plugin_path is None:
-            return None
-
-        src_path = self._libbs_plugins_path.joinpath("binja_libbs")
-        dst_path = binja_plugin_path.joinpath("binja_libbs")
-        self.link_or_copy(src_path, dst_path, is_dir=True)
-        return binja_plugin_path

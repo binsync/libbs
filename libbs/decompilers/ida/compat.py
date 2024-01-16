@@ -856,6 +856,11 @@ def set_enum(bs_enum: Enum):
 #
 
 @execute_write
+def get_image_base():
+    return idaapi.get_imagebase()
+
+
+@execute_write
 def acquire_pseudocode_vdui(addr):
     """
     Acquires a IDA HexRays vdui pointer, which is a pointer to a pseudocode view that contains

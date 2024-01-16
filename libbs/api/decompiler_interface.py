@@ -526,33 +526,33 @@ class DecompilerInterface:
 
     #
     # Change Callback API
-    # TODO: all the code in this category on_* is experimental and not ready for production use
-    # all this code should be implemented in the other decompilers or moved to a different project
     #
 
     def function_header_changed(self, fheader: FunctionHeader, **kwargs):
         for callback_func in self.artifact_write_callbacks[FunctionHeader]:
-            callback_func(fheader, **kwargs)
+            threading.Thread(target=callback_func, args=(fheader,), kwargs=kwargs, daemon=True).start()
 
     def stack_variable_changed(self, svar: StackVariable, **kwargs):
         for callback_func in self.artifact_write_callbacks[StackVariable]:
-            callback_func(svar, **kwargs)
+            threading.Thread(target=callback_func, args=(svar,), kwargs=kwargs, daemon=True).start()
 
     def comment_changed(self, comment: Comment, **kwargs):
         for callback_func in self.artifact_write_callbacks[Comment]:
-            callback_func(comment, **kwargs)
+            threading.Thread(target=callback_func, args=(comment,), kwargs=kwargs, daemon=True).start()
 
     def struct_changed(self, struct: Struct, deleted=False, **kwargs):
+        kwargs["deleted"] = deleted
         for callback_func in self.artifact_write_callbacks[Struct]:
-            callback_func(struct, deleted=deleted, **kwargs)
+            threading.Thread(target=callback_func, args=(struct,), kwargs=kwargs, daemon=True).start()
 
     def enum_changed(self, enum: Enum, deleted=False, **kwargs):
+        kwargs["deleted"] = deleted
         for callback_func in self.artifact_write_callbacks[Enum]:
-            callback_func(enum, deleted=deleted, **kwargs)
+            threading.Thread(target=callback_func, args=(enum,), kwargs=kwargs, daemon=True).start()
 
     def global_variable_changed(self, gvar: GlobalVariable, **kwargs):
         for callback_func in self.artifact_write_callbacks[GlobalVariable]:
-            callback_func(gvar, **kwargs)
+            threading.Thread(target=callback_func, args=(gvar,), kwargs=kwargs, daemon=True).start()
 
     #
     # Fillers:

@@ -1,8 +1,6 @@
-import threading
 import logging
 from typing import Dict, Optional, List
 from collections import OrderedDict, defaultdict
-from functools import wraps
 
 import idc
 import idaapi
@@ -49,7 +47,7 @@ class IDAInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
-        return idaapi.get_imagebase()
+        return compat.get_image_base()
 
     @property
     def binary_hash(self) -> str:
