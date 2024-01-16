@@ -1,14 +1,16 @@
 import unittest
+import pathlib
 import os
 
 from libbs.api import DecompilerInterface
 
+GHIDRA_INSTALL_DIR = os.environ.get('GHIDRA_INSTALL_DIR')
+HOME_DIR = os.environ.get('HOME')
 
 class TestHeadlessInterfaces(unittest.TestCase):
     def test_ghidra_interface(self):
-        ci_headless_binary_path = os.path.expandvars("$GHIDRA_INSTALL_DIR/support/analyzeHeadless")
-        #ci_headless_binary_path = os.path.expandvars("/home/flipout/.local/bin/ghidra_10.4_PUBLIC/support/analyzeHeadless")
-        fauxware_path = os.path.expandvars("$HOME/fauxware")
+        ci_headless_binary_path = GHIDRA_INSTALL_DIR + "/support/analyzeHeadless"
+        fauxware_path = HOME_DIR + "/fauxware"
         deci = DecompilerInterface.discover(force_decompiler="ghidra",
                                                       headless=True,
                                                       headless_binary_path=ci_headless_binary_path,

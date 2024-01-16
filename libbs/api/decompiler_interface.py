@@ -46,8 +46,8 @@ class DecompilerInterface:
         supports_undo: bool = False,
         # these will be changed often by public API use
         headless: bool = False,
-        headless_binary_path: Optional[str] = None,
-        binary: Optional[str] = None,
+        decompiler_headless_binary_path: Optional[str] = None,
+        project_binary_path: Optional[str] = None,
         init_plugin: bool = False,
         plugin_name: str = f"generic_libbs_plugin",
         # [category/name] = (action_string, callback_func)
@@ -63,15 +63,6 @@ class DecompilerInterface:
         self.supports_undo = supports_undo
         self.qt_version = qt_version
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
-
-        headless_path = Path(headless_binary_path)
-        bin_path = Path(binary)
-        if not headless_path.exists():
-            raise FileNotFoundError("Path to headless binary not found")
-        if not bin_path.exists():
-            raise FileNotFoundError("Path to binary not found")
-        self.headless_binary_path = headless_path
-        self.binary = bin_path
 
         # GUI things
         self.headless = headless
@@ -103,13 +94,23 @@ class DecompilerInterface:
             args = gui_init_args or []
             kwargs = gui_init_kwargs or {}
             self._init_gui_components(*args, **kwargs)
+        else:
+            self._init_headless_components(decompiler_headless_binary_path, project_binary_path)
 
     #
     # Headless
     #
 
-    def _init_headless_components(self, *args, **kwargs):
-        pass
+    def _init_headless_components(self, decompiler_headless_path, project_binary_path):
+        headless_path = Path(decompiler_headless_path)
+        bin_path = Path(project_binary_path)
+        if not headless_path.exists():
+            raise FileNotFoundError("Path to headless binary not found")
+        if not bin_path.exists():
+            raise FileNotFoundError("Path to binary not found")
+
+        self.decompiler_headless_binary_path = headless_path
+        self.project_binary_path = bin_path
 
     def _init_gui_components(self, *args, **kwargs):
         from libbs.ui.version import set_ui_version

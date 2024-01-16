@@ -51,19 +51,25 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         self.loop_on_plugin = loop_on_plugin
 
-        # Startup headless ghidra binary
-        if self.headless:
-            script_path = PluginInstaller.find_pkg_files("libbs") / "decompiler_stubs" / "ghidra_libbs"
-            tmpdir = tempfile.TemporaryDirectory()
-            self.headless_project = tmpdir
-            print(self.binary)
-            print(script_path)
-            p = subprocess.Popen([str(self.headless_binary_path),
+        # Connect to the remote bridge, assumes Ghidra is already running!
+        if not self.connect_ghidra_bridge():
+            raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
+
+    #
+    # Headless
+    #
+
+    def _init_headless_components(self, decompiler_headless_path, project_binary_path):
+        super()._init_headless_components(decompiler_headless_path, project_binary_path)
+        script_path = PluginInstaller.find_pkg_files("libbs") / "decompiler_stubs" / "ghidra_libbs"
+        tmpdir = tempfile.TemporaryDirectory()
+        self.headless_project = tmpdir
+        p = subprocess.Popen([str(self.decompiler_headless_binary_path),
                               tmpdir.name, "headless",
-                              "-import", str(self.binary),
+                              "-import", str(self.project_binary_path),
                               "-scriptPath", str(script_path),
-                              "-postScript", "ghidra_libbs_mainthread_server.py"],)
-            time.sleep(10)
+                              "-postScript", "ghidra_libbs_mainthread_server.py"], )
+        time.sleep(10)
 
         # Connect to the remote bridge, assumes Ghidra is already running!
         if not self.connect_ghidra_bridge():
@@ -79,6 +85,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         # need to wait a sec for the server to shutdown
         time.sleep(5)
         self.headless_project.cleanup()
+
 
     #
     # GUI
