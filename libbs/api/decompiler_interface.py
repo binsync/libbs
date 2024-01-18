@@ -66,8 +66,8 @@ class DecompilerInterface:
         plugin_name: str = f"generic_libbs_plugin",
         # [category/name] = (action_string, callback_func)
         gui_ctx_menu_actions: Optional[dict] = None,
-        ui_init_args: Optional[Tuple] = None,
-        ui_init_kwargs: Optional[Dict] = None,
+        gui_init_args: Optional[Tuple] = None,
+        gui_init_kwargs: Optional[Dict] = None,
         # [artifact_class] = list(callback_func)
         artifact_write_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
     ):
@@ -94,48 +94,22 @@ class DecompilerInterface:
         # callback functions, keyed by Artifact class
         self.artifact_write_callbacks = artifact_write_callbacks or defaultdict(list)
 
-        # artifact dict aliases
+        # artifact dict aliases:
+        # these are the public API for artifacts that are used by the decompiler interface
         self.functions = ArtifactDict(Function, self, error_on_duplicate=error_on_artifact_duplicates)
         self.comments = ArtifactDict(Comment, self, error_on_duplicate=error_on_artifact_duplicates)
         self.enums = ArtifactDict(Enum, self, error_on_duplicate=error_on_artifact_duplicates)
         self.structs = ArtifactDict(Struct, self, error_on_duplicate=error_on_artifact_duplicates)
         self.patches = ArtifactDict(Patch, self, error_on_duplicate=error_on_artifact_duplicates)
         self.global_vars = ArtifactDict(GlobalVariable, self, error_on_duplicate=error_on_artifact_duplicates)
-        #self.stack_vars = ArtifactDict(StackVariable, self, error_on_duplicate=error_on_artifact_duplicates)
 
         self._decompiler_available = decompiler_available
         if not self.headless:
-            args = ui_init_args or []
-            kwargs = ui_init_kwargs or {}
-            self._init_ui_components(*args, **kwargs)
+            args = gui_init_args or []
+            kwargs = gui_init_kwargs or {}
+            self._init_gui_components(*args, **kwargs)
 
-    #
-    # Decompiler GUI API
-    #
-
-    def start_artifact_watchers(self):
-        """
-        Starts the artifact watchers for the decompiler. This is a special function that is called
-        by the decompiler interface when the decompiler is ready to start watching for changes in the
-        decompiler. This is useful for plugins that want to watch for changes in the decompiler and
-        react to them.
-
-        @return:
-        """
-        self.info("Starting BinSync artifact watchers...")
-        self._artifact_watchers_started = True
-
-    def stop_artifact_watchers(self):
-        """
-        Stops the artifact watchers for the decompiler. This is a special function that is called
-        by the decompiler interface when the decompiler is ready to stop watching for changes in the
-        decompiler. This is useful for plugins that want to watch for changes in the decompiler and
-        react to them.
-        """
-        self.info("Stopping BinSync artifact watchers...")
-        self._artifact_watchers_started = False
-
-    def _init_ui_components(self, *args, **kwargs):
+    def _init_gui_components(self, *args, **kwargs):
         from libbs.ui.version import set_ui_version
         set_ui_version(self.qt_version)
 
@@ -164,6 +138,18 @@ class DecompilerInterface:
     def _init_gui_plugin(self, *args, **kwargs):
         return None
 
+    #
+    # Public API:
+    # These functions are the main API for interacting with the decompiler. In general, every function that takes
+    # an Artifact (including addresses) should be in the lifted form. Additionally, every function that returns an
+    # Artifact should be in the lifted form. This is to ensure that the decompiler interface is always in sync with
+    # the lifter. For getting and setting artifacts, the ArtifactDicts defined in the init should be used.
+    #
+
+    #
+    # GUI API
+    #
+
     def active_context(self) -> libbs.artifacts.Function:
         """
         Returns an libbs Function. Currently only functions are supported as current contexts.
@@ -185,16 +171,38 @@ class DecompilerInterface:
         raise NotImplementedError
 
     def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+        """
+        Opens a GUI dialog box that asks the user for a string. If not overriden by the decompiler interface,
+        this will default to a Qt dialog box that is based on the decompilers Qt version.
+        """
         from libbs.ui.utils import gui_ask_for_string
         return gui_ask_for_string(question, title=title)
 
+    #
+    # Override Mandatory API
+    #
 
-    #
-    # Override Mandatory API:
-    # These functions create a public API for things that hold a reference to the Controller from either another
-    # thread or object. This is most useful for use in the UI, which can use this API to make general requests from
-    # the decompiler regardless of internal decompiler API.
-    #
+    def start_artifact_watchers(self):
+        """
+        Starts the artifact watchers for the decompiler. This is a special function that is called
+        by the decompiler interface when the decompiler is ready to start watching for changes in the
+        decompiler. This is useful for plugins that want to watch for changes in the decompiler and
+        react to them.
+
+        @return:
+        """
+        self.info("Starting BinSync artifact watchers...")
+        self._artifact_watchers_started = True
+
+    def stop_artifact_watchers(self):
+        """
+        Stops the artifact watchers for the decompiler. This is a special function that is called
+        by the decompiler interface when the decompiler is ready to stop watching for changes in the
+        decompiler. This is useful for plugins that want to watch for changes in the decompiler and
+        react to them.
+        """
+        self.info("Stopping BinSync artifact watchers...")
+        self._artifact_watchers_started = False
 
     @property
     def binary_base_addr(self) -> int:
@@ -287,7 +295,6 @@ class DecompilerInterface:
 
     #
     # Override Optional API:
-    # These are API that provide extra introspection for plugins that may rely on LibBS Interface
     #
 
     def undo(self):
@@ -316,10 +323,9 @@ class DecompilerInterface:
         return False
 
     #
-    # Artifact API:
-    # These functions are the main API for interacting with the decompiler artifacts. Generally, these functions
-    # should all be implemented by the decompiler interface, but in the case that they are not, they should not
-    # crash the LibBS Interface.
+    # Private Artifact API:
+    # Unlike the public API, every function in this section should take and return artifacts in their native (lowered)
+    # form.
     #
 
     # functions

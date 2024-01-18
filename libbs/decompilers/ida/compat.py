@@ -1017,7 +1017,7 @@ class GenericIDAPlugin(QObject, idaapi.plugin_t):
         self.interface: "IDAInterface" = interface
 
     def init(self):
-        self.interface._init_ui_hooks()
+        self.interface._init_gui_hooks()
         return idaapi.PLUGIN_KEEP
 
     def run(self, arg):

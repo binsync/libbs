@@ -21,11 +21,8 @@
 #
 # ----------------------------------------------------------------------------
 
-import threading
-from functools import wraps
 import logging
 from typing import TYPE_CHECKING
-import time
 
 from PyQt5 import QtCore
 from PyQt5.QtGui import QKeyEvent
@@ -43,7 +40,7 @@ import idc
 
 from . import compat
 from libbs.artifacts import (
-    FunctionHeader, FunctionArgument, StackVariable,
+    FunctionHeader, StackVariable,
     Comment, GlobalVariable, Enum, Struct
 )
 
@@ -58,19 +55,6 @@ IDA_CMT_CMT = "cmt"
 IDA_RANGE_CMT = "range"
 IDA_EXTRA_CMT = "extra"
 IDA_CMT_TYPES = {IDA_CMT_CMT, IDA_EXTRA_CMT, IDA_RANGE_CMT}
-
-
-#
-#  Decorators
-#
-
-def disable_while_writing(f):
-    @wraps(f)
-    def _disable_while_writing(self, *args, **kwargs):
-        if not self.interface.artifact_write_lock.locked():
-            return f(self, *args, **kwargs)
-
-    return _disable_while_writing
 
 
 #
@@ -141,11 +125,9 @@ class IDBHooks(ida_idp.IDB_Hooks):
         self.interface: "IDAInterface" = interface
         self._seen_function_prototypes = {}
 
-    @disable_while_writing
     def local_types_changed(self):
         return 0
 
-    @disable_while_writing
     def ti_changed(self, ea, type_, fields):
         pfn = ida_funcs.get_func(ea)
         # only record return type changes
@@ -175,19 +157,16 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         self.interface.enum_changed(_enum, deleted=deleted)
 
-    @disable_while_writing
     def enum_created(self, enum):
         self.ida_enum_changed(enum)
         return 0
 
     # XXX - use enum_deleted(self, id) instead?
-    @disable_while_writing
     def deleting_enum(self, id):
         self.ida_enum_changed(id, deleted=True)
         return 0
 
     # XXX - use enum_renamed(self, id) instead?
-    @disable_while_writing
     def renaming_enum(self, id, is_enum, newname):
         enum_id = id
         if not is_enum:
@@ -199,21 +178,17 @@ class IDBHooks(ida_idp.IDB_Hooks):
         self.ida_enum_changed(enum_id, new_name=newname)
         return 0
 
-    @disable_while_writing
     def enum_bf_changed(self, id):
         return 0
 
-    @disable_while_writing
     def enum_cmt_changed(self, tid, repeatable_cmt):
         return 0
 
-    @disable_while_writing
     def enum_member_created(self, id, cid):
         self.ida_enum_changed(id)
         return 0
 
     # XXX - use enum_member_deleted(self, id, cid) instead?
-    @disable_while_writing
     def deleting_enum_member(self, id, cid):
         self.ida_enum_changed(id)
         return 0
@@ -270,7 +245,6 @@ class IDBHooks(ida_idp.IDB_Hooks):
             StackVariable(bs_offset, new_name, type_str, size, func_addr)
         )
 
-    @disable_while_writing
     def struc_created(self, tid):
         sptr = ida_struct.get_struc(tid)
         if not sptr.is_frame():
@@ -279,14 +253,12 @@ class IDBHooks(ida_idp.IDB_Hooks):
         return 0
 
     # XXX - use struc_deleted(self, struc_id) instead?
-    @disable_while_writing
     def deleting_struc(self, sptr):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id, deleted=True)
 
         return 0
 
-    @disable_while_writing
     def struc_align_changed(self, sptr):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id)
@@ -294,7 +266,6 @@ class IDBHooks(ida_idp.IDB_Hooks):
         return 0
 
     # XXX - use struc_renamed(self, sptr) instead?
-    @disable_while_writing
     def renaming_struc(self, id, oldname, newname):
         sptr = ida_struct.get_struc(id)
         if not sptr.is_frame():
@@ -304,28 +275,24 @@ class IDBHooks(ida_idp.IDB_Hooks):
             self.ida_struct_changed(id, new_name=newname)
         return 0
 
-    @disable_while_writing
     def struc_expanded(self, sptr):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id)
 
         return 0
 
-    @disable_while_writing
     def struc_member_created(self, sptr, mptr):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id)
 
         return 0
 
-    @disable_while_writing
     def struc_member_deleted(self, sptr, off1, off2):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id)
 
         return 0
 
-    @disable_while_writing
     def struc_member_renamed(self, sptr, mptr):
         if sptr.is_frame():
             self.ida_stack_var_changed(sptr, mptr)
@@ -334,7 +301,6 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @disable_while_writing
     def struc_member_changed(self, sptr, mptr):
         if sptr.is_frame():
             self.ida_stack_var_changed(sptr, mptr)
@@ -343,7 +309,6 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @disable_while_writing
     def renamed(self, ea, new_name, local_name):
         # ignore any changes landing here for structs and stack vars
         if ida_struct.is_member_id(ea) or ida_struct.get_struc(ea) or ida_enum.get_enum_name(ea):
@@ -383,7 +348,6 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
-    @disable_while_writing
     def cmt_changed(self, ea, repeatable_cmt):
         if repeatable_cmt:
             cmt = ida_bytes.get_cmt(ea, repeatable_cmt)
@@ -391,14 +355,12 @@ class IDBHooks(ida_idp.IDB_Hooks):
                 self.ida_comment_changed(cmt, ea, IDA_CMT_CMT)
         return 0
 
-    @disable_while_writing
     def range_cmt_changed(self, kind, a, cmt, repeatable):
         cmt = idc.get_func_cmt(a.start_ea, repeatable)
         if cmt:
             self.ida_comment_changed(cmt, a.start_ea, IDA_RANGE_CMT)
         return 0
 
-    @disable_while_writing
     def extra_cmt_changed(self, ea, line_idx, cmt):
         cmt = ida_bytes.get_cmt(ea, 0)
         if cmt:
@@ -409,7 +371,6 @@ class IDBHooks(ida_idp.IDB_Hooks):
     # Unused handlers, to be implemented eventually
     #
 
-    @disable_while_writing
     def struc_cmt_changed(self, id, repeatable_cmt):
         """
         fullname = ida_struct.get_struc_name(id)
@@ -422,11 +383,9 @@ class IDBHooks(ida_idp.IDB_Hooks):
         """
         return 0
 
-    @disable_while_writing
     def sgr_changed(self, start_ea, end_ea, regnum, value, old_value, tag):
         return 0
 
-    @disable_while_writing
     def byte_patched(self, ea, old_value):
         return 0
 

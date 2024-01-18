@@ -59,6 +59,12 @@ class ArtifactDict(dict):
         return len(self._artifact_lister())
 
     def __getitem__(self, item):
+        """
+        Takes a lifted identifier as input and returns a lifted artifact
+        """
+        if isinstance(item, int):
+            item = self._deci.art_lifter.lower_addr(item)
+
         art = self._artifact_getter(item)
         if art is None:
             raise KeyError
@@ -66,17 +72,23 @@ class ArtifactDict(dict):
         return self._deci.art_lifter.lift(art)
 
     def __setitem__(self, key, value):
+        """
+        Both key and value must be lifted artifacts
+        """
         if not isinstance(value, self._artifact_class):
             raise ValueError(f"Attempting to set a value of type {type(value)} to a dict of type {self._artifact_class}")
 
-        if hasattr(value, "addr") and value.addr is None:
-            value.addr = key
+        if isinstance(key, int):
+            key = self._deci.art_lifter.lower_addr(key)
 
         art = self._deci.art_lifter.lower(value)
         if not self._artifact_setter(art) and self._error_on_duplicate:
             raise ValueError(f"Set value {value} is already present at key {key}")
 
     def __contains__(self, item):
+        if isinstance(item, int):
+            item = self._deci.art_lifter.lower_addr(item)
+
         data = self._artifact_getter(item)
         return data is not None
 

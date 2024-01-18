@@ -7,7 +7,7 @@ import idaapi
 import ida_hexrays
 
 import libbs
-from libbs.api.decompiler_interface import DecompilerInterface, artifact_write_event
+from libbs.api.decompiler_interface import DecompilerInterface
 from libbs.artifacts import (
     StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact
 )
@@ -41,8 +41,51 @@ class IDAInterface(DecompilerInterface):
         # GUI properties
         self._updated_ctx = None
 
+    def _init_gui_hooks(self):
+        """
+        This function can only be called from inside the compat.GenericIDAPlugin and is meant for IDA code which
+        should be run as a plugin.
+        """
+        self._ui_hooks = [
+            ScreenHook(self),
+            ContextMenuHooks(self, menu_strs=self._ctx_menu_names),
+            IDPHooks(self),
+        ]
+        for hook in self._ui_hooks:
+            hook.hook()
+
+    def _init_gui_plugin(self, *args, **kwargs):
+        return compat.GenericIDAPlugin(*args, name=self._plugin_name, interface=self, **kwargs)
+
     #
-    # Controller Interaction
+    # GUI
+    #
+
+    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+        resp = idaapi.ask_str("", 0, question)
+        return resp if resp else ""
+
+    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+        # Function explaining action
+        explain_action = idaapi.action_desc_t(
+            name,
+            action_string,
+            compat.GenericAction(name, callback_func),
+            "",
+            action_string,
+            199
+        )
+        idaapi.register_action(explain_action)
+        idaapi.attach_action_to_menu(
+            f"Edit/{category}/{name}" if category else f"Edit/{name}",
+            name,
+            idaapi.SETMENU_APP
+        )
+        self._ctx_menu_names.append((name, category or ""))
+        return True
+
+    #
+    # Mandatory API
     #
 
     @property
@@ -121,68 +164,19 @@ class IDAInterface(DecompilerInterface):
         for hook in self._artifact_watcher_hooks:
             hook.unhook()
 
-    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        resp = idaapi.ask_str("", 0, question)
-        return resp if resp else ""
-
-    def _init_ui_hooks(self):
-        """
-        This function can only be called from inside the compat.GenericIDAPlugin and is meant for IDA code which
-        should be run as a plugin.
-        """
-        self._ui_hooks = [
-            ScreenHook(self),
-            ContextMenuHooks(self, menu_strs=self._ctx_menu_names),
-            IDPHooks(self),
-        ]
-        for hook in self._ui_hooks:
-            hook.hook()
-
-    def _init_gui_plugin(self, *args, **kwargs):
-        return compat.GenericIDAPlugin(*args, name=self._plugin_name, interface=self, **kwargs)
-
-    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
-        # Function explaining action
-        explain_action = idaapi.action_desc_t(
-            name,
-            action_string,
-            compat.GenericAction(name, callback_func),
-            "",
-            action_string,
-            199
-        )
-        idaapi.register_action(explain_action)
-        idaapi.attach_action_to_menu(
-            f"Edit/{category}/{name}" if category else f"Edit/{name}",
-            name,
-            idaapi.SETMENU_APP
-        )
-        self._ctx_menu_names.append((name, category or ""))
-        return True
-
-    def _ea_to_func(self, addr):
-        if not addr or addr == idaapi.BADADDR:
-            return None
-
-        func_addr = compat.ida_func_addr(addr)
-        if func_addr is None:
-            return None
-
-        func = libbs.artifacts.Function(
-            func_addr, 0, header=FunctionHeader(compat.get_func_name(func_addr), func_addr)
-        )
-        return func
-
     def active_context(self):
         if not self._init_plugin:
-            return self._ea_to_func(compat.get_screen_ea())
+            bs_func = self._ea_to_func(compat.get_screen_ea())
+            if bs_func is None:
+                return None
+
+            bs_func.addr = self.art_lifter.lift_addr(bs_func.addr)
+            return bs_func
 
         return self._updated_ctx
 
-    def update_active_context(self, addr):
-        self._updated_ctx = self._ea_to_func(addr)
-
     def goto_address(self, func_addr) -> None:
+        func_addr = self.art_lifter.lower_addr(func_addr)
         compat.jumpto(func_addr)
 
     #
@@ -326,6 +320,28 @@ class IDAInterface(DecompilerInterface):
     #
     # utils
     #
+
+    def update_active_context(self, addr):
+        bs_func = self._ea_to_func(addr)
+        if bs_func is None:
+            return
+
+        bs_func.addr = self.art_lifter.lift_addr(bs_func.addr)
+        self._updated_ctx = bs_func
+
+    @staticmethod
+    def _ea_to_func(addr):
+        if not addr or addr == idaapi.BADADDR:
+            return None
+
+        func_addr = compat.ida_func_addr(addr)
+        if func_addr is None:
+            return None
+
+        func = libbs.artifacts.Function(
+            func_addr, 0, header=FunctionHeader(compat.get_func_name(func_addr), func_addr)
+        )
+        return func
 
     @staticmethod
     def _collect_continuous_patches(min_addr=None, max_addr=None, stop_after_first=False) -> Dict[int, Patch]:

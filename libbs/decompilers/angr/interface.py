@@ -189,8 +189,9 @@ class AngrInterface(DecompilerInterface):
         if func is None or func.am_obj is None:
             return None
 
+        func_addr = self.art_lifter.lift_addr(func.addr)
         return Function(
-            func.addr, 0, header=FunctionHeader(func.name, func.addr)
+            func_addr, func.size, header=FunctionHeader(func.name, func_addr)
         )
 
     #
