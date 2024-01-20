@@ -1,4 +1,5 @@
 import os
+import platform
 from pathlib import Path
 import textwrap
 import sys
@@ -136,6 +137,10 @@ class PluginInstaller:
 
     @staticmethod
     def link_or_copy(src, dst, is_dir=False, symlink=False):
+        if platform.platform().startswith("Windows"):
+            # you can't symlink on windows, so just copy
+            symlink = False
+
         # clean the install location
         shutil.rmtree(dst, ignore_errors=True)
         try:
