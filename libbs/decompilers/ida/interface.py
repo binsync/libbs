@@ -101,6 +101,7 @@ class IDAInterface(DecompilerInterface):
         return compat.get_binary_path()
 
     def get_func_size(self, func_addr) -> int:
+        func_addr = self.art_lifter.lower_addr(func_addr)
         return compat.get_func_size(func_addr)
 
     @property

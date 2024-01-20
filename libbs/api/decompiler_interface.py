@@ -14,7 +14,7 @@ from libbs.artifacts import (
     Artifact,
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch,
-    Enum, Struct
+    Enum, Struct, FunctionArgument
 )
 from libbs.decompilers import SUPPORTED_DECOMPILERS, ANGR_DECOMPILER, \
     BINJA_DECOMPILER, IDA_DECOMPILER, GHIDRA_DECOMPILER
@@ -620,6 +620,19 @@ class DecompilerInterface:
     #
     # Utils
     #
+
+    @staticmethod
+    def get_identifiers(artifact: Artifact) -> Tuple:
+        if isinstance(artifact, (Function, FunctionHeader, GlobalVariable, Patch, Comment)):
+            return (artifact.addr,)
+        elif isinstance(artifact, StackVariable):
+            return artifact.addr, artifact.offset
+        elif isinstance(artifact, FunctionArgument):
+            # TODO: add addr to function arguments
+            return (artifact.offset,)
+        elif isinstance(artifact, (Struct, Enum)):
+            return (artifact.name,)
+
 
     def type_is_user_defined(self, type_str, state=None):
         if not type_str:

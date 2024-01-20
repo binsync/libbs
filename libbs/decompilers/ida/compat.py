@@ -121,8 +121,8 @@ def ida_to_bs_stack_offset(func_addr, ida_stack_off):
 
     frame_size = idc.get_struc_size(frame)
     last_member_size = idaapi.get_member_size(frame.get_member(frame.memqty - 1))
-    angr_stack_off = ida_stack_off - frame_size + last_member_size
-    return angr_stack_off
+    bs_soff = ida_stack_off - frame_size + last_member_size
+    return bs_soff
 
 
 @execute_write
@@ -175,7 +175,7 @@ def get_func_name(ea) -> typing.Optional[str]:
 def get_func_size(ea):
     func = idaapi.get_func(ea)
     if not func:
-        return 0
+        raise ValueError("Unable to find function!")
 
     return func.size()
 
@@ -340,14 +340,14 @@ def set_function_header(bs_header: libbs.artifacts.FunctionHeader, exit_on_bad_t
 
         cur_ida_arg = cur_ida_func.args[idx]
 
+        # record the type to change
+        if bs_arg.type and bs_arg.type != cur_ida_arg.type:
+            types_to_change[idx] = (cur_ida_arg.type, bs_arg.type)
+
         # change the name
         if bs_arg.name and bs_arg.name != cur_ida_arg.name:
             success = ida_code_view.rename_lvar(ida_code_view.cfunc.arguments[idx], bs_arg.name, 1)
             data_changed |= success
-
-        # record the type to change
-        if bs_arg.type and bs_arg.type != cur_ida_arg.type:
-            types_to_change[idx] = (cur_ida_arg.type, bs_arg.type)
 
     # crazy prototype parsing
     func_prototype = str(ida_code_view.cfunc.type).replace("(", f" {func_name}(", 1)
@@ -478,9 +478,6 @@ def set_stack_variable(svar: StackVariable, decompiler_available=True, **kwargs)
         l.warning(f"Function {svar.addr:x} does not have an associated function frame. Stopping sync here!")
         return False
 
-    if svar.name and ida_struct.set_member_name(frame, svar.offset, svar.name):
-        changes |= True
-
     if svar.type:
         ida_type = convert_type_str_to_ida_type(svar.type)
         if ida_type is None:
@@ -488,6 +485,12 @@ def set_stack_variable(svar: StackVariable, decompiler_available=True, **kwargs)
             return changes
 
         changes |= set_stack_vars_types({svar.offset: ida_type}, ida_code_view)
+        if changes:
+            ida_code_view.cfunc.refresh_func_ctext()
+
+    frame = idaapi.get_frame(svar.addr)
+    if svar.name and ida_struct.set_member_name(frame, svar.offset, svar.name):
+        changes |= True
 
     return changes
 
@@ -503,21 +506,27 @@ def set_ida_comment(addr, cmt, decompiled=False):
         return False
 
     rpt = 1
+    ida_code_view = None
+    if decompiled:
+        try:
+            ida_code_view = acquire_pseudocode_vdui(func.start_ea)
+        except Exception:
+            pass
 
     # function comment
     if addr == func.start_ea:
         idc.set_func_cmt(addr, cmt, rpt)
+        if ida_code_view:
+            ida_code_view.refresh_view(True)
         return True
 
     # a comment in decompilation
     elif decompiled:
-        try:
-            cfunc = idaapi.decompile(addr)
-        except Exception:
+        if ida_code_view is None:
             ida_bytes.set_cmt(addr, cmt, rpt)
             return True
 
-        eamap = cfunc.get_eamap()
+        eamap = ida_code_view.cfunc.get_eamap()
         decomp_obj_addr = eamap[addr][0].ea
         tl = idaapi.treeloc_t()
 
@@ -526,18 +535,17 @@ def set_ida_comment(addr, cmt, decompiled=False):
             tl.ea = a
             for itp in range(idaapi.ITP_SEMI, idaapi.ITP_COLON):
                 tl.itp = itp
-                cfunc.set_user_cmt(tl, cmt)
-                cfunc.save_user_cmts()
-                cfunc.refresh_func_ctext()
+                ida_code_view.cfunc.set_user_cmt(tl, cmt)
+                ida_code_view.cfunc.save_user_cmts()
+                ida_code_view.cfunc.refresh_func_ctext()
 
                 # attempt to set until it does not fail (orphan itself)
-                if not cfunc.has_orphan_cmts():
-                    cfunc.save_user_cmts()
+                if not ida_code_view.cfunc.has_orphan_cmts():
+                    ida_code_view.cfunc.save_user_cmts()
+                    ida_code_view.refresh_view(True)
                     return True
-                cfunc.del_orphan_cmts()
-
+                ida_code_view.cfunc.del_orphan_cmts()
         return False
-
     # a comment in disassembly
     else:
         ida_bytes.set_cmt(addr, cmt, rpt)
@@ -612,16 +620,19 @@ def set_stack_vars_types(var_type_dict, ida_code_view) -> bool:
 
     data_changed = False
     fixed_point = False
+    func_addr = ida_code_view.cfunc.entry_ea
     while not fixed_point:
         fixed_point = True
         for lvar in ida_code_view.cfunc.lvars:
-            cur_off = lvar.location.stkoff() - ida_code_view.cfunc.get_stkoff_delta()
-            if lvar.is_stk_var() and cur_off in var_type_dict:
-                if str(lvar.type()) != str(var_type_dict[cur_off]):
-                    data_changed |= ida_code_view.set_lvar_type(lvar, var_type_dict.pop(cur_off))
-                    fixed_point = False
-                    # make sure to break, in case the size of lvars array has now changed
-                    break
+            if lvar.is_stk_var():
+                # TODO: this algorithm may need be corrected for programs with func args on the stack
+                cur_off = abs(ida_to_bs_stack_offset(func_addr, lvar.location.stkoff()))
+                if cur_off in var_type_dict:
+                    if str(lvar.type()) != str(var_type_dict[cur_off]):
+                        data_changed |= ida_code_view.set_lvar_type(lvar, var_type_dict.pop(cur_off))
+                        fixed_point = False
+                        # make sure to break, in case the size of lvars array has now changed
+                        break
 
     return data_changed
 

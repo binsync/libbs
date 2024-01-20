@@ -29,4 +29,4 @@ class IDAArtifactLifter(ArtifactLifter):
         return type_str
 
     def lower_stack_offset(self, offset: int, func_addr: int) -> int:
-        return offset #compat.ida_to_angr_stack_offset(func_addr, offset)
+        return abs(offset) #compat.ida_to_angr_stack_offset(func_addr, offset)
