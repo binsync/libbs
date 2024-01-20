@@ -46,8 +46,61 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         self.loop_on_plugin = loop_on_plugin
 
+    def _init_gui_components(self, *args, **kwargs):
+        if not self.connect_ghidra_bridge():
+            raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
+        super()._init_gui_components(*args, **kwargs)
+
     #
-    # Controller API
+    # GUI
+    #
+
+    @property
+    def gui_plugin(self):
+        """
+        A special property to never exit this function if the remote server is running.
+        This is used to standardize plugin access across all decompilers.
+
+        WARNING: If you initialized with init_plugin=True, simply autocompleting (tab) in IPython will
+        cause this to loop forever.
+        """
+        if self.loop_on_plugin and self._init_plugin:
+            self._run_until_server_closed()
+        return None
+
+    @gui_plugin.setter
+    def gui_plugin(self, value):
+        pass
+
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
+        ctx_menu_action = create_context_action(self.ghidra, name, action_string, callback_func, category or "LibBS")
+        self.ghidra.getState().getTool().addAction(ctx_menu_action)
+        return True
+
+    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+        answer = self.ghidra.bridge.remote_eval(
+            "askString(title, question)", title=title, question=question, timeout_override=-1
+        )
+        return answer if answer else ""
+
+    def gui_active_context(self):
+        active_addr = self.ghidra.currentLocation.getAddress().getOffset()
+        if active_addr is None:
+            return Function(0, 0)
+
+        if active_addr != self._last_addr:
+            self._last_addr = active_addr
+            self._last_func = self._gfunc_to_bsfunc(self._get_nearest_function(active_addr))
+            self._last_func.addr = self.art_lifter.lower_addr(self._last_func.addr)
+
+        return self._last_func
+
+    def gui_goto(self, func_addr) -> None:
+        func_addr = self.art_lifter.lower_addr(func_addr)
+        self.ghidra.goTo(self.ghidra.toAddr(func_addr))
+
+    #
+    # Mandatory API
     #
 
     @property
@@ -90,59 +143,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return self._ghidra_decompile(self._get_nearest_function(function.addr))
 
     #
-    # GUI API
-    #
-
-    @property
-    def gui_plugin(self):
-        """
-        A special property to never exit this function if the remote server is running.
-        This is used to standardize plugin access across all decompilers.
-
-        WARNING: If you initialized with init_plugin=True, simply autocompleting (tab) in IPython will
-        cause this to loop forever.
-        """
-        if self.loop_on_plugin and self._init_plugin:
-            self._run_until_server_closed()
-        return None
-
-    @gui_plugin.setter
-    def gui_plugin(self, value):
-        pass
-
-    def _init_ui_components(self, *args, **kwargs):
-        if not self.connect_ghidra_bridge():
-            raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
-        super()._init_ui_components(*args, **kwargs)
-
-    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
-        ctx_menu_action = create_context_action(self.ghidra, name, action_string, callback_func, category or "LibBS")
-        self.ghidra.getState().getTool().addAction(ctx_menu_action)
-        return True
-
-    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        answer = self.ghidra.bridge.remote_eval(
-            "askString(title, question)", title=title, question=question, timeout_override=-1
-        )
-        return answer if answer else ""
-
-    def active_context(self):
-        active_addr = self.ghidra.currentLocation.getAddress().getOffset()
-        if active_addr is None:
-            return Function(0, 0)
-
-        if active_addr != self._last_addr:
-            self._last_addr = active_addr
-            self._last_func = self._gfunc_to_bsfunc(self._get_nearest_function(active_addr))
-
-        return self._last_func
-
-    def goto_address(self, func_addr) -> None:
-        self.ghidra.goTo(self.ghidra.toAddr(func_addr))
-
-    #
-    # Override Optional API:
-    # There are API that provide extra introspection for plugins that may rely on LibBS Interface
+    # Extra API
     #
 
     def undo(self):
@@ -165,11 +166,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return self._update_local_variable_symbols(symbols_to_update) if symbols_to_update else False
 
     #
-    # Artifact API
+    # Private Artifact API
     #
 
     def _set_function(self, func: Function, **kwargs) -> bool:
-        func_addr = func.header.addr
+        func_addr = self.art_lifter.lower_addr(func.header.addr)
         decompilation = self._ghidra_decompile(self._get_nearest_function(func_addr))
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
         return changes
@@ -233,18 +234,23 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ghidra_transaction
     def _set_stack_variable(self, svar: StackVariable, **kwargs) -> bool:
         changes = False
+        if not svar:
+            return changes
+
         decompilation = kwargs.get('decompilation', None) or self._ghidra_decompile(self._get_function(svar.addr))
         ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(svar.addr)
         gstack_var = self._get_gstack_var(ghidra_func, svar.offset)
         if not gstack_var:
-            return False
+            return changes
 
         src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
 
+        # name
         if svar.name and svar.name != gstack_var.getName():
             gstack_var.setName(svar.name, src_type.USER_DEFINED)
             changes = True
 
+        # type
         if svar.type:
             parsed_type = self.typestr_to_gtype(svar.type)
             if parsed_type is not None and parsed_type != str(gstack_var.getDataType()):
@@ -403,13 +409,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
         return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if name.count('/') == 1} if names else {}
 
-    #
-    # TODO: REMOVE ME THIS IS THE BINSYNC CODE
-    # Filler/Setter API
-    #
-
     @ghidra_transaction
     def fill_global_var(self, var_addr, user=None, artifact=None, **kwargs):
+        """
+        TODO: remove me and implement me properly as setters and getters
+        """
+
         changes = False
         global_var: GlobalVariable = artifact
         all_global_vars = self.global_vars()
@@ -435,6 +440,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return changes
 
     def global_var(self, addr) -> Optional[GlobalVariable]:
+        """
+        TODO: remove me and implement me properly as setters and getters
+        """
         light_global_vars = self.global_vars()
         for offset, global_var in light_global_vars.items():
             if offset == addr:
@@ -452,6 +460,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 return global_var
 
     def global_vars(self) -> Dict[int, GlobalVariable]:
+        """
+        TODO: remove me and implement me properly as setters and getters
+        """
         symbol_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SymbolType")
         symbol_table = self.ghidra.currentProgram.getSymbolTable()
         # optimize by grabbing all symbols at once

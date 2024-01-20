@@ -201,7 +201,7 @@ class BinjaInterface(DecompilerInterface):
     def _init_gui_plugin(self, *args, **kwargs):
         return self
 
-    def active_context(self):
+    def gui_active_context(self):
         all_contexts = UIContext.allContexts()
         if not all_contexts:
             return None
@@ -224,7 +224,7 @@ class BinjaInterface(DecompilerInterface):
         resp = binaryninja.get_text_line_input(question, title)
         return resp.decode() if resp else ""
 
-    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         # TODO: this needs to have a wrapper function that passes the bv to the current deci
         # correct name, category, and action_string for Binja
         action_string = action_string.replace("/", "\\")
@@ -238,7 +238,7 @@ class BinjaInterface(DecompilerInterface):
         )
         return True
 
-    def goto_address(self, func_addr) -> None:
+    def gui_goto(self, func_addr) -> None:
         self.bv.offset = func_addr
 
     #
@@ -328,26 +328,27 @@ class BinjaInterface(DecompilerInterface):
         bn_offset = svar.offset
         if bn_offset in current_bn_vars:
             # name
-            if str(current_bn_vars[bn_offset].name) != svar.name:
+            if svar.name and svar.name != str(current_bn_vars[bn_offset].name):
                 current_bn_vars[bn_offset].name = svar.name
                 updates |= True
 
             # type
-            try:
-                type_, _ = self.bv.parse_type_string(svar.type)
-            except Exception:
-                type_ = None
-
-            if type_ is not None:
-                if self.art_lifter.lift_type(str(current_bn_vars[bn_offset].type)) != type_:
-                    current_bn_vars[bn_offset].type = type_
+            if svar.type:
                 try:
-                    bn_func.create_user_stack_var(bn_offset, type_, svar.name)
-                    bn_func.create_auto_stack_var(bn_offset, type_, svar.name)
-                except Exception as e:
-                    l.warning(f"BinSync could not sync stack variable at offset {bn_offset}: {e}")
+                    bs_svar_type, _ = self.bv.parse_type_string(svar.type)
+                except Exception:
+                    bs_svar_type = None
 
-                updates |= True
+                if bs_svar_type is not None:
+                    if self.art_lifter.lift_type(str(current_bn_vars[bn_offset].type)) != bs_svar_type:
+                        current_bn_vars[bn_offset].type = bs_svar_type
+                    try:
+                        bn_func.create_user_stack_var(bn_offset, bs_svar_type, svar.name)
+                        bn_func.create_auto_stack_var(bn_offset, bs_svar_type, svar.name)
+                    except Exception as e:
+                        l.warning(f"BinSync could not sync stack variable at offset {bn_offset}: {e}")
+
+                    updates |= True
 
         return updates
 

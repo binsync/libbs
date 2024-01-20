@@ -79,6 +79,7 @@ class AngrInterface(DecompilerInterface):
             return None
 
     def get_func_size(self, func_addr) -> int:
+        func_addr = self.art_lifter.lower_addr(func_addr)
         try:
             func = self.main_instance.project.kb.functions[func_addr]
             return func.size
@@ -164,10 +165,10 @@ class AngrInterface(DecompilerInterface):
         self.workspace.plugins.register_active_plugin(self._plugin_name, self.gui_plugin)
         return self.gui_plugin
 
-    def goto_address(self, func_addr):
+    def gui_goto(self, func_addr):
         self.workspace.jump_to(self.art_lifter.lower_addr(func_addr))
 
-    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         if self.gui_plugin is None:
             l.critical("Cannot register context menu item without a GUI plugin.")
             return False
@@ -176,7 +177,7 @@ class AngrInterface(DecompilerInterface):
         self.gui_plugin.context_menu_items = self._ctx_menu_items
         return True
 
-    def active_context(self):
+    def gui_active_context(self):
         curr_view = self.workspace.view_manager.current_tab
         if not curr_view:
             return None
@@ -189,8 +190,9 @@ class AngrInterface(DecompilerInterface):
         if func is None or func.am_obj is None:
             return None
 
+        func_addr = self.art_lifter.lift_addr(func.addr)
         return Function(
-            func.addr, 0, header=FunctionHeader(func.name, func.addr)
+            func_addr, func.size, header=FunctionHeader(func.name, func_addr)
         )
 
     #
@@ -268,26 +270,39 @@ class AngrInterface(DecompilerInterface):
 
         if fheader.args:
             for i, arg in fheader.args.items():
+                if not arg:
+                    continue
+
                 if i >= len(decompilation.cfunc.arg_list):
                     break
-                if decompilation.cfunc.arg_list[i].variable.name != arg.name:
-                    decompilation.cfunc.arg_list[i].variable.name = arg.name
+
+                dec_arg = decompilation.cfunc.arg_list[i].variable
+                # TODO: set the types of the args
+                if arg.name and arg.name != dec_arg.name:
+                    dec_arg.name = arg.name
                     changes = True
 
         return changes
 
     def _set_stack_variable(self, svar: StackVariable, decompilation=None, **kwargs) -> bool:
         changed = False
-        code_var = AngrInterface.find_stack_var_in_codegen(decompilation, svar.offset)
-        if code_var:
-            code_var.name = svar.name
-            code_var.renamed = True
+        if not svar or not decompilation:
+            return changed
+
+        dec_svar = AngrInterface.find_stack_var_in_codegen(decompilation, svar.offset)
+        if dec_svar and svar.name and svar.name != dec_svar.name:
+            # TODO: set the types of the stack vars
+            dec_svar.name = svar.name
+            dec_svar.renamed = True
             changed = True
 
         return changed
 
     def _set_comment(self, comment: Comment, decompilation=None, **kwargs) -> bool:
         changed = False
+        if not comment or not comment.comment:
+            return changed
+
         if comment.decompiled and comment.addr != comment.func_addr:
             try:
                 pos = decompilation.map_addr_to_pos.get_nearest_pos(comment.addr)

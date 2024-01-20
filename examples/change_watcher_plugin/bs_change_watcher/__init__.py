@@ -6,7 +6,7 @@ from libbs.plugin_installer import LibBSPluginInstaller
 def create_plugin(*args, **kwargs):
     """
     This is the entry point that all decompilers will call in various ways. To remain agnostic,
-    always pass the args and kwargs to the ui_init_args and ui_init_kwargs of DecompilerInterface, inited
+    always pass the args and kwargs to the gui_init_args and gui_init_kwargs of DecompilerInterface, inited
     through the discover api.
     """
 
@@ -18,8 +18,8 @@ def create_plugin(*args, **kwargs):
     deci = DecompilerInterface.discover(
         plugin_name="ArtifactChangeWatcher",
         init_plugin=True,
-        ui_init_args=args,
-        ui_init_kwargs=kwargs
+        gui_init_args=args,
+        gui_init_kwargs=kwargs
     )
     # create a function to print a string in the decompiler console
     decompiler_printer = lambda *x, **y: deci.print(f"Changed {x}{y}")
@@ -29,7 +29,7 @@ def create_plugin(*args, **kwargs):
     }
 
     # register a menu to open when you right click on the psuedocode view
-    deci.register_ctx_menu_item(
+    deci.gui_register_ctx_menu(
         "StartArtifactChangeWatcher",
         "Start watching artifact changes",
         lambda: deci.start_artifact_watchers(),

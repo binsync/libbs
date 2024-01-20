@@ -54,7 +54,7 @@ class FunctionHeader(Artifact):
         self.name = name
         self.addr = addr
         self.type = type_
-        self.args = args or {}
+        self.args: Dict[str, FunctionArgument] = args or {}
 
     def __str__(self):
         return f"<FuncHeader: {self.type} {self.name}(args={len(self.args)}); @{hex(self.addr)}>"
@@ -136,6 +136,34 @@ class FunctionHeader(Artifact):
         fh = FunctionHeader(self.name, self.addr, type_=self.type, last_change=self.last_change)
         fh.args = {k: v.copy() for k, v in self.args.items()}
         return fh
+
+    def reset_last_change(self):
+        if self.args:
+            for arg in self.args.values():
+                arg.reset_last_change()
+
+    def overwrite_merge(self, obj2: "Artifact", **kwargs):
+        fh2: "FunctionHeader" = obj2
+        merged_fh: "FunctionHeader" = self.copy()
+        if not fh2 or not isinstance(fh2, FunctionHeader) or self == fh2:
+            return merged_fh
+
+        if fh2.name is not None:
+            merged_fh.name = fh2.name
+        if fh2.type is not None:
+            merged_fh.type = fh2.type
+
+        # header args
+        for off, var in fh2.args.items():
+            if var is not None:
+                if off in merged_fh.args:
+                    merged_var = merged_fh.args[off].overwrite_merge(var)
+                else:
+                    merged_var = var
+
+                merged_fh.args[off] = merged_var
+
+        return merged_fh
 
     def nonconflict_merge(self, fh2: "FunctionHeader", **kwargs):
         fh1: "FunctionHeader" = self.copy()
@@ -303,6 +331,34 @@ class Function(Artifact):
         f = Function(None, None)
         f.__setstate__(func_toml)
         return f
+
+    def reset_last_change(self):
+        if self.header:
+            self.header.reset_last_change()
+
+        if self.stack_vars:
+            for sv in self.stack_vars.values():
+                sv.reset_last_change()
+
+    def overwrite_merge(self, obj2: "Artifact", **kwargs):
+        func2: "Function" = obj2
+        merged_func: "Function" = self.copy()
+        if not func2 or self == func2:
+            return merged_func
+
+        if func2.header is not None:
+            merged_func.header = merged_func.header.overwrite_merge(func2.header)
+
+        for off, var in func2.stack_vars.items():
+            if var is not None:
+                if off in merged_func.stack_vars:
+                    merged_var = merged_func.stack_vars[off].overwrite_merge(var)
+                else:
+                    merged_var = var
+
+                merged_func.stack_vars[off] = merged_var
+
+        return merged_func
 
     def nonconflict_merge(self, func2: "Artifact", **kwargs):
         func1: "Function" = self.copy()

@@ -125,6 +125,28 @@ class Artifact:
 
         return inverted_diff
 
+    def reset_last_change(self):
+        """
+        Resets the change time of the Artifact.
+        In subclasses, this should also reset all artifacts with nested artifacts
+        """
+        self.last_change = None
+
+    def overwrite_merge(self, obj2: "Artifact", **kwargs):
+        """
+        This function should really be overwritten by its subclass
+        """
+        merge_obj = self.copy()
+        if not obj2 or merge_obj == obj2:
+            return merge_obj
+
+        for attr in self.__slots__:
+            a2 = getattr(obj2, attr)
+            if a2 is not None:
+                setattr(merge_obj, attr, a2)
+
+        return merge_obj
+
     def nonconflict_merge(self, obj2: "Artifact", **kwargs):
         obj1 = self.copy()
         if not obj2 or obj1 == obj2:

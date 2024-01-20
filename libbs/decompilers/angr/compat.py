@@ -90,11 +90,13 @@ class GenericBSAngrManagementPlugin(BasePlugin):
 
     # pylint: disable=unused-argument
     def handle_stack_var_renamed(self, func, offset, old_name, new_name):
+        print("handle_stack_var_renamed")
         if func is None:
             return False
 
         decompilation = self.interface.decompile_function(func)
         stack_var = self.interface.find_stack_var_in_codegen(decompilation, offset)
+        print("handle_stack_var_renamed signal sent out to everyone")
         self.interface.stack_variable_changed(StackVariable(offset, new_name, None, stack_var.size, func.addr))
         return True
 

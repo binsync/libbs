@@ -34,7 +34,7 @@ class ArtifactLifter:
 
     def lift_addr(self, addr: int) -> int:
         if addr < self.deci.binary_base_addr:
-            self.deci.warning(f"Lifting an address that appears already lifted: {addr}...")
+            self.deci.debug(f"Lifting an address that appears already lifted: {addr}...")
             return addr
         else:
             return addr - self.deci.binary_base_addr
@@ -47,7 +47,7 @@ class ArtifactLifter:
 
     def lower_addr(self, addr: int) -> int:
         if addr >= self.deci.binary_base_addr:
-            self.deci.warning(f"Lowering an address that appears already lowered: {addr}...")
+            self.deci.debug(f"Lowering an address that appears already lowered: {addr}...")
             return addr
         else:
             return addr + self.deci.binary_base_addr
@@ -60,7 +60,7 @@ class ArtifactLifter:
     #
 
     def _lift_or_lower_artifact(self, artifact, mode):
-        target_attrs = ("type", "offset", "addr")
+        target_attrs = ("type", "offset", "addr", "func_addr")
         if mode not in ("lower", "lift"):
             return None
 
@@ -82,7 +82,8 @@ class ArtifactLifter:
                     lifting_func = getattr(self, f"{mode}_stack_offset")
                     setattr(lifted_art, attr, lifting_func(curr_val, lifted_art.addr))
                 else:
-                    lifting_func = getattr(self, f"{mode}_{attr}")
+                    attr_func_name = attr if attr != "func_addr" else "addr"
+                    lifting_func = getattr(self, f"{mode}_{attr_func_name}")
                     setattr(lifted_art, attr, lifting_func(curr_val))
 
         # recursively correct nested artifacts
