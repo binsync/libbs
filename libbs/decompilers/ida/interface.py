@@ -65,7 +65,7 @@ class IDAInterface(DecompilerInterface):
         resp = idaapi.ask_str("", 0, question)
         return resp if resp else ""
 
-    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         # Function explaining action
         explain_action = idaapi.action_desc_t(
             name,
@@ -132,6 +132,7 @@ class IDAInterface(DecompilerInterface):
         return xrefs
 
     def get_decompilation_object(self, function: Function) -> Optional[object]:
+        function = self.art_lifter.lower(function)
         dec = idaapi.decompile(function.addr)
         if dec is None:
             return None
@@ -165,7 +166,7 @@ class IDAInterface(DecompilerInterface):
         for hook in self._artifact_watcher_hooks:
             hook.unhook()
 
-    def active_context(self):
+    def gui_active_context(self):
         if not self._init_plugin:
             bs_func = self._ea_to_func(compat.get_screen_ea())
             if bs_func is None:
@@ -176,7 +177,7 @@ class IDAInterface(DecompilerInterface):
 
         return self._updated_ctx
 
-    def goto_address(self, func_addr) -> None:
+    def gui_goto(self, func_addr) -> None:
         func_addr = self.art_lifter.lower_addr(func_addr)
         compat.jumpto(func_addr)
 
@@ -194,6 +195,7 @@ class IDAInterface(DecompilerInterface):
 
     @requires_decompilation
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+        func = self.art_lifter.lower(func)
         return compat.rename_local_variables_by_names(func, name_map)
 
     #

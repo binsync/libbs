@@ -4,7 +4,7 @@ import re
 import threading
 from collections import defaultdict
 from functools import wraps
-from typing import Dict, Optional, Union, Tuple, List, Callable, Type
+from typing import Dict, Optional, Tuple, List, Callable, Type
 
 import libbs
 from libbs.api.artifact_lifter import ArtifactLifter
@@ -32,22 +32,6 @@ def requires_decompilation(f):
 
         return f(self, *args, **kwargs)
     return _requires_decompilation
-
-
-def artifact_write_event(f):
-    @wraps(f)
-    def _artifact_set_event(self: "DecompilerInterface", *args, **kwargs):
-        return self.artifact_set_event_handler(f, *args, **kwargs)
-
-    return _artifact_set_event
-
-
-class DummyArtifactSetLock:
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
 
 
 class DecompilerInterface:
@@ -133,7 +117,7 @@ class DecompilerInterface:
         # register all context menu actions
         for action in self._gui_ctx_menu_actions:
             category, name, action_string, callback_func = action
-            self.register_ctx_menu_item(name, action_string, callback_func, category=category)
+            self.gui_register_ctx_menu(name, action_string, callback_func, category=category)
 
     def _init_gui_plugin(self, *args, **kwargs):
         return None
@@ -150,7 +134,7 @@ class DecompilerInterface:
     # GUI API
     #
 
-    def active_context(self) -> libbs.artifacts.Function:
+    def gui_active_context(self) -> libbs.artifacts.Function:
         """
         Returns an libbs Function. Currently only functions are supported as current contexts.
         This function will be called very frequently, so its important that its implementation is fast
@@ -158,7 +142,7 @@ class DecompilerInterface:
         """
         raise NotImplementedError
 
-    def goto_address(self, func_addr) -> None:
+    def gui_goto(self, func_addr) -> None:
         """
         Relocates decompiler display to provided address
 
@@ -167,7 +151,7 @@ class DecompilerInterface:
         """
         raise NotImplementedError
 
-    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         raise NotImplementedError
 
     def gui_ask_for_string(self, question, title="Plugin Question") -> str:
@@ -249,29 +233,28 @@ class DecompilerInterface:
         return True
 
     def decompile(self, addr: int) -> Optional[str]:
+        addr = self.art_lifter.lower_addr(addr)
         if not self.decompiler_available:
             _l.error("Decompiler is not available.")
             return None
 
         # TODO: make this a function call after transitioning decompiler artifacts to LiveState
-        for search_addr in (addr, self.art_lifter.lower_addr(addr)):
-            func_found = False
-            for func_addr, func in self._functions().items():
-                if func.addr <= search_addr < (func.addr + func.size):
-                    func_found = True
-                    break
-            else:
-                func = None
-
-            if func_found:
+        for func_addr, func in self._functions().items():
+            if func.addr <= addr < (func.addr + func.size):
+                func_found = True
                 break
         else:
+            func = None
+
+        if func is None:
+            self.warning(f"Failed to find function for address {hex(addr)}")
             return None
 
+        func = self.art_lifter.lower(func)
         try:
             decompilation = self._decompile(func)
         except Exception as e:
-            _l.warning(f"Failed to decompile function at {hex(addr)}: {e}")
+            self.warning(f"Failed to decompile function at {hex(addr)}: {e}")
             decompilation = None
 
         return decompilation
@@ -457,42 +440,57 @@ class DecompilerInterface:
         return False
 
     #
-    # special
+    # Change Callback API
     #
 
-    def global_artifacts(self):
-        """
-        Returns a light version of all artifacts that are global (non function associated):
-        - structs, gvars, enums
+    def function_header_changed(self, fheader: FunctionHeader, **kwargs):
+        for callback_func in self.artifact_write_callbacks[FunctionHeader]:
+            threading.Thread(target=callback_func, args=(fheader,), kwargs=kwargs, daemon=True).start()
 
-        @return:
-        """
-        g_artifacts = {}
-        for f in [self._structs, self._global_vars, self._enums]:
-            g_artifacts.update(f())
+    def stack_variable_changed(self, svar: StackVariable, **kwargs):
+        for callback_func in self.artifact_write_callbacks[StackVariable]:
+            threading.Thread(target=callback_func, args=(svar,), kwargs=kwargs, daemon=True).start()
 
-        return g_artifacts
+    def comment_changed(self, comment: Comment, **kwargs):
+        for callback_func in self.artifact_write_callbacks[Comment]:
+            threading.Thread(target=callback_func, args=(comment,), kwargs=kwargs, daemon=True).start()
 
-    def global_artifact(self, lookup_item: Union[str, int]):
-        """
-        Returns a live libbs.artifacts version of the Artifact located at the lookup_item location, which can
-        lookup any artifact supported in `global_artifacts`
+    def struct_changed(self, struct: Struct, deleted=False, **kwargs):
+        kwargs["deleted"] = deleted
+        for callback_func in self.artifact_write_callbacks[Struct]:
+            threading.Thread(target=callback_func, args=(struct,), kwargs=kwargs, daemon=True).start()
 
-        @param lookup_item:
-        @return:
-        """
+    def enum_changed(self, enum: Enum, deleted=False, **kwargs):
+        kwargs["deleted"] = deleted
+        for callback_func in self.artifact_write_callbacks[Enum]:
+            threading.Thread(target=callback_func, args=(enum,), kwargs=kwargs, daemon=True).start()
 
-        if isinstance(lookup_item, int):
-            return self._get_global_var(lookup_item)
-        elif isinstance(lookup_item, str):
-            artifact = self._get_struct(lookup_item)
-            if artifact:
-                return artifact
+    def global_variable_changed(self, gvar: GlobalVariable, **kwargs):
+        for callback_func in self.artifact_write_callbacks[GlobalVariable]:
+            threading.Thread(target=callback_func, args=(gvar,), kwargs=kwargs, daemon=True).start()
 
-            artifact = self._get_enum(lookup_item)
-            return artifact
+    #
+    # Special Loggers and Printers
+    #
 
-        return None
+    def print(self, msg: str, **kwargs):
+        print(msg)
+
+    def info(self, msg: str, **kwargs):
+        _l.info(msg)
+
+    def debug(self, msg: str, **kwargs):
+        _l.debug(msg)
+
+    def warning(self, msg: str, **kwargs):
+        _l.warning(msg)
+
+    def error(self, msg: str, **kwargs):
+        _l.error(msg)
+
+    #
+    # Utils
+    #
 
     def set_artifact(self, artifact: Artifact, lower=True, **kwargs) -> bool:
         """
@@ -530,97 +528,6 @@ class DecompilerInterface:
 
         return setter(artifact, **kwargs)
 
-    #
-    # Change Callback API
-    #
-
-    def function_header_changed(self, fheader: FunctionHeader, **kwargs):
-        for callback_func in self.artifact_write_callbacks[FunctionHeader]:
-            threading.Thread(target=callback_func, args=(fheader,), kwargs=kwargs, daemon=True).start()
-
-    def stack_variable_changed(self, svar: StackVariable, **kwargs):
-        for callback_func in self.artifact_write_callbacks[StackVariable]:
-            threading.Thread(target=callback_func, args=(svar,), kwargs=kwargs, daemon=True).start()
-
-    def comment_changed(self, comment: Comment, **kwargs):
-        for callback_func in self.artifact_write_callbacks[Comment]:
-            threading.Thread(target=callback_func, args=(comment,), kwargs=kwargs, daemon=True).start()
-
-    def struct_changed(self, struct: Struct, deleted=False, **kwargs):
-        kwargs["deleted"] = deleted
-        for callback_func in self.artifact_write_callbacks[Struct]:
-            threading.Thread(target=callback_func, args=(struct,), kwargs=kwargs, daemon=True).start()
-
-    def enum_changed(self, enum: Enum, deleted=False, **kwargs):
-        kwargs["deleted"] = deleted
-        for callback_func in self.artifact_write_callbacks[Enum]:
-            threading.Thread(target=callback_func, args=(enum,), kwargs=kwargs, daemon=True).start()
-
-    def global_variable_changed(self, gvar: GlobalVariable, **kwargs):
-        for callback_func in self.artifact_write_callbacks[GlobalVariable]:
-            threading.Thread(target=callback_func, args=(gvar,), kwargs=kwargs, daemon=True).start()
-
-    #
-    # Fillers:
-    # A filler function is generally responsible for pulling down artifacts from a specific user state
-    # and reflecting those changes in decompiler view (like the text on the screen). Normally, these changes
-    # will also be accompanied by a Git commit to the master users state to save the changes from pull and
-    # fill into their BS database. In special cases, a filler may only update the decompiler UI but not directly
-    # cause a save of the BS state.
-    #
-
-    def artifact_set_event_handler(
-        self, setter_func, artifact: Artifact, *args, **kwargs
-    ):
-        """
-        This function handles any event which tries to set an Artifact into the decompiler. This handler does two
-        important tasks:
-        1. Locks callback handlers, so you don't get infinite callbacks
-        2. "Lowers" the artifact, so it's artifacts types match the decompilers
-
-        Because of this, it's recommended that when overriding this function you always call super() at the end of
-        your override so it's set correctly in the decompiler.
-
-        :param setter_func:
-        :param artifact:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-
-        lowered_artifact = self.art_lifter.lower(artifact)
-        lock = self.artifact_write_lock if not self.artifact_write_lock.locked() else DummyArtifactSetLock()
-        with lock:
-            try:
-                had_changes = setter_func(lowered_artifact, **kwargs)
-            except ValueError:
-                had_changes = False
-
-        return had_changes
-
-    #
-    # Special Loggers and Printers
-    #
-
-    def print(self, msg: str, **kwargs):
-        print(msg)
-
-    def info(self, msg: str, **kwargs):
-        _l.info(msg)
-
-    def debug(self, msg: str, **kwargs):
-        _l.debug(msg)
-
-    def warning(self, msg: str, **kwargs):
-        _l.warning(msg)
-
-    def error(self, msg: str, **kwargs):
-        _l.error(msg)
-
-    #
-    # Utils
-    #
-
     @staticmethod
     def get_identifiers(artifact: Artifact) -> Tuple:
         if isinstance(artifact, (Function, FunctionHeader, GlobalVariable, Patch, Comment)):
@@ -632,7 +539,6 @@ class DecompilerInterface:
             return (artifact.offset,)
         elif isinstance(artifact, (Struct, Enum)):
             return (artifact.name,)
-
 
     def type_is_user_defined(self, type_str, state=None):
         if not type_str:
@@ -648,7 +554,7 @@ class DecompilerInterface:
             return None
 
         base_type_str = type_.base_type.type
-        return base_type_str if base_type_str in state._structs.keys() else None
+        return base_type_str if base_type_str in self.structs.keys() else None
 
     @staticmethod
     def _find_global_in_call_frames(global_name, max_frames=10):

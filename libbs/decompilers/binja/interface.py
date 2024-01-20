@@ -201,7 +201,7 @@ class BinjaInterface(DecompilerInterface):
     def _init_gui_plugin(self, *args, **kwargs):
         return self
 
-    def active_context(self):
+    def gui_active_context(self):
         all_contexts = UIContext.allContexts()
         if not all_contexts:
             return None
@@ -224,7 +224,7 @@ class BinjaInterface(DecompilerInterface):
         resp = binaryninja.get_text_line_input(question, title)
         return resp.decode() if resp else ""
 
-    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         # TODO: this needs to have a wrapper function that passes the bv to the current deci
         # correct name, category, and action_string for Binja
         action_string = action_string.replace("/", "\\")
@@ -238,7 +238,7 @@ class BinjaInterface(DecompilerInterface):
         )
         return True
 
-    def goto_address(self, func_addr) -> None:
+    def gui_goto(self, func_addr) -> None:
         self.bv.offset = func_addr
 
     #

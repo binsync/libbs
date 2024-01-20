@@ -29,7 +29,7 @@ def create_plugin(*args, **kwargs):
     }
 
     # register a menu to open when you right click on the psuedocode view
-    deci.register_ctx_menu_item(
+    deci.gui_register_ctx_menu(
         "StartArtifactChangeWatcher",
         "Start watching artifact changes",
         lambda: deci.start_artifact_watchers(),

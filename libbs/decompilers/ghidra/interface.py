@@ -72,7 +72,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def gui_plugin(self, value):
         pass
 
-    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         ctx_menu_action = create_context_action(self.ghidra, name, action_string, callback_func, category or "LibBS")
         self.ghidra.getState().getTool().addAction(ctx_menu_action)
         return True
@@ -83,7 +83,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
         return answer if answer else ""
 
-    def active_context(self):
+    def gui_active_context(self):
         active_addr = self.ghidra.currentLocation.getAddress().getOffset()
         if active_addr is None:
             return Function(0, 0)
@@ -95,7 +95,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return self._last_func
 
-    def goto_address(self, func_addr) -> None:
+    def gui_goto(self, func_addr) -> None:
         func_addr = self.art_lifter.lower_addr(func_addr)
         self.ghidra.goTo(self.ghidra.toAddr(func_addr))
 

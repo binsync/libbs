@@ -45,7 +45,7 @@ class PluginInstaller:
     )
 
     def __init__(self, targets=None, target_install_paths=None):
-        self.targets = targets or self.DECOMPILERS+self.DEBUGGERS
+        self.targets = targets if targets is not None else self.DECOMPILERS+self.DEBUGGERS
         self._home = Path(os.getenv("HOME") or "~/").expanduser().absolute()
         self.target_install_paths = target_install_paths or {} #or self._populate_installs_from_config()
         self._successful_installs = {}
@@ -240,15 +240,8 @@ class PluginInstaller:
 
 class LibBSPluginInstaller(PluginInstaller):
     def __init__(self, targets=None, target_install_paths=None):
-        # only ghidra needs an install
-        supported_targets = {"ghidra"}
-        do_install_targets = []
-        targets = targets or []
-        for target in targets:
-            if target in supported_targets:
-                do_install_targets.append(target)
-
-        super().__init__(targets=do_install_targets, target_install_paths=target_install_paths)
+        targets = targets or PluginInstaller.DECOMPILERS
+        super().__init__(targets=targets, target_install_paths=target_install_paths)
         self._libbs_plugins_path = self.find_pkg_files("libbs").joinpath("decompiler_stubs")
 
     def display_prologue(self):

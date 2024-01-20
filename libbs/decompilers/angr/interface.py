@@ -165,10 +165,10 @@ class AngrInterface(DecompilerInterface):
         self.workspace.plugins.register_active_plugin(self._plugin_name, self.gui_plugin)
         return self.gui_plugin
 
-    def goto_address(self, func_addr):
+    def gui_goto(self, func_addr):
         self.workspace.jump_to(self.art_lifter.lower_addr(func_addr))
 
-    def register_ctx_menu_item(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         if self.gui_plugin is None:
             l.critical("Cannot register context menu item without a GUI plugin.")
             return False
@@ -177,7 +177,7 @@ class AngrInterface(DecompilerInterface):
         self.gui_plugin.context_menu_items = self._ctx_menu_items
         return True
 
-    def active_context(self):
+    def gui_active_context(self):
         curr_view = self.workspace.view_manager.current_tab
         if not curr_view:
             return None
