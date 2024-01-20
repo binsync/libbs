@@ -79,6 +79,7 @@ class AngrInterface(DecompilerInterface):
             return None
 
     def get_func_size(self, func_addr) -> int:
+        func_addr = self.art_lifter.lower_addr(func_addr)
         try:
             func = self.main_instance.project.kb.functions[func_addr]
             return func.size
