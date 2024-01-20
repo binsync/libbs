@@ -34,7 +34,7 @@ class ArtifactLifter:
 
     def lift_addr(self, addr: int) -> int:
         if addr < self.deci.binary_base_addr:
-            self.deci.warning(f"Lifting an address that appears already lifted: {addr}...")
+            self.deci.debug(f"Lifting an address that appears already lifted: {addr}...")
             return addr
         else:
             return addr - self.deci.binary_base_addr
@@ -47,7 +47,7 @@ class ArtifactLifter:
 
     def lower_addr(self, addr: int) -> int:
         if addr >= self.deci.binary_base_addr:
-            self.deci.warning(f"Lowering an address that appears already lowered: {addr}...")
+            self.deci.debug(f"Lowering an address that appears already lowered: {addr}...")
             return addr
         else:
             return addr + self.deci.binary_base_addr
