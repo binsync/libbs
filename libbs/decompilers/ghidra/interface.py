@@ -688,9 +688,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not typestr:
             return None
 
-        dtm_service_class = self.ghidra.import_module_object("ghidra.app.services", "DataTypeManagerService")
         dtp_class = self.ghidra.import_module_object("ghidra.util.data", "DataTypeParser")
-        dt_service = self.ghidra.getState().getTool().getService(dtm_service_class)
+        aam_class = self.ghidra.import_module_object("ghidra.app.plugin.core.analysis", "AutoAnalysisManager")
+        aam = aam_class.getAnalysisManager(self.ghidra.currentProgram)
+        dt_service = aam.getDataTypeManagerService()
         dt_parser = dtp_class(dt_service, dtp_class.AllowedDataTypes.ALL)
         try:
             parsed_type = dt_parser.parse(typestr)

@@ -16,10 +16,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
                                                       decompiler_headless_binary_path=ci_headless_binary_path,
                                                       project_binary_path=fauxware_path
                                             )
-        #main = deci.functions[0x400664]
-        #main.name = "main"
-        #deci.functions[0x400664] = main
-        #assert deci.functions[0x400664].name == "main"
+        main = deci.functions[0x400664]
+        main.name = "main"
+        deci.functions[0x400664] = main
+        assert deci.functions[0x400664].name == "main"
         #main.stack_vars[-24].name = "input"
         #deci.functions[0x400664] = main
         #TODO: Fix stack variables
