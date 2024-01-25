@@ -5,6 +5,7 @@ import threading
 from collections import defaultdict
 from functools import wraps
 from typing import Dict, Optional, Tuple, List, Callable, Type
+from pathlib import Path
 
 import libbs
 from libbs.api.artifact_lifter import ArtifactLifter
