@@ -32,31 +32,26 @@ class AngrInterface(DecompilerInterface):
     and responsible for running a thread to get new changes from other users.
     """
 
-    def __init__(self, workspace=None, headless=False, binary_path: Path = None, **kwargs):
-        plugin_name = kwargs.get("plugin_name", "generic_plugin")
-        if workspace is None and not headless:
-            l.critical("The workspace provided is None, which will result in a broken BinSync.")
-            return
-
+    def __init__(self, workspace=None, **kwargs):
         self.workspace = workspace
         self.main_instance = workspace.main_instance if workspace else self
-        self._binary_path = Path(binary_path) if binary_path is not None else binary_path
         self._ctx_menu_items = []
-        if not headless:
-            self._am_logger = logging.getLogger(f"angrmanagement.{plugin_name}")
-            self._am_logger.setLevel(logging.INFO)
-        else:
-            self._am_logger = None
+        self._am_logger = None
+        super().__init__(name="angr", artifact_lifter=AngrArtifactLifter(self), **kwargs)
 
-        super().__init__(name="angr", artifact_lifter=AngrArtifactLifter(self), headless=headless, **kwargs)
-
-    def _init_headless_components(self):
-        if self._binary_path is None or not self._binary_path.exists():
-            return
-
+    def _init_headless_components(self, *args, **kwargs):
+        super()._init_headless_components(*args, check_dec_path=False, **kwargs)
         self.project = angr.Project(str(self._binary_path), auto_load_libs=False)
         cfg = self.project.analyses.CFG(show_progressbar=True, normalize=True, data_references=True)
         self.project.analyses.CompleteCallingConventions(cfg=cfg, recover_variables=True)
+
+    def _init_gui_components(self, *args, **kwargs):
+        super()._init_gui_components(*args, **kwargs)
+        if self.workspace is None:
+            raise ValueError("The workspace provided is None, which will result in a broken BinSync.")
+
+        self._am_logger = logging.getLogger(f"angrmanagement.{self._plugin_name or 'generic_plugin'}")
+        self._am_logger.setLevel(logging.INFO)
 
     #
     # Decompiler API

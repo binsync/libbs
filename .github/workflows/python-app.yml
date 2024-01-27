@@ -1,0 +1,39 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: Core Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v2
+      with:
+        python-version: "3.11"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        pip install psutil
+        pip install .
+    - name: Set up Java 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: "oracle"
+        java-version: "17"
+    - name: Install Ghidra
+      uses: er28-0652/setup-ghidra@master
+      with:
+        version: "10.4"
+    - name: Pytest
+      run: |
+        export GHIDRA_HEADLESS_PATH="$GHIDRA_INSTALL_DIR/support/analyzeHeadless"
+        pytest ./tests/tests.py

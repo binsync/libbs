@@ -1,14 +1,21 @@
+import os
 import time
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import logging
+import subprocess
+import tempfile
 from functools import wraps
+
+
 
 from libbs.api import DecompilerInterface
 from libbs.api.decompiler_interface import requires_decompilation
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
 )
+from libbs.plugin_installer import PluginInstaller
+import psutil
 
 from .artifact_lifter import GhidraArtifactLifter
 from .ghidra_api import GhidraAPIWrapper
@@ -37,19 +44,72 @@ def ghidra_transaction(f):
 
 class GhidraDecompilerInterface(DecompilerInterface):
     def __init__(self, loop_on_plugin=True, **kwargs):
-        self.ghidra: Optional[GhidraAPIWrapper] = None
-        super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
+        self.loop_on_plugin = loop_on_plugin
 
         self._last_addr = None
         self._last_func = None
         self.base_addr = None
 
-        self.loop_on_plugin = loop_on_plugin
+        self._headless_g_project = None
+        self._headless_script_name = "ghidra_libbs_mainthread_server.py"
 
-    def _init_gui_components(self, *args, **kwargs):
+        self.ghidra: Optional[GhidraAPIWrapper] = None
+        super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
+
+        # Connect to the remote bridge, assumes Ghidra is already running!
         if not self.connect_ghidra_bridge():
             raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
-        super()._init_gui_components(*args, **kwargs)
+
+    def _init_headless_components(self, *args, **kwargs):
+        if self._headless_dec_path is None:
+            # attempt to grab it from the env vars
+            path = os.environ.get("GHIDRA_HEADLESS_PATH", None)
+            if path:
+                self._headless_dec_path = Path(path).absolute()
+
+        super()._init_headless_components(*args, **kwargs)
+        script_dir_path = PluginInstaller.find_pkg_files("libbs") / "decompiler_stubs" / "ghidra_libbs"
+        if not script_dir_path.joinpath(self._headless_script_name).exists():
+            raise SystemError("Failed to find the internal ghidra scripts for BinSync. Is your install corrupted?")
+
+        self._headless_g_project = tempfile.TemporaryDirectory()
+        subprocess.Popen([
+            str(self._headless_dec_path),
+            self._headless_g_project.name,
+            "headless",
+            "-import",
+            str(self._binary_path),
+            "-scriptPath",
+            str(script_dir_path),
+            "-postScript",
+            self._headless_script_name
+        ])
+
+    def _find_headless_proc(self):
+        for proc in psutil.process_iter():
+            try:
+                cmd = " ".join(proc.cmdline())
+            except Exception as e:
+                continue
+
+            if "headless" in cmd and \
+                    "-import" in cmd and \
+                    "-postScript" in cmd and \
+                    self._headless_script_name in cmd:
+                break
+        else:
+            proc = None
+
+        return proc
+
+    def shutdown(self):
+        self.ghidra.bridge.remote_shutdown()
+        # Wait until headless binary gets shutdown
+        while True:
+            if not self._find_headless_proc():
+                break
+            time.sleep(1)
+        self._headless_g_project.cleanup()
 
     #
     # GUI
@@ -120,7 +180,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return int(gfunc.getBody().getNumAddresses())
 
     def connect_ghidra_bridge(self):
-        self.ghidra = GhidraAPIWrapper(self)
+        self.ghidra = GhidraAPIWrapper(self, connection_timeout=25)
         return self.ghidra.connected
 
     def decompile(self, addr: int) -> Optional[str]:
@@ -188,7 +248,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         stack_variables = {}
         if stack_variable_info:
             stack_variables = {
-                offset: StackVariable(offset, name, typestr, size, addr) for offset, name, typestr, size in stack_variable_info
+                offset: StackVariable(offset, name, typestr, size, addr) for offset, name, typestr, size in
+                stack_variable_info
             }
 
         arg_variable_info: Optional[List[Tuple[int, str, str, int]]] = self.ghidra.bridge.remote_eval(
@@ -407,7 +468,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
             "if str(type(dType)) == \"<type 'ghidra.program.artifactsbase.artifacts.EnumDB'>\"]"
         )
-        return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if name.count('/') == 1} if names else {}
+        return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if
+                name.count('/') == 1} if names else {}
 
     @ghidra_transaction
     def fill_global_var(self, var_addr, user=None, artifact=None, **kwargs):
@@ -518,7 +580,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @ghidra_transaction
     def _update_local_variable_symbols(
-        self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]
+            self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]
     ) -> bool:
         """
         @param decompilation:
@@ -580,7 +642,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             gstack_var.getName(),
             str(gstack_var.getDataType()),
             gstack_var.getLength(),
-            gstack_var.getFunction().getEntryPoint().getOffset() # Unsure if this is what is wanted here
+            gstack_var.getFunction().getEntryPoint().getOffset()  # Unsure if this is what is wanted here
         )
         return bs_stack_var
 
@@ -634,9 +696,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not typestr:
             return None
 
-        dtm_service_class = self.ghidra.import_module_object("ghidra.app.services", "DataTypeManagerService")
         dtp_class = self.ghidra.import_module_object("ghidra.util.data", "DataTypeParser")
-        dt_service = self.ghidra.getState().getTool().getService(dtm_service_class)
+        aam_class = self.ghidra.import_module_object("ghidra.app.plugin.core.analysis", "AutoAnalysisManager")
+        aam = aam_class.getAnalysisManager(self.ghidra.currentProgram)
+        dt_service = aam.getDataTypeManagerService()
         dt_parser = dtp_class(dt_service, dtp_class.AllowedDataTypes.ALL)
         try:
             parsed_type = dt_parser.parse(typestr)
