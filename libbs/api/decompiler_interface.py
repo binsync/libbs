@@ -583,7 +583,7 @@ class DecompilerInterface:
             return None
 
     @staticmethod
-    def find_current_decompiler() -> Optional[str]:
+    def find_current_decompiler(forced=False) -> Optional[str]:
         """
         Finds the name of the current decompiler that this function is running inside of. Note, this function
         does not create an interface, but instead finds the name of the decompiler that is currently running.
@@ -625,7 +625,8 @@ class DecompilerInterface:
         except ImportError:
             pass
 
-        _l.warning("LibBS does not know the current decompiler you are running in... it may not be supported!")
+        if not forced:
+            _l.warning("LibBS does not know the current decompiler you are running in... it may not be supported!")
         return None
 
     @staticmethod
@@ -645,7 +646,7 @@ class DecompilerInterface:
         if force_decompiler and force_decompiler not in SUPPORTED_DECOMPILERS:
             raise ValueError(f"Unsupported decompiler {force_decompiler}")
 
-        current_decompiler = DecompilerInterface.find_current_decompiler()
+        current_decompiler = DecompilerInterface.find_current_decompiler(forced=bool(force_decompiler))
         if force_decompiler == IDA_DECOMPILER or current_decompiler == IDA_DECOMPILER:
             from libbs.decompilers.ida.interface import IDAInterface
             deci_class = IDAInterface
