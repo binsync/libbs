@@ -1,10 +1,10 @@
+import os
 import time
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import logging
 import subprocess
 import tempfile
-import psutil
 from functools import wraps
 
 
@@ -15,6 +15,7 @@ from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
 )
 from libbs.plugin_installer import PluginInstaller
+import psutil
 
 from .artifact_lifter import GhidraArtifactLifter
 from .ghidra_api import GhidraAPIWrapper
@@ -43,33 +44,46 @@ def ghidra_transaction(f):
 
 class GhidraDecompilerInterface(DecompilerInterface):
     def __init__(self, loop_on_plugin=True, **kwargs):
-        self.ghidra: Optional[GhidraAPIWrapper] = None
-        super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
+        self.loop_on_plugin = loop_on_plugin
 
         self._last_addr = None
         self._last_func = None
         self.base_addr = None
 
-        self.loop_on_plugin = loop_on_plugin
+        self._headless_g_project = None
+        self._headless_script_name = "ghidra_libbs_mainthread_server.py"
+
+        self.ghidra: Optional[GhidraAPIWrapper] = None
+        super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
 
         # Connect to the remote bridge, assumes Ghidra is already running!
         if not self.connect_ghidra_bridge():
             raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
 
-    #
-    # Headless
-    #
+    def _init_headless_components(self, *args, **kwargs):
+        if self._headless_dec_path is None:
+            # attempt to grab it from the env vars
+            path = os.environ.get("GHIDRA_HEADLESS_PATH", None)
+            if path:
+                self._headless_dec_path = Path(path).absolute()
 
-    def _init_headless_components(self, decompiler_headless_path, project_binary_path):
-        super()._init_headless_components(decompiler_headless_path, project_binary_path)
-        script_path = PluginInstaller.find_pkg_files("libbs") / "decompiler_stubs" / "ghidra_libbs"
-        tmpdir = tempfile.TemporaryDirectory()
-        self.headless_project = tmpdir
-        p = subprocess.Popen([str(self.decompiler_headless_binary_path),
-                              tmpdir.name, "headless",
-                              "-import", str(self.project_binary_path),
-                              "-scriptPath", str(script_path),
-                              "-postScript", "ghidra_libbs_mainthread_server.py"], )
+        super()._init_headless_components(*args, **kwargs)
+        script_dir_path = PluginInstaller.find_pkg_files("libbs") / "decompiler_stubs" / "ghidra_libbs"
+        if not script_dir_path.joinpath(self._headless_script_name).exists():
+            raise SystemError("Failed to find the internal ghidra scripts for BinSync. Is your install corrupted?")
+
+        self._headless_g_project = tempfile.TemporaryDirectory()
+        subprocess.Popen([
+            str(self._headless_dec_path),
+            self._headless_g_project.name,
+            "headless",
+            "-import",
+            str(self._binary_path),
+            "-scriptPath",
+            str(script_dir_path),
+            "-postScript",
+            self._headless_script_name
+        ])
 
     def _find_headless_proc(self):
         for proc in psutil.process_iter():
@@ -78,21 +92,15 @@ class GhidraDecompilerInterface(DecompilerInterface):
             except Exception as e:
                 continue
 
-            if "headless" in cmd and "-import" in cmd and "-postScript" in cmd and "ghidra_libbs_mainthread_server.py" in cmd:
+            if "headless" in cmd and \
+                    "-import" in cmd and \
+                    "-postScript" in cmd and \
+                    self._headless_script_name in cmd:
                 break
         else:
             proc = None
 
         return proc
-
-        # Connect to the remote bridge, assumes Ghidra is already running!
-        if not self.connect_ghidra_bridge():
-            raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
-
-    def _init_gui_components(self, *args, **kwargs):
-        if not self.connect_ghidra_bridge():
-            raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
-        super()._init_gui_components(*args, **kwargs)
 
     def shutdown(self):
         self.ghidra.bridge.remote_shutdown()
@@ -101,7 +109,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if not self._find_headless_proc():
                 break
             time.sleep(1)
-        self.headless_project.cleanup()
+        self._headless_g_project.cleanup()
 
     #
     # GUI

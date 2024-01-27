@@ -33,13 +33,7 @@ jobs:
       uses: er28-0652/setup-ghidra@master
       with:
         version: "10.4"
-    - name: Download fauxware binary
-      run: |
-        sudo apt-get install git
-        git clone https://github.com/binsync/example.bsproj.git
-        cd example.bsproj
-        git checkout data
-        cp ./fauxware ~/fauxware
     - name: Pytest
       run: |
+        export GHIDRA_HEADLESS_PATH="$GHIDRA_INSTALL_DIR/support/analyzeHeadless"
         pytest ./tests/tests.py

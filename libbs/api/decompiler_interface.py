@@ -4,7 +4,7 @@ import re
 import threading
 from collections import defaultdict
 from functools import wraps
-from typing import Dict, Optional, Tuple, List, Callable, Type
+from typing import Dict, Optional, Tuple, List, Callable, Type, Union
 from pathlib import Path
 
 import libbs
@@ -38,17 +38,17 @@ def requires_decompilation(f):
 class DecompilerInterface:
     def __init__(
         self,
-        # these should usually go unchanged in public API use
+        # these flags should mostly be unchanged when passed through subclasses
         name: str = "generic",
         qt_version: str = "PySide6",
         artifact_lifter: Optional[ArtifactLifter] = None,
         error_on_artifact_duplicates: bool = False,
         decompiler_available: bool = True,
         supports_undo: bool = False,
-        # these will be changed often by public API use
+        # these flags can be changed by subclassed decis
         headless: bool = False,
-        decompiler_headless_binary_path: Optional[str] = None,
-        project_binary_path: Optional[str] = None,
+        headless_dec_path: Optional[Union[Path, str]] = None,
+        binary_path: Optional[Union[Path, str]] = None,
         init_plugin: bool = False,
         plugin_name: str = f"generic_libbs_plugin",
         # [category/name] = (action_string, callback_func)
@@ -67,6 +67,9 @@ class DecompilerInterface:
 
         # GUI things
         self.headless = headless
+        self._headless_dec_path = Path(headless_dec_path) if headless_dec_path else None
+        self._binary_path = Path(binary_path) if binary_path else None
+
         self._init_plugin = init_plugin
         self._unparsed_gui_ctx_actions = gui_ctx_menu_actions or {}
         # (category, name, action_string, callback_func)
@@ -96,22 +99,13 @@ class DecompilerInterface:
             kwargs = gui_init_kwargs or {}
             self._init_gui_components(*args, **kwargs)
         else:
-            self._init_headless_components(decompiler_headless_binary_path, project_binary_path)
+            self._init_headless_components()
 
-    #
-    # Headless
-    #
-
-    def _init_headless_components(self, decompiler_headless_path, project_binary_path):
-        headless_path = Path(decompiler_headless_path)
-        bin_path = Path(project_binary_path)
-        if not headless_path.exists():
-            raise FileNotFoundError("Path to headless binary not found")
-        if not bin_path.exists():
-            raise FileNotFoundError("Path to binary not found")
-
-        self.decompiler_headless_binary_path = headless_path
-        self.project_binary_path = bin_path
+    def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
+        if check_dec_path and not self._headless_dec_path.exists():
+            raise FileNotFoundError("You must provide a valid path to a headless decompiler when using headless mode.")
+        if not self._binary_path.exists():
+            raise FileNotFoundError("You must provide a valid target binary path when using headless mode.")
 
     def _init_gui_components(self, *args, **kwargs):
         from libbs.ui.version import set_ui_version
@@ -234,7 +228,7 @@ class DecompilerInterface:
 
         @rtype: path-like string (/path/to/binary)
         """
-        raise NotImplementedError
+        return self._binary_path
 
     def get_func_size(self, func_addr) -> int:
         """
