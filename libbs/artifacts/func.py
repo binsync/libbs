@@ -346,17 +346,20 @@ class Function(Artifact):
         if not func2 or self == func2:
             return merged_func
 
-        if func2.header is not None:
+        if merged_func.header is None:
+            merged_func.header = func2.header.copy() if func2.header else None
+
+        if merged_func.header:
             merged_func.header = merged_func.header.overwrite_merge(func2.header)
 
-        for off, var in func2.stack_vars.items():
-            if var is not None:
-                if off in merged_func.stack_vars:
-                    merged_var = merged_func.stack_vars[off].overwrite_merge(var)
-                else:
-                    merged_var = var
+            for off, var in func2.stack_vars.items():
+                if var is not None:
+                    if off in merged_func.stack_vars:
+                        merged_var = merged_func.stack_vars[off].overwrite_merge(var)
+                    else:
+                        merged_var = var
 
-                merged_func.stack_vars[off] = merged_var
+                    merged_func.stack_vars[off] = merged_var
 
         return merged_func
 
