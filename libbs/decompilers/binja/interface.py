@@ -1,23 +1,22 @@
 import threading
 import functools
-from typing import Dict, Tuple, Optional, Iterable, Any, List
+from typing import Dict, Optional, Any, List
 import hashlib
 import logging
 
-from binaryninja import SymbolType
-from binaryninjaui import (
-    UIContext,
-    DockContextHandler,
-    UIActionHandler,
-    Menu,
-)
-import binaryninja
-from binaryninja import PluginCommand
-from binaryninja import lineardisassembly
-from binaryninja.function import DisassemblySettings
-from binaryninja.enums import DisassemblyOption, LinearDisassemblyLineType, InstructionTextTokenType
-from binaryninja.enums import VariableSourceType
-from binaryninja.types import StructureType, EnumerationType
+BN_AVAILABLE = True
+try:
+    import binaryninja
+except ImportError:
+    BN_AVAILABLE = False
+
+if BN_AVAILABLE:
+    from binaryninja import SymbolType, PluginCommand, lineardisassembly
+    from binaryninjaui import UIContext
+    from binaryninja.function import DisassemblySettings
+    from binaryninja.enums import DisassemblyOption, LinearDisassemblyLineType, InstructionTextTokenType
+    from binaryninja.enums import VariableSourceType
+    from binaryninja.types import StructureType, EnumerationType
 
 from libbs.api.decompiler_interface import DecompilerInterface
 import libbs
@@ -53,14 +52,81 @@ def background_and_wait(func):
     return wrapper
 
 
-#
-# Controller
-#
-
 class BinjaInterface(DecompilerInterface):
     def __init__(self, bv=None, **kwargs):
-        self.bv: binaryninja.BinaryView = bv
+        self.bv: "binaryninja.BinaryView" = bv
         super(BinjaInterface, self).__init__(name="binja", artifact_lifter=BinjaArtifactLifter(self), **kwargs)
+
+    def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
+        super()._init_headless_components(*args, check_dec_path=False, **kwargs)
+        if not BN_AVAILABLE:
+            raise ImportError("Unable to import binaryninja module. Are you sure you have it installed with an enterprise license?")
+
+        self.bv = binaryninja.load(str(self._binary_path))
+
+    def _init_gui_components(self, *args, **kwargs):
+        if binaryninja.core_ui_enabled():
+            super()._init_gui_components(*args, **kwargs)
+            return True
+        else:
+            return False
+
+    def _init_gui_plugin(self, *args, **kwargs):
+        return self
+
+    def __del__(self):
+        if self.headless and BN_AVAILABLE:
+            self.bv.file.close()
+
+    #
+    # GUI
+    #
+
+    def gui_active_context(self):
+        all_contexts = UIContext.allContexts()
+        if not all_contexts:
+            return None
+
+        ctx = all_contexts[0]
+        handler = ctx.contentActionHandler()
+        if handler is None:
+            return None
+
+        actionContext = handler.actionContext()
+        func = actionContext.function
+        if func is None:
+            return None
+
+        func_addr = self.art_lifter.lift_addr(func.start)
+        return libbs.artifacts.Function(
+            func_addr, 0, header=FunctionHeader(func.name, func_addr)
+        )
+
+    def gui_goto(self, func_addr) -> None:
+        func_addr = self.art_lifter.lower_addr(func_addr)
+        self.bv.offset = func_addr
+
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
+        # TODO: this needs to have a wrapper function that passes the bv to the current deci
+        # correct name, category, and action_string for Binja
+        action_string = action_string.replace("/", "\\")
+        category = category.replace("/", "\\") if category else ""
+
+        PluginCommand.register_for_address(
+            f"{category}\\{action_string}",
+            action_string,
+            callback_func,
+            is_valid=self.is_bn_func
+        )
+        return True
+
+    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+        resp = binaryninja.get_text_line_input(question, title)
+        return resp.decode() if resp else ""
+
+    #
+    # Public API
+    #
 
     @property
     def binary_base_addr(self) -> int:
@@ -84,6 +150,7 @@ class BinjaInterface(DecompilerInterface):
             return None
 
     def get_func_size(self, func_addr) -> int:
+        func_addr = self.art_lifter.lower_addr(func_addr)
         func = self.bv.get_function_at(func_addr)
         if not func:
             return 0
@@ -110,6 +177,7 @@ class BinjaInterface(DecompilerInterface):
         return xrefs
 
     def get_func_containing(self, addr: int) -> Optional[Function]:
+        addr = self.art_lifter.lower_addr(addr)
         funcs = self.bv.get_functions_containing(addr)
         if not funcs:
             return None
@@ -159,7 +227,7 @@ class BinjaInterface(DecompilerInterface):
         return decomp
 
     def local_variable_names(self, func: Function) -> List[str]:
-        bn_func = self.addr_to_bn_func(self.bv, func.addr)
+        bn_func = self.addr_to_bn_func(self.bv, self.art_lifter.lower_addr(func.addr))
         if bn_func is None:
             return []
 
@@ -167,7 +235,7 @@ class BinjaInterface(DecompilerInterface):
 
     @background_and_wait
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
-        bn_func = self.addr_to_bn_func(self.bv, func.addr)
+        bn_func = self.addr_to_bn_func(self.bv, self.art_lifter.lower_addr(func.addr))
         if bn_func is None:
             return False
 
@@ -193,53 +261,6 @@ class BinjaInterface(DecompilerInterface):
         Binary Ninja has no internal object that needs to be refreshed.
         """
         return None
-
-    #
-    # GUI API
-    #
-
-    def _init_gui_plugin(self, *args, **kwargs):
-        return self
-
-    def gui_active_context(self):
-        all_contexts = UIContext.allContexts()
-        if not all_contexts:
-            return None
-
-        ctx = all_contexts[0]
-        handler = ctx.contentActionHandler()
-        if handler is None:
-            return None
-
-        actionContext = handler.actionContext()
-        func = actionContext.function
-        if func is None:
-            return None
-
-        return libbs.artifacts.Function(
-            func.start, 0, header=FunctionHeader(func.name, func.start)
-        )
-
-    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        resp = binaryninja.get_text_line_input(question, title)
-        return resp.decode() if resp else ""
-
-    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
-        # TODO: this needs to have a wrapper function that passes the bv to the current deci
-        # correct name, category, and action_string for Binja
-        action_string = action_string.replace("/", "\\")
-        category = category.replace("/", "\\") if category else ""
-
-        PluginCommand.register_for_address(
-            f"{category}\\{action_string}",
-            action_string,
-            callback_func,
-            is_valid=self.is_bn_func
-        )
-        return True
-
-    def gui_goto(self, func_addr) -> None:
-        self.bv.offset = func_addr
 
     #
     # Artifact API

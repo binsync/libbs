@@ -82,6 +82,8 @@ class PluginInstaller:
             self.install_targets(interactive=interactive)
         except Exception as e:
             print(f"Stopping Install... because: {e}")
+        except KeyboardInterrupt:
+            print("Goodbye...")
 
         self.display_epilogue()
 
