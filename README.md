@@ -65,11 +65,3 @@ for func_addr, light_func in deci.functions.items():
 
 Notice, when using the `items` function the function is `light`, meaning it does not contain stack vars and other 
 info. This also means using `keys`, `values`, or `list` on an artifact dictionary will have the same affect. 
-
-### IDA
-- [ ] G/S Comments
-
-### Ghidra
-- [ ] Change Callbacks
-- [ ] Get/Set Comments
-
