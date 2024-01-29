@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Dict
 
 import binaryninja
@@ -9,7 +10,7 @@ import logging
 
 from .interface import BinjaInterface
 from libbs.artifacts import (
-    FunctionHeader, FunctionArgument, GlobalVariable, StackVariable
+    FunctionHeader, FunctionArgument, GlobalVariable, StackVariable, Comment
 )
 
 l = logging.getLogger(__name__)
@@ -26,20 +27,57 @@ class DataMonitor(BinaryDataNotification):
         self._interface: BinjaInterface = interface
         self._changing_func_addr = None
         self._changing_func_pre_change = None
+        self._seen_comments = defaultdict(dict)
 
     def function_updated(self, view, func_):
+        # updates that occur without a service request are requests for comment changes
         if self._changing_func_pre_change is None:
-            # TODO: add support for creating functions here
-            return
+            #
+            # comments
+            #
+
+            func_addr = func_.start
+            current_comments = dict(func_.comments)
+            if self._seen_comments[func_addr] != current_comments:
+                # comments changed
+                old_comments = self._seen_comments
+                new_comments = current_comments
+
+                for addr, old_comment in old_comments.items():
+                    new_comment = new_comments.get(addr, None)
+                    if new_comment == old_comment:
+                        continue
+
+                    self._interface.comment_changed(
+                        self._interface.art_lifter.lift(
+                            Comment(
+                                addr, str(new_comment) if new_comment else "", decompiled=True, func_addr=func_addr
+                            )
+                        )
+                    )
+
+                for addr, new_comment in new_comments.items():
+                    if addr in old_comments:
+                        continue
+
+                    if new_comment:
+                        self._interface.comment_changed(
+                            self._interface.art_lifter.lift(
+                                Comment(addr, str(new_comment), decompiled=True, func_addr=func_addr)
+                            )
+                        )
+
+                self._seen_comments[func_addr] = current_comments
 
         # service requested function only
-        if self._changing_func_addr == func_.start:
+        if self._changing_func_pre_change is not None and self._changing_func_addr == func_.start:
             l.debug(f"Update on {hex(self._changing_func_addr)} being processed...")
             self._changing_func_addr = None
 
             # convert to libbs Function type for diffing
             bn_func = view.get_function_at(func_.start)
             bs_func = BinjaInterface.bn_func_to_bs(bn_func)
+            current_comments = dict(bn_func.comments)
 
             #
             # header
@@ -155,7 +193,7 @@ class DataMonitor(BinaryDataNotification):
                 )
             )
         else:
-            l.debug(f"   -> Other Symbol: {sym.type}")
+            print(f"   -> Other Symbol: {sym.type}")
             pass
 
     def type_defined(self, view, name, type_):
@@ -171,8 +209,3 @@ class DataMonitor(BinaryDataNotification):
             self._interface.enum_changed(
                 self._interface.art_lifter.lift(bs_enum)
             )
-
-
-def start_data_monitor(view, controller):
-    notification = DataMonitor(view, controller)
-    view.register_notification(notification)
