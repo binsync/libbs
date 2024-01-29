@@ -55,6 +55,7 @@ def background_and_wait(func):
 class BinjaInterface(DecompilerInterface):
     def __init__(self, bv=None, **kwargs):
         self.bv: "binaryninja.BinaryView" = bv
+        self._data_monitor = None
         super(BinjaInterface, self).__init__(name="binja", artifact_lifter=BinjaArtifactLifter(self), **kwargs)
 
     def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
@@ -261,6 +262,22 @@ class BinjaInterface(DecompilerInterface):
         Binary Ninja has no internal object that needs to be refreshed.
         """
         return None
+
+    def start_artifact_watchers(self):
+        if not self._artifact_watchers_started:
+            from .hooks import DataMonitor
+            if self.bv is None:
+                raise RuntimeError("Cannot start artifact watchers without a BinaryView.")
+
+            self._data_monitor = DataMonitor(self.bv, self)
+            self.bv.register_notification(self._data_monitor)
+            super().start_artifact_watchers()
+
+    def stop_artifact_watchers(self):
+        if self._artifact_watchers_started:
+            self.bv.unregister_notification(self._data_monitor)
+            self._data_monitor = None
+            super().stop_artifact_watchers()
 
     #
     # Artifact API
