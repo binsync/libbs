@@ -22,7 +22,7 @@ def create_plugin(*args, **kwargs):
         gui_init_kwargs=kwargs
     )
     # create a function to print a string in the decompiler console
-    decompiler_printer = lambda *x, **y: deci.print(f"Changed {x}{y}")
+    decompiler_printer = lambda *x: deci.print(f"Changed {x}")
     # register the callback for all the types we want to print
     deci.artifact_write_callbacks = {
         typ: [decompiler_printer] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment,)
@@ -32,7 +32,7 @@ def create_plugin(*args, **kwargs):
     deci.gui_register_ctx_menu(
         "StartArtifactChangeWatcher",
         "Start watching artifact changes",
-        lambda: deci.start_artifact_watchers(),
+        lambda *x, **y: deci.start_artifact_watchers(),
         category="ArtifactChangeWatcher"
     )
 

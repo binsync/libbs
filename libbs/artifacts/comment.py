@@ -14,9 +14,8 @@ class Comment(Artifact):
 
     def __init__(self, addr, comment,  func_addr=None, decompiled=False, last_change=None):
         super(Comment, self).__init__(last_change=last_change)
-        if comment:
-            self.comment = self.linewrap_comment(comment)
 
+        self.comment = self.linewrap_comment(comment) if comment else ""
         self.decompiled = decompiled
         self.addr = addr  # type: int
         self.func_addr = func_addr
