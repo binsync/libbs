@@ -350,6 +350,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         # args
         if fheader.args and decompilation is not None:
             # TODO: do arg names and types
+            # will do
             pass
 
         return changes
