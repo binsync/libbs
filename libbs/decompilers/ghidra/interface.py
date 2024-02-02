@@ -349,9 +349,17 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         # args
         if fheader.args and decompilation is not None:
-            # TODO: do arg names and types
-            # will do
-            pass
+            # TODO: Fix multiple parameter bug
+            param = self.ghidra.import_module_object("ghidra.program.model.listing", "ParameterImpl")
+            func_update_type = self.ghidra.import_module_object("ghidra.program.model.listing.Function", "FunctionUpdateType")
+
+            params = []
+            for offset in fheader.args:
+                arg = fheader.args[offset]
+                parsed_type = self.typestr_to_gtype(arg.type)
+                params.append(param(arg.name, parsed_type, self.ghidra.currentProgram))
+            ghidra_func.replaceParameters(params, func_update_type.DYNAMIC_STORAGE_ALL_PARAMS, True, src_type.USER_DEFINED)
+            changes = True
 
         return changes
 

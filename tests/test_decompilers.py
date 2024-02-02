@@ -34,6 +34,18 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].name == self._generic_renamed_name
 
+        func_addr = deci.art_lifter.lift_addr(0x400580)
+        func = deci.functions[func_addr]
+        func_args = func.header.args
+        func_args[0].name = "new_name_1"
+        func_args[0].type = "int"
+        func_args[1].name = "new_name_2"
+        func_args[1].type = "double"
+        func.header.args = func_args
+        deci.functions[func_addr] = func
+
+        assert deci.functions[func_addr].header.args == func_args
+
         return deci
 
     def test_ghidra(self):
