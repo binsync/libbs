@@ -136,6 +136,10 @@ class DecompilerInterface:
     def _init_gui_plugin(self, *args, **kwargs):
         return None
 
+    def shutdown(self):
+        if self._artifact_watchers_started:
+            self.stop_artifact_watchers()
+
     #
     # Public API:
     # These functions are the main API for interacting with the decompiler. In general, every function that takes

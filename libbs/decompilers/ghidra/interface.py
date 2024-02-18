@@ -103,11 +103,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return proc
 
     def shutdown(self):
+        super().shutdown()
         self.ghidra.bridge.remote_shutdown()
         # Wait until headless binary gets shutdown
-        while True:
-            if not self._find_headless_proc():
-                break
+        while self._find_headless_proc():
             time.sleep(1)
         self._headless_g_project.cleanup()
 
@@ -151,7 +150,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if active_addr != self._last_addr:
             self._last_addr = active_addr
             self._last_func = self._gfunc_to_bsfunc(self._get_nearest_function(active_addr))
-            self._last_func.addr = self.art_lifter.lower_addr(self._last_func.addr)
+            self._last_func.addr = self.art_lifter.lift_addr(self._last_func.addr)
 
         return self._last_func
 
@@ -359,13 +358,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         struct: Struct = struct
         old_ghidra_struct = self._get_struct_by_name('/' + struct.name)
         data_manager = self.ghidra.currentProgram.getDataTypeManager()
-        handler = self.ghidra.import_module_object("ghidra.program.model.artifacts", "DataTypeConflictHandler")
-        structType = self.ghidra.import_module_object("ghidra.program.model.artifacts", "StructureDataType")
-        byteType = self.ghidra.import_module_object("ghidra.program.model.artifacts", "ByteDataType")
+        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
+        structType = self.ghidra.import_module_object("ghidra.program.model.data", "StructureDataType")
+        byteType = self.ghidra.import_module_object("ghidra.program.model.data", "ByteDataType")
         ghidra_struct = structType(struct.name, 0)
         for offset in struct.members:
             member = struct.members[offset]
-            ghidra_struct.add(byteType.artifactsType, 1, member.name, "")
+            ghidra_struct.add(byteType.dataType, 1, member.name, "")
             ghidra_struct.growStructure(member.size - 1)
             for dtc in ghidra_struct.getComponents():
                 if dtc.getFieldName() == member.name:
@@ -441,9 +440,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         corrected_enum_name = "/" + enum.name
         old_ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
         data_manager = self.ghidra.currentProgram.getDataTypeManager()
-        handler = self.ghidra.import_module_object("ghidra.program.model.artifacts", "DataTypeConflictHandler")
-        enumType = self.ghidra.import_module_object("ghidra.program.model.artifacts", "EnumDataType")
-        categoryPath = self.ghidra.import_module_object("ghidra.program.model.artifacts", "CategoryPath")
+        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
+        enumType = self.ghidra.import_module_object("ghidra.program.model.data", "EnumDataType")
+        categoryPath = self.ghidra.import_module_object("ghidra.program.model.data", "CategoryPath")
         ghidra_enum = enumType(categoryPath('/'), enum.name, 4)
         for m_name, m_val in enum.members.items():
             ghidra_enum.add(m_name, m_val)
@@ -466,7 +465,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         names: Optional[List[str]] = self.ghidra.bridge.remote_eval(
             "[dType.getPathName() "
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
-            "if str(type(dType)) == \"<type 'ghidra.program.artifactsbase.artifacts.EnumDB'>\"]"
+            "if str(type(dType)) == \"<type 'ghidra.program.database.data.EnumDB'>\"]"
         )
         return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if
                 name.count('/') == 1} if names else {}
