@@ -209,8 +209,13 @@ class PluginInstaller:
             else default_path
 
     def install_ghidra(self, path=None, interactive=True):
+        potential_path = self._home.joinpath('ghidra_scripts').expanduser()
+        if self._home.exists() and not potential_path.exists():
+            self.info(f"Creating Ghidra Scripts directory at {potential_path}...")
+            potential_path.mkdir()
+
         default_path, skip_ask = self._get_path_without_ask(
-            path, default_path=self._home.joinpath('ghidra_scripts').expanduser(), interactive=interactive
+            path, default_path=potential_path, interactive=interactive
         )
         return self.ask_path("Ghidra", "Ghidra Scripts Path", default=default_path) if not skip_ask \
             else default_path
