@@ -1,4 +1,4 @@
-__version__ = "0.22.0"
+__version__ = "0.22.1"
 
 import logging
 logging.getLogger("libbs").addHandler(logging.NullHandler())
