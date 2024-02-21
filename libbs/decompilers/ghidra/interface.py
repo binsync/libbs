@@ -56,9 +56,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.ghidra: Optional[GhidraAPIWrapper] = None
         super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
 
-        # Connect to the remote bridge, assumes Ghidra is already running!
+    def _init_gui_components(self, *args, **kwargs):
         if not self.connect_ghidra_bridge():
-            raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
+            raise Exception("Failed to connect to the Ghidra Bridge. Check the Ghidra GUI for failures!")
+        super()._init_gui_components(*args, **kwargs)
 
     def _init_headless_components(self, *args, **kwargs):
         if self._headless_dec_path is None:
@@ -85,6 +86,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
             self._headless_script_name
         ])
 
+        time.sleep(1)
+        if not self.connect_ghidra_bridge():
+            raise Exception(f"Failed to connect to the Ghidra Bridge. Check if the {self._headless_dec_path} binary was ever started.")
+
     def _find_headless_proc(self):
         for proc in psutil.process_iter():
             try:
@@ -103,11 +108,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return proc
 
     def shutdown(self):
+        super().shutdown()
         self.ghidra.bridge.remote_shutdown()
         # Wait until headless binary gets shutdown
-        while True:
-            if not self._find_headless_proc():
-                break
+        while self._find_headless_proc():
             time.sleep(1)
         self._headless_g_project.cleanup()
 
@@ -151,7 +155,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if active_addr != self._last_addr:
             self._last_addr = active_addr
             self._last_func = self._gfunc_to_bsfunc(self._get_nearest_function(active_addr))
-            self._last_func.addr = self.art_lifter.lower_addr(self._last_func.addr)
+            self._last_func.addr = self.art_lifter.lift_addr(self._last_func.addr)
 
         return self._last_func
 
@@ -183,11 +187,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.ghidra = GhidraAPIWrapper(self, connection_timeout=25)
         return self.ghidra.connected
 
-    def decompile(self, addr: int) -> Optional[str]:
-        # TODO: allow the super to do this again
-        function = self.art_lifter.lower(self.functions[addr])
-        return self._decompile(function)
-
     def _decompile(self, function: Function) -> Optional[str]:
         dec_obj = self.get_decompilation_object(function)
         if dec_obj is None:
@@ -200,7 +199,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return str(dec_func.getC())
 
     def get_decompilation_object(self, function: Function) -> Optional[object]:
-        return self._ghidra_decompile(self._get_nearest_function(function.addr))
+        return self._ghidra_decompile(self._get_nearest_function(self.art_lifter.lower_addr(function.addr)))
 
     #
     # Extra API
@@ -359,13 +358,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         struct: Struct = struct
         old_ghidra_struct = self._get_struct_by_name('/' + struct.name)
         data_manager = self.ghidra.currentProgram.getDataTypeManager()
-        handler = self.ghidra.import_module_object("ghidra.program.model.artifacts", "DataTypeConflictHandler")
-        structType = self.ghidra.import_module_object("ghidra.program.model.artifacts", "StructureDataType")
-        byteType = self.ghidra.import_module_object("ghidra.program.model.artifacts", "ByteDataType")
+        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
+        structType = self.ghidra.import_module_object("ghidra.program.model.data", "StructureDataType")
+        byteType = self.ghidra.import_module_object("ghidra.program.model.data", "ByteDataType")
         ghidra_struct = structType(struct.name, 0)
         for offset in struct.members:
             member = struct.members[offset]
-            ghidra_struct.add(byteType.artifactsType, 1, member.name, "")
+            ghidra_struct.add(byteType.dataType, 1, member.name, "")
             ghidra_struct.growStructure(member.size - 1)
             for dtc in ghidra_struct.getComponents():
                 if dtc.getFieldName() == member.name:
@@ -441,9 +440,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         corrected_enum_name = "/" + enum.name
         old_ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
         data_manager = self.ghidra.currentProgram.getDataTypeManager()
-        handler = self.ghidra.import_module_object("ghidra.program.model.artifacts", "DataTypeConflictHandler")
-        enumType = self.ghidra.import_module_object("ghidra.program.model.artifacts", "EnumDataType")
-        categoryPath = self.ghidra.import_module_object("ghidra.program.model.artifacts", "CategoryPath")
+        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
+        enumType = self.ghidra.import_module_object("ghidra.program.model.data", "EnumDataType")
+        categoryPath = self.ghidra.import_module_object("ghidra.program.model.data", "CategoryPath")
         ghidra_enum = enumType(categoryPath('/'), enum.name, 4)
         for m_name, m_val in enum.members.items():
             ghidra_enum.add(m_name, m_val)
@@ -466,7 +465,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         names: Optional[List[str]] = self.ghidra.bridge.remote_eval(
             "[dType.getPathName() "
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
-            "if str(type(dType)) == \"<type 'ghidra.program.artifactsbase.artifacts.EnumDB'>\"]"
+            "if str(type(dType)) == \"<type 'ghidra.program.database.data.EnumDB'>\"]"
         )
         return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if
                 name.count('/') == 1} if names else {}
