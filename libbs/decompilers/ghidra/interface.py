@@ -59,6 +59,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def _init_gui_components(self, *args, **kwargs):
         if not self.connect_ghidra_bridge():
             raise Exception("Failed to connect to the Ghidra Bridge. Check the Ghidra GUI for failures!")
+        super()._init_gui_components(*args, **kwargs)
 
     def _init_headless_components(self, *args, **kwargs):
         if self._headless_dec_path is None:
@@ -85,11 +86,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
             self._headless_script_name
         ])
 
-        time.sleep(5)
-        if self._find_headless_proc() is None:
-            raise Exception(f"Failed to start the headless Ghidra binary. Verify the path to the binary is correct: {self._headless_dec_path}")
+        time.sleep(1)
         if not self.connect_ghidra_bridge():
-            raise Exception("Failed to connect to the Ghidra Bridge. Verify the binary and project path is correct.")
+            raise Exception(f"Failed to connect to the Ghidra Bridge. Check if the {self._headless_dec_path} binary was ever started.")
 
     def _find_headless_proc(self):
         for proc in psutil.process_iter():
@@ -188,11 +187,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.ghidra = GhidraAPIWrapper(self, connection_timeout=25)
         return self.ghidra.connected
 
-    def decompile(self, addr: int) -> Optional[str]:
-        # TODO: allow the super to do this again
-        function = self.art_lifter.lower(self.functions[addr])
-        return self._decompile(function)
-
     def _decompile(self, function: Function) -> Optional[str]:
         dec_obj = self.get_decompilation_object(function)
         if dec_obj is None:
@@ -205,7 +199,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return str(dec_func.getC())
 
     def get_decompilation_object(self, function: Function) -> Optional[object]:
-        return self._ghidra_decompile(self._get_nearest_function(function.addr))
+        return self._ghidra_decompile(self._get_nearest_function(self.art_lifter.lower_addr(function.addr)))
 
     #
     # Extra API

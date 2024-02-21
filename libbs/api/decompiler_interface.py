@@ -259,7 +259,6 @@ class DecompilerInterface:
         # TODO: make this a function call after transitioning decompiler artifacts to LiveState
         for func_addr, func in self._functions().items():
             if func.addr <= addr < (func.addr + func.size):
-                func_found = True
                 break
         else:
             func = None
