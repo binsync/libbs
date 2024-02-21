@@ -56,9 +56,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.ghidra: Optional[GhidraAPIWrapper] = None
         super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
 
-        # Connect to the remote bridge, assumes Ghidra is already running!
+    def _init_gui_components(self, *args, **kwargs):
         if not self.connect_ghidra_bridge():
-            raise Exception("Failed to connect to remote Ghidra Bridge. Did you start it first?")
+            raise Exception("Failed to connect to the Ghidra Bridge. Check the Ghidra GUI for failures!")
 
     def _init_headless_components(self, *args, **kwargs):
         if self._headless_dec_path is None:
@@ -84,6 +84,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "-postScript",
             self._headless_script_name
         ])
+
+        time.sleep(5)
+        if self._find_headless_proc() is None:
+            raise Exception(f"Failed to start the headless Ghidra binary. Verify the path to the binary is correct: {self._headless_dec_path}")
+        if not self.connect_ghidra_bridge():
+            raise Exception("Failed to connect to the Ghidra Bridge. Verify the binary and project path is correct.")
 
     def _find_headless_proc(self):
         for proc in psutil.process_iter():
