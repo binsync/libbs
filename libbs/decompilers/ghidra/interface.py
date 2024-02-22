@@ -252,15 +252,15 @@ class GhidraDecompilerInterface(DecompilerInterface):
             }
 
         arg_variable_info: Optional[List[Tuple[int, str, str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(i, sym.getName(), str(sym.getDataType()), sym.getSize()) "
-            "for i, sym in enumerate(dec.getHighFunction().getLocalSymbolMap().getSymbols()) "
+            "[(sym.getName(), str(sym.getDataType()), sym.getSize()) "
+            "for sym in dec.getHighFunction().getLocalSymbolMap().getSymbols() "
             "if sym.isParameter()]",
             dec=dec
         )
         args = {}
         if arg_variable_info:
             args = {
-                i: FunctionArgument(i, name, typestr, size, addr) for i, name, typestr, size in arg_variable_info
+                i: FunctionArgument(i, info[0], info[1], info[2], addr) for i, info in enumerate(arg_variable_info)
             }
 
         # grab the return type of the function from ghidra
@@ -326,7 +326,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return self._gstack_var_to_bsvar(gstack_var)
 
-    @ghidra_transaction
     def _set_function_header(self, fheader: FunctionHeader, decompilation=None, **kwargs) -> bool:
         changes = False
         func_addr = fheader.addr
@@ -347,9 +346,27 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 changes = True
 
         # args
+        # TODO: Only works for function arguments passed by register
         if fheader.args and decompilation is not None:
-            # TODO: do arg names and types
-            pass
+            high_func_util = self.ghidra.import_module_object("ghidra.program.model.pcode", "HighFunctionDBUtil")
+            params = ghidra_func.getParameters()
+            if len(params) == 0:
+                high_func_util.commitParamsToDatabase(decompilation.highFunction, True, src_type.USER_DEFINED)
+
+            # Perform @ghidra_transaction actions after commitParamsToDatabase to avoid program lockup
+            trans_name = "update_function_header"
+            trans_id = self.ghidra.currentProgram.startTransaction(trans_name)
+            try:
+                for offset, param in zip(fheader.args, params):
+                    arg = fheader.args[offset]
+                    gtype = self.typestr_to_gtype(arg.type)
+                    param.setName(arg.name, src_type.USER_DEFINED)
+                    param.setDataType(gtype, src_type.USER_DEFINED)
+                changes = True
+            except Exception as e:
+                self.warning(f"Failed to do Ghidra Transaction {trans_name} because {e}")
+            finally:
+                self.ghidra.currentProgram.endTransaction(trans_id, True)
 
         return changes
 
