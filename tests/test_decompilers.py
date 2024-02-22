@@ -19,14 +19,14 @@ DEC_TO_HEADLESS = {
 class TestHeadlessInterfaces(unittest.TestCase):
     def setUp(self):
         self._generic_renamed_name = "binsync_main"
+        self._fauxware_path = TEST_BINARY_DIR / "fauxware"
 
-    def _generic_decompiler_test(self, decompiler):
-        fauxware_path = TEST_BINARY_DIR / "fauxware"
+    def test_ghidra(self):
         deci = DecompilerInterface.discover(
-            force_decompiler=decompiler,
+            force_decompiler=GHIDRA_DECOMPILER,
             headless=True,
-            headless_dec_path=DEC_TO_HEADLESS[decompiler],
-            binary_path=fauxware_path
+            headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
+            binary_path=self._fauxware_path
         )
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
@@ -41,13 +41,18 @@ class TestHeadlessInterfaces(unittest.TestCase):
         func_args[4].type = "double"
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
-
-        return deci
-
-    def test_ghidra(self):
-        deci = self._generic_decompiler_test(decompiler=GHIDRA_DECOMPILER)
         deci.shutdown()
 
     def test_angr(self):
-        deci = self._generic_decompiler_test(decompiler=ANGR_DECOMPILER)
+        deci = DecompilerInterface.discover(
+            force_decompiler=GHIDRA_DECOMPILER,
+            headless=True,
+            headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
+            binary_path=self._fauxware_path
+        )
+        func_addr = deci.art_lifter.lift_addr(0x400664)
+        main = deci.functions[func_addr]
+        main.name = self._generic_renamed_name
+        deci.functions[func_addr] = main
+        assert deci.functions[func_addr].name == self._generic_renamed_name
         assert self._generic_renamed_name in deci.main_instance.project.kb.functions
