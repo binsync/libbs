@@ -45,9 +45,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
     def test_angr(self):
         deci = DecompilerInterface.discover(
-            force_decompiler=GHIDRA_DECOMPILER,
+            force_decompiler=ANGR_DECOMPILER,
             headless=True,
-            headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
             binary_path=self._fauxware_path
         )
         func_addr = deci.art_lifter.lift_addr(0x400664)
