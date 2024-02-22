@@ -22,6 +22,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
         self._fauxware_path = TEST_BINARY_DIR / "fauxware"
 
     def test_ghidra(self):
+        # useful command for testing, kills all Headless-Ghidra:
+        # kill $(ps aux | grep 'Ghidra-Headless' | awk '{print $2}')
         deci = DecompilerInterface.discover(
             force_decompiler=GHIDRA_DECOMPILER,
             headless=True,
@@ -37,8 +39,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
         func_args = main.header.args
         func_args[0].name = "new_name_1"
         func_args[0].type = "int"
+        func_args[0].size = 4   # set manually to avoid resetting the size in the caller
         func_args[1].name = "new_name_2"
         func_args[1].type = "double"
+        func_args[1].size = 8
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
         deci.shutdown()
@@ -55,3 +59,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].name == self._generic_renamed_name
         assert self._generic_renamed_name in deci.main_instance.project.kb.functions
+
+
+if __name__ == "__main__":
+    unittest.main()
