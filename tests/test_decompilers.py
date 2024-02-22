@@ -35,10 +35,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert deci.functions[func_addr].name == self._generic_renamed_name
 
         func_args = main.header.args
-        func_args[0].name = "new_name_1"
-        func_args[0].type = "int"
-        func_args[1].name = "new_name_2"
-        func_args[1].type = "double"
+        func_args[3].name = "new_name_1"
+        func_args[3].type = "int"
+        func_args[4].name = "new_name_2"
+        func_args[4].type = "double"
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
 
