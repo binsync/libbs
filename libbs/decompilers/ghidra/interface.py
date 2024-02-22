@@ -253,15 +253,15 @@ class GhidraDecompilerInterface(DecompilerInterface):
             }
 
         arg_variable_info: Optional[List[Tuple[int, str, str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(i, sym.getName(), str(sym.getDataType()), sym.getSize()) "
-            "for i, sym in enumerate(dec.getHighFunction().getLocalSymbolMap().getSymbols()) "
+            "[(sym.getName(), str(sym.getDataType()), sym.getSize()) "
+            "for sym in dec.getHighFunction().getLocalSymbolMap().getSymbols() "
             "if sym.isParameter()]",
             dec=dec
         )
         args = {}
         if arg_variable_info:
             args = {
-                i: FunctionArgument(i, name, typestr, size, addr) for i, name, typestr, size in arg_variable_info
+                i: FunctionArgument(i, info[0], info[1], info[2], addr) for i, info in enumerate(arg_variable_info)
             }
 
         # grab the return type of the function from ghidra
