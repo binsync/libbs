@@ -137,7 +137,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         pass
 
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
-        ctx_menu_action = create_context_action(self.ghidra, name, action_string, callback_func, category or "LibBS")
+        def callback_func_wrap(*args, **kwargs):
+            try:
+                callback_func(*args, **kwargs)
+            except Exception as e:
+                self.warning(f"Exception in ctx menu callback {name}: {e}")
+                raise
+        ctx_menu_action = create_context_action(self.ghidra, name, action_string, callback_func_wrap, category or "LibBS")
         self.ghidra.getState().getTool().addAction(ctx_menu_action)
         return True
 
