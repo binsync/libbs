@@ -23,6 +23,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         self._fauxware_path = TEST_BINARY_DIR / "fauxware"
 
     def test_ghidra(self):
+        # TODO: Add test cases for structs and enums
         # useful command for testing, kills all Headless-Ghidra:
         # kill $(ps aux | grep 'Ghidra-Headless' | awk '{print $2}')
         deci = DecompilerInterface.discover(
