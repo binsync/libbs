@@ -194,7 +194,7 @@ class IDAInterface(DecompilerInterface):
         return [lvar.name for lvar in dec.get_lvars() if lvar.name]
 
     @requires_decompilation
-    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str], **kwargs) -> bool:
         func = self.art_lifter.lower(func)
         return compat.rename_local_variables_by_names(func, name_map)
 

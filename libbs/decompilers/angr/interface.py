@@ -137,7 +137,7 @@ class AngrInterface(DecompilerInterface):
 
         return [v.name for v in codegen.cfunc.variable_manager._unified_variables]
 
-    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str],  **kwargs) -> bool:
         codegen = self.decompile_function(
             self.main_instance.project.kb.functions[self.art_lifter.lower_addr(func.addr)]
         )

@@ -313,7 +313,7 @@ class DecompilerInterface:
         """
         return []
 
-    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str], **kwargs) -> bool:
         """
         Renames local variables in a function by a name map. Note, these also include register variables
         that are normally not liftable in LibBS.

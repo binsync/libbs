@@ -235,7 +235,7 @@ class BinjaInterface(DecompilerInterface):
         return [str(var.name) for var in bn_func.vars]
 
     @background_and_wait
-    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str], **kwargs) -> bool:
         bn_func = self.addr_to_bn_func(self.bv, self.art_lifter.lower_addr(func.addr))
         if bn_func is None:
             return False

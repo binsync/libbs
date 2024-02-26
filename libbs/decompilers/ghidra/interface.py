@@ -218,7 +218,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         symbols_by_name = self._get_local_variable_symbols(func)
         return list(symbols_by_name.keys())
 
-    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str]) -> bool:
+    def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str], **kwargs) -> bool:
         symbols_by_name = self._get_local_variable_symbols(func)
         symbols_to_update = {}
         for name, new_name in name_map.items():
