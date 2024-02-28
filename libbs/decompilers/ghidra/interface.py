@@ -738,3 +738,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 break
 
             time.sleep(sleep_interval)
+
+
+    #TODO: Callback autopush stuff
