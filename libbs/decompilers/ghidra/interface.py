@@ -44,6 +44,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._headless_g_project = None
         self._headless_script_name = "ghidra_libbs_mainthread_server.py"
 
+        self._data_monitor = None
+
         self.ghidra: Optional[GhidraAPIWrapper] = None
         super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
 
@@ -51,6 +53,14 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not self.connect_ghidra_bridge():
             raise Exception("Failed to connect to the Ghidra Bridge. Check the Ghidra GUI for failures!")
         super()._init_gui_components(*args, **kwargs)
+
+    def start_artifact_watchers(self):
+        # TODO: setup watchers
+        return
+
+    def stop_artifact_watchers(self):
+        # TODO: stop watchers
+        return
 
     def _init_headless_components(self, *args, **kwargs):
         if self._headless_dec_path is None:
@@ -738,6 +748,3 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 break
 
             time.sleep(sleep_interval)
-
-
-    #TODO: Callback autopush stuff
