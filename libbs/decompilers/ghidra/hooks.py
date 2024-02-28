@@ -1,9 +1,19 @@
 import typing
 import threading
 
+from .interface import GhidraDecompilerInterface
+
 if typing.TYPE_CHECKING:
     from libbs.decompilers.ghidra.compat.ghidra_api import GhidraAPIWrapper
 
+model = GhidraAPIWrapper.import_module("ghidra.framework.model")
+class DataMonitor(model.DomainObjectListener):
+    # TODO: Design and inplement
+    def __init__(self, interface):
+        self._interface: GhidraDecompilerInterface = interface
+
+    def domainObjectChanged(self, ev):
+        print(ev)
 
 def create_context_action(ghidra: "GhidraAPIWrapper", name, action_string, callback_func, category=None):
     ProgramLocationContextAction = ghidra.import_module_object("ghidra.app.context", "ProgramLocationContextAction")
