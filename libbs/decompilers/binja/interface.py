@@ -421,7 +421,7 @@ class BinjaInterface(DecompilerInterface):
     def _global_vars(self) -> Dict[int, GlobalVariable]:
         return {
             addr: GlobalVariable(addr, var.name or f"data_{addr:x}")
-            for addr, var in self.bv.artifacts_vars.items()
+            for addr, var in self.bv.data_vars.items()
         }
 
     # structs

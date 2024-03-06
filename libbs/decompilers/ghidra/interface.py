@@ -7,8 +7,6 @@ import subprocess
 import tempfile
 from functools import wraps
 
-
-
 from libbs.api import DecompilerInterface
 from libbs.api.decompiler_interface import requires_decompilation
 from libbs.artifacts import (
@@ -18,7 +16,7 @@ from libbs.plugin_installer import PluginInstaller
 import psutil
 
 from .artifact_lifter import GhidraArtifactLifter
-from .ghidra_api import GhidraAPIWrapper
+from .compat import GhidraAPIWrapper, Transaction
 from .hooks import create_context_action
 
 _l = logging.getLogger(__name__)
@@ -26,16 +24,9 @@ _l = logging.getLogger(__name__)
 
 def ghidra_transaction(f):
     @wraps(f)
-    def _ghidra_transaction(self, *args, **kwargs):
-        trans_name = f"{f.__name__}(args={args})"
-        trans_id = self.ghidra.currentProgram.startTransaction(trans_name)
-        ret_val = None
-        try:
+    def _ghidra_transaction(self: "GhidraDecompilerInterface", *args, **kwargs):
+        with Transaction(self.ghidra, msg=f"BS::{f.__name__}(args={args})"):
             ret_val = f(self, *args, **kwargs)
-        except Exception as e:
-            self.warning(f"Failed to do Ghidra Transaction {trans_name} because {e}")
-        finally:
-            self.ghidra.currentProgram.endTransaction(trans_id, True)
 
         return ret_val
 
@@ -340,7 +331,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         # func name
         if fheader.name and fheader.name != ghidra_func.getName():
-            ghidra_func.setName(fheader.name, src_type.USER_DEFINED)
+            with Transaction(self.ghidra, msg="BS::set_function_header::set_name"):
+                ghidra_func.setName(fheader.name, src_type.USER_DEFINED)
             changes = True
 
         # return type
@@ -348,7 +340,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
             parsed_type = self.typestr_to_gtype(fheader.type)
             if parsed_type is not None and \
                     parsed_type != str(decompilation.highFunction.getFunctionPrototype().getReturnType()):
-                ghidra_func.setReturnType(parsed_type, src_type.USER_DEFINED)
+                with Transaction(self.ghidra, msg="BS::set_function_header::set_rettype"):
+                    ghidra_func.setReturnType(parsed_type, src_type.USER_DEFINED)
                 changes = True
 
         # args
@@ -357,22 +350,18 @@ class GhidraDecompilerInterface(DecompilerInterface):
             high_func_util = self.ghidra.import_module_object("ghidra.program.model.pcode", "HighFunctionDBUtil")
             params = ghidra_func.getParameters()
             if len(params) == 0:
-                high_func_util.commitParamsToDatabase(decompilation.highFunction, True, src_type.USER_DEFINED)
+                self.info("Commiting some atuff")
+                with Transaction(self.ghidra, msg="BS::set_function_header::update_params"):
+                    high_func_util.commitParamsToDatabase(decompilation.highFunction, True, src_type.USER_DEFINED)
+                self.info("Done commiting ")
 
-            # Perform @ghidra_transaction actions after commitParamsToDatabase to avoid program lockup
-            trans_name = "update_function_header"
-            trans_id = self.ghidra.currentProgram.startTransaction(trans_name)
-            try:
+            with Transaction(self.ghidra, msg="BS::set_function_header::set_arguments"):
                 for offset, param in zip(fheader.args, params):
                     arg = fheader.args[offset]
                     gtype = self.typestr_to_gtype(arg.type)
                     param.setName(arg.name, src_type.USER_DEFINED)
                     param.setDataType(gtype, src_type.USER_DEFINED)
-                changes = True
-            except Exception as e:
-                self.warning(f"Failed to do Ghidra Transaction {trans_name} because {e}")
-            finally:
-                self.ghidra.currentProgram.endTransaction(trans_id, True)
+            changes = True
 
         return changes
 

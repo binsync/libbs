@@ -579,6 +579,10 @@ def get_func_stack_var_info(func_addr) -> typing.Dict[int, StackVariable]:
         l.debug("Decompiling too many functions too fast! Slow down and try that operation again.")
         return {}
 
+    if decompilation is None:
+        l.warning("Decompiled something that gave no decompilation")
+        return {}
+
     stack_var_info = {}
 
     for var in decompilation.lvars:

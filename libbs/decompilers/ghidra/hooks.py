@@ -2,7 +2,7 @@ import typing
 import threading
 
 if typing.TYPE_CHECKING:
-    from .ghidra_api import GhidraAPIWrapper
+    from libbs.decompilers.ghidra.compat.ghidra_api import GhidraAPIWrapper
 
 
 def create_context_action(ghidra: "GhidraAPIWrapper", name, action_string, callback_func, category=None):
