@@ -55,11 +55,21 @@ class GhidraDecompilerInterface(DecompilerInterface):
         super()._init_gui_components(*args, **kwargs)
 
     def start_artifact_watchers(self):
-        # TODO: setup watchers
+        if not self._artifact_watchers_started:
+            if self.ghidra is None:
+                raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
+
+            self._data_monitor = create_data_monitor(self.ghidra)
+            # TODO: generalize superclass method?
+            super().start_artifact_watchers()
+
         return
 
     def stop_artifact_watchers(self):
-        # TODO: stop watchers
+        if self._artifact_watchers_started:
+            self._data_monitor = None
+            # TODO: generalize superclass method?
+            super().stop_artifact_watchers()
         return
 
     def _init_headless_components(self, *args, **kwargs):
