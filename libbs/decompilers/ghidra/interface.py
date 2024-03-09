@@ -59,7 +59,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if self.ghidra is None:
                 raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
 
-            self._data_monitor = create_data_monitor(self.ghidra)
+            self._data_monitor = create_data_monitor(self.ghidra, self)
             # TODO: generalize superclass method?
             super().start_artifact_watchers()
 

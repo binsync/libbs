@@ -1,16 +1,19 @@
 import typing
 import threading
 
+from ...artifacts import FunctionHeader, Function, FunctionArgument, StackVariable, GlobalVariable
+
 if typing.TYPE_CHECKING:
     from libbs.decompilers.ghidra.compat.ghidra_api import GhidraAPIWrapper
 
-def create_data_monitor(ghidra: "GhidraAPIWrapper"):
+def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
     model = ghidra.import_module("ghidra.framework.model")
     class DataMonitor(model.DomainObjectListener):
         def __init__(self, interface):
+            self._interface = interface
             self.changeManager = ghidra.import_module_object("ghidra.program.util", "ChangeManager")
             self.programChangeRecord = ghidra.import_module_object("ghidra.program.util", "ProgramChangeRecord")
-            self.symbol = ghidra.import_module("ghidra.program.database.symbol")
+            self.db = ghidra.import_module("ghidra.program.database")
         def domainObjectChanged(self, ev):
             funcEvents = [
                 self.changeManager.DOCR_FUNCTION_CHANGED,
@@ -39,6 +42,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper"):
             # TODO: enum changes?
 
             for record in ev:
+                # Note: This excludes type changes anything as they are DomainObjectChangeRecord
                 if not isinstance(record, self.programChangeRecord):
                     continue
 
@@ -47,32 +51,39 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper"):
                 obj = record.getObject()
 
                 if changeType in funcEvents:
-                    # TODO: func stuff
+                    funcAddr = record.getStart().getOffset()
                     pass
                 elif changeType in typeEvents:
-                    # TODO: type stuff
+                    # TODO: find how to parse struct/enum record
                     pass
                 elif changeType in symDelEvents:
                     # TODO: symbol del stuff
+                    # Can't find what triggers this event
                     pass
                 elif changeType in symChgEvents:
                     if obj == None and newValue != None:
                         obj = newValue
 
-                    if isinstance(obj, self.symbol.VariableSymbolDB):
-                        # TODO: stack var stuff
+                    if isinstance(obj, self.db.symbol.VariableSymbolDB):
+                        stackVar = StackVariable(None, newValue, None, None, None)
+                        self._interface.stack_variable_changed(stackVar)
                         continue
-                    elif isinstance(obj, self.symbol.CodeSymbol):
-                        # TODO: global and label stuff
+                    elif isinstance(obj, self.db.symbol.CodeSymbol):
+                        gVar = GlobalVariable(None, newValue)
+                        self._interface.global_variable_changed(gVar)
                         continue
-                    elif isinstance(obj, self.symbol.FunctionSymbol):
-                        # TODO: func name stuff
-                        continue
+                    elif isinstance(obj, self.db.symbol.FunctionSymbol):
+                        header = FunctionHeader(newValue, None)
+                        self._interface.function_header_changed(header)
+                    elif isinstance(obj, self.db.function.FunctionDB):
+                        changed_arg = FunctionArgument(None, newValue, None, None)
+                        header = FunctionHeader(None, None, args={None: changed_arg})
+                        self._interface.function_header_changed(header)
                     else:
                         continue
             print(ev)
 
-    data_monitor = DataMonitor(ghidra)
+    data_monitor = DataMonitor(ghidra, interface)
     return data_monitor
 
 def create_context_action(ghidra: "GhidraAPIWrapper", name, action_string, callback_func, category=None):
