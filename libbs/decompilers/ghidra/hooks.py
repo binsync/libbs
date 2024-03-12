@@ -43,7 +43,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
 
             for record in ev:
                 # Note: This excludes type changes anything as they are DomainObjectChangeRecord
-                if not isinstance(record, self.programChangeRecord):
+                if not "ProgramChangeRecord" in str(type(record)):
                     continue
 
                 changeType = record.getEventType()
@@ -64,18 +64,18 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                     if obj == None and newValue != None:
                         obj = newValue
 
-                    if isinstance(obj, self.db.symbol.VariableSymbolDB):
+                    if "VariableSymbolDB" in str(type(obj)):
                         stackVar = StackVariable(None, newValue, None, None, None)
                         self._interface.stack_variable_changed(stackVar)
                         continue
-                    elif isinstance(obj, self.db.symbol.CodeSymbol):
+                    elif "CodeSymbol" in str(type(obj)):
                         gVar = GlobalVariable(None, newValue)
                         self._interface.global_variable_changed(gVar)
                         continue
-                    elif isinstance(obj, self.db.symbol.FunctionSymbol):
+                    elif "FunctionSymbol" in str(type(obj)):
                         header = FunctionHeader(newValue, None)
                         self._interface.function_header_changed(header)
-                    elif isinstance(obj, self.db.function.FunctionDB):
+                    elif "FunctionDB" in str(type(obj)):
                         changed_arg = FunctionArgument(None, newValue, None, None)
                         header = FunctionHeader(None, None, args={None: changed_arg})
                         self._interface.function_header_changed(header)
@@ -83,7 +83,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                         continue
             print(ev)
 
-    data_monitor = DataMonitor(ghidra, interface)
+    data_monitor = DataMonitor(interface)
     return data_monitor
 
 def create_context_action(ghidra: "GhidraAPIWrapper", name, action_string, callback_func, category=None):

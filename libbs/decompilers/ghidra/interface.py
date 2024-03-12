@@ -34,8 +34,9 @@ def ghidra_transaction(f):
 
 
 class GhidraDecompilerInterface(DecompilerInterface):
-    def __init__(self, loop_on_plugin=True, **kwargs):
+    def __init__(self, loop_on_plugin=True, start_headless_watchers=False, **kwargs):
         self.loop_on_plugin = loop_on_plugin
+        self.start_headless_watchers = start_headless_watchers
 
         self._last_addr = None
         self._last_func = None
@@ -60,6 +61,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
 
             self._data_monitor = create_data_monitor(self.ghidra, self)
+            self.ghidra.currentProgram.addListener(self._data_monitor)
             # TODO: generalize superclass method?
             super().start_artifact_watchers()
 
@@ -100,6 +102,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         time.sleep(1)
         if not self.connect_ghidra_bridge():
             raise Exception(f"Failed to connect to the Ghidra Bridge. Check if the {self._headless_dec_path} binary was ever started.")
+
+        if self.start_headless_watchers:
+            self.start_artifact_watchers()
 
     def _find_headless_proc(self):
         for proc in psutil.process_iter():
