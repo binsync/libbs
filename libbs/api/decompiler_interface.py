@@ -107,6 +107,7 @@ class DecompilerInterface:
         if not self._binary_path.exists():
             raise FileNotFoundError("You must provide a valid target binary path when using headless mode.")
 
+
     def _init_gui_components(self, *args, **kwargs):
         from libbs.ui.version import set_ui_version
         set_ui_version(self.qt_version)
