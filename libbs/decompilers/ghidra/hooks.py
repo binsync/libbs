@@ -48,6 +48,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
 
                 changeType = record.getEventType()
                 newValue = record.getNewValue()
+                oldValue = record.getOldValue()
                 obj = record.getObject()
 
                 if changeType in funcEvents:
@@ -57,18 +58,29 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                     # TODO: find how to parse struct/enum record
                     pass
                 elif changeType in symDelEvents:
-                    # TODO: symbol del stuff
-                    # Can't find what triggers this event
+                    # Currently unused and unsupported
                     pass
                 elif changeType in symChgEvents:
                     if obj == None and newValue != None:
                         obj = newValue
 
                     if "VariableSymbolDB" in str(type(obj)):
-                        stackVar = StackVariable(None, newValue, None, None, None)
-                        self._interface.stack_variable_changed(stackVar)
+                        if oldValue and newValue:
+                            stackVar = StackVariable(None, newValue, None, None, None)
+                            self._interface.stack_variable_changed(stackVar)
+                        else:
+                            # TODO: figure out how to differentiate type changes
+                            # print(f"VariableSymbolDB caught: {obj}")
+                            # print(f"Obj type: {type(obj)}")
+                            # print(f"Old value: {oldValue}")
+                            # print(f"New value: {newValue}")
+                            # typ = obj.getDataType()
+                            # stackVar = StackVariable(None, None, typ, None, None)
+                            # self._interface.stack_variable_changed(stackVar)
+                            pass
                         continue
                     elif "CodeSymbol" in str(type(obj)):
+                        # NOTE: GlobalVariables do not trigger this
                         gVar = GlobalVariable(None, newValue)
                         self._interface.global_variable_changed(gVar)
                         continue
@@ -76,12 +88,13 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                         header = FunctionHeader(newValue, None)
                         self._interface.function_header_changed(header)
                     elif "FunctionDB" in str(type(obj)):
-                        changed_arg = FunctionArgument(None, newValue, None, None)
-                        header = FunctionHeader(None, None, args={None: changed_arg})
-                        self._interface.function_header_changed(header)
+                        # TODO: Fix argument name support
+                        #changed_arg = FunctionArgument(None, newValue, None, None)
+                        #header = FunctionHeader(None, None, args={None: changed_arg})
+                        #self._interface.function_header_changed(header)
+                        pass
                     else:
                         continue
-            print(ev)
 
     data_monitor = DataMonitor(interface)
     return data_monitor

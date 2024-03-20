@@ -515,7 +515,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         changes = False
         global_var: GlobalVariable = artifact
-        all_global_vars = self.global_vars()
+        all_global_vars = self._global_vars()
 
         rename_label_cmd_cls = self.ghidra.import_module_object("ghidra.app.cmd.label", "RenameLabelCmd")
         src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
@@ -537,11 +537,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return changes
 
-    def global_var(self, addr) -> Optional[GlobalVariable]:
+    def _get_global_var(self, addr) -> Optional[GlobalVariable]:
         """
         TODO: remove me and implement me properly as setters and getters
         """
-        light_global_vars = self.global_vars()
+        light_global_vars = self._global_vars()
         for offset, global_var in light_global_vars.items():
             if offset == addr:
                 lst = self.ghidra.currentProgram.getListing()
@@ -557,7 +557,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 global_var.size = size
                 return global_var
 
-    def global_vars(self) -> Dict[int, GlobalVariable]:
+    def _global_vars(self) -> Dict[int, GlobalVariable]:
         """
         TODO: remove me and implement me properly as setters and getters
         """

@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from collections import defaultdict
 import os
 
 from libbs.api import DecompilerInterface
@@ -16,7 +17,6 @@ DEC_TO_HEADLESS = {
     BINJA_DECOMPILER: None,
 }
 
-func_change_count = 0
 class TestHeadlessInterfaces(unittest.TestCase):
     def setUp(self):
         self._generic_renamed_name = "binsync_main"
@@ -49,8 +49,14 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert deci.functions[func_addr].header.args == func_args
 
         # Test artifact watchers
-        deci.artifact_write_callbacks[FunctionHeader] = [func_hit]
+        hits = defaultdict(int)
+        def func_hit(*args, **kwargs): hits[args[0].__class__] += 1
 
+        deci.artifact_write_callbacks = {
+            typ: [func_hit] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment)
+        }
+
+        # Change function names
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
         main.name = "changed"
@@ -59,13 +65,28 @@ class TestHeadlessInterfaces(unittest.TestCase):
         main.name = "main"
         deci.functions[func_addr] = main
 
+        # Change stackVar name
+        main.stack_vars[-24].name = "named_char_array"
+        main.stack_vars[-12].name = "named_int"
+        deci.functions[func_addr] = main
+
+        # Change globalVar name
+        g1 = deci.global_vars[0x4008e0]
+        g2 = deci.global_vars[0x601048]
+        g1.name = "gvar1"
+        g2.name = "gvar2"
+        deci.global_vars[0x4008e0] = g1
+        deci.global_vars[0x601048] = g2
+
         # TODO: fix argument change watching
         # func_args = main.header.args
         # func_args[0].name = "changed_name"
         # func_args[1].name = "changed_name2"
         # deci.functions[func_addr] = main
 
-        assert func_change_count == 2
+        assert hits[FunctionHeader] == 2
+        assert hits[StackVariable] == 2
+        #assert hits[GlobalVariable] == 2
 
         deci.shutdown()
 
@@ -82,10 +103,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert deci.functions[func_addr].name == self._generic_renamed_name
         assert self._generic_renamed_name in deci.main_instance.project.kb.functions
 
-
-def func_hit(*args, **kwargs):
-    global func_change_count
-    func_change_count += 1
 
 if __name__ == "__main__":
     unittest.main()
