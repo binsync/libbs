@@ -1,7 +1,7 @@
 import typing
 import threading
 
-from ...artifacts import FunctionHeader, Function, FunctionArgument, StackVariable, GlobalVariable
+from ...artifacts import FunctionHeader, Function, FunctionArgument, StackVariable, GlobalVariable, Struct
 
 if typing.TYPE_CHECKING:
     from libbs.decompilers.ghidra.compat.ghidra_api import GhidraAPIWrapper
@@ -55,8 +55,11 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                     funcAddr = record.getStart().getOffset()
                     pass
                 elif changeType in typeEvents:
-                    # TODO: find how to parse struct/enum record
-                    pass
+                    # TODO: find how to seperate struct and enum
+                    gstruct = self._interface._get_struct_by_name(newValue)
+                    members = self._interface._struct_members_from_gstruct(newValue)
+                    struct = Struct(newValue, gstruct.getLength(), members=members)
+                    self._interface.struct_changed(struct)
                 elif changeType in symDelEvents:
                     # Currently unused and unsupported
                     pass
