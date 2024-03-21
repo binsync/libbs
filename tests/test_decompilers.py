@@ -78,6 +78,11 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.global_vars[0x4008e0] = g1
         deci.global_vars[0x601048] = g2
 
+        # Change structs
+        struct = deci.structs['/eh_frame_hdr']
+        struct.name = "my_struct_name"
+        deci.structs['/eh_frame_hdr'] = struct
+
         # TODO: fix argument change watching
         # func_args = main.header.args
         # func_args[0].name = "changed_name"
@@ -86,6 +91,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         assert hits[FunctionHeader] == 2
         assert hits[StackVariable] == 2
+        assert hits[Struct] == 1
         #assert hits[GlobalVariable] == 2
 
         deci.shutdown()
