@@ -30,7 +30,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             headless=True,
             headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
             binary_path=self._fauxware_path,
-            start_headless_watchers = True
+            start_headless_watchers=True
         )
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
@@ -91,7 +91,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         assert hits[FunctionHeader] == 2
         assert hits[StackVariable] == 2
-        assert hits[Struct] == 1
+        assert hits[Struct] == 2 # One change results in 2 hits because the struct is first removed and then added again.
         #assert hits[GlobalVariable] == 2
 
         deci.shutdown()
