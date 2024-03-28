@@ -1,7 +1,7 @@
 import typing
 import threading
 
-from ...artifacts import FunctionHeader, Function, FunctionArgument, StackVariable, GlobalVariable, Struct
+from ...artifacts import FunctionHeader, Function, FunctionArgument, StackVariable, GlobalVariable, Struct, Enum
 
 if typing.TYPE_CHECKING:
     from libbs.decompilers.ghidra.compat.ghidra_api import GhidraAPIWrapper
@@ -39,10 +39,8 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                 self.changeManager.DOCR_DATA_TYPE_ADDED
             ]
 
-            # TODO: enum changes?
-
             for record in ev:
-                # Note: This excludes type changes anything as they are DomainObjectChangeRecord
+                # NOTE: This excludes type changes anything as they are DomainObjectChangeRecord
                 if not "ProgramChangeRecord" in str(type(record)):
                     continue
 
@@ -51,22 +49,32 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                 oldValue = record.getOldValue()
                 obj = record.getObject()
 
+                print(f"record:\n{record}")
+                print(f"changeType: {changeType}")
                 if changeType in funcEvents:
-                    funcAddr = record.getStart().getOffset()
                     pass
                 elif changeType in typeEvents:
-                    # TODO: find how to seperate struct and enum
-                    gstruct = self._interface._get_struct_by_name(newValue)
-                    members = self._interface._struct_members_from_gstruct(newValue)
-                    struct = Struct(newValue, gstruct.getLength(), members=members)
-                    self._interface.struct_changed(struct)
+                    try:
+                        struct = self._interface.structs[newValue]
+                        self._interface.struct_changed(Struct(None, None, None), deleted=True)
+                        self._interface.struct_changed(struct)
+                    except KeyError:
+                        pass
+
+                    try:
+                        enum = self._interface.enums[newValue]
+                        self._interface.enum_changed(Enum(None, None), deleted=True)
+                        self._interface.enum_changed(enum)
+                    except KeyError:
+                        pass
+
                 elif changeType in symDelEvents:
                     # Currently unused and unsupported
                     pass
                 elif changeType in symChgEvents:
                     if obj == None and newValue != None:
                         obj = newValue
-
+                    print(str(type(obj)))
                     if "VariableSymbolDB" in str(type(obj)):
                         if oldValue and newValue:
                             stackVar = StackVariable(None, newValue, None, None, None)
