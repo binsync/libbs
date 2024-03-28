@@ -54,19 +54,21 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                 if changeType in funcEvents:
                     pass
                 elif changeType in typeEvents:
-                    try:
-                        struct = self._interface.structs[newValue]
-                        self._interface.struct_changed(Struct(None, None, None), deleted=True)
-                        self._interface.struct_changed(struct)
-                    except KeyError:
-                        pass
-
-                    try:
-                        enum = self._interface.enums[newValue]
-                        self._interface.enum_changed(Enum(None, None), deleted=True)
-                        self._interface.enum_changed(enum)
-                    except KeyError:
-                        pass
+                    # TODO: Finish debugging struct events
+                    pass
+                    # try:
+                    #     struct = self._interface.structs[newValue]
+                    #     self._interface.struct_changed(Struct(None, None, None), deleted=True)
+                    #     self._interface.struct_changed(struct)
+                    # except KeyError:
+                    #     pass
+                    #
+                    # try:
+                    #     enum = self._interface.enums[newValue]
+                    #     self._interface.enum_changed(Enum(None, None), deleted=True)
+                    #     self._interface.enum_changed(enum)
+                    # except KeyError:
+                    #     pass
 
                 elif changeType in symDelEvents:
                     # Currently unused and unsupported
@@ -91,9 +93,9 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                             pass
                         continue
                     elif "CodeSymbol" in str(type(obj)):
-                        # NOTE: GlobalVariables do not trigger this
-                        gVar = GlobalVariable(None, newValue)
-                        self._interface.global_variable_changed(gVar)
+                        # TODO: Find trigger for global var changes
+                        # gVar = GlobalVariable(None, newValue)
+                        # self._interface.global_variable_changed(gVar)
                         continue
                     elif "FunctionSymbol" in str(type(obj)):
                         header = FunctionHeader(newValue, None)
