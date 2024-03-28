@@ -49,8 +49,6 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                 oldValue = record.getOldValue()
                 obj = record.getObject()
 
-                print(f"record:\n{record}")
-                print(f"changeType: {changeType}")
                 if changeType in funcEvents:
                     pass
                 elif changeType in typeEvents:
@@ -76,7 +74,6 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                 elif changeType in symChgEvents:
                     if obj == None and newValue != None:
                         obj = newValue
-                    print(str(type(obj)))
                     if "VariableSymbolDB" in str(type(obj)):
                         if oldValue and newValue:
                             stackVar = StackVariable(None, newValue, None, None, None)
