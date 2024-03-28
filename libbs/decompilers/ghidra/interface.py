@@ -17,7 +17,7 @@ import psutil
 
 from .artifact_lifter import GhidraArtifactLifter
 from .compat import GhidraAPIWrapper, Transaction
-from .hooks import create_context_action
+from .hooks import create_context_action, create_data_monitor
 
 _l = logging.getLogger(__name__)
 
