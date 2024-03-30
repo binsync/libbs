@@ -30,7 +30,7 @@ class DataMonitor(BinaryDataNotification):
         self._seen_comments = defaultdict(dict)
 
     def function_updated(self, view, func_):
-        # updates that occur without a service request are requests for comment changes
+        # Updates that occur without a service request are requests for comment changes
         if self._changing_func_pre_change is None:
             #
             # comments
@@ -38,32 +38,41 @@ class DataMonitor(BinaryDataNotification):
 
             func_addr = func_.start
             current_comments = dict(func_.comments)
-            if self._seen_comments[func_addr] != current_comments:
-                # comments changed
-                old_comments = self._seen_comments
-                new_comments = current_comments
+            prev_comments = self._seen_comments[func_addr]
+            # Changes have only occurred when the comments we see before the change request are different
+            # from the comments we see now (after the change request)
+            if current_comments != prev_comments:
 
-                for addr, old_comment in old_comments.items():
-                    new_comment = new_comments.get(addr, None)
-                    if new_comment == old_comment:
+                # Find all the comments that may have been:
+                # 1. Updated in-place
+                # 2. Deteted
+                for addr, prev_comment in prev_comments.items():
+                    curr_comment = current_comments.get(addr, None)
+                    # no change for this comment
+                    if curr_comment == prev_comment:
                         continue
 
                     self._interface.comment_changed(
                         self._interface.art_lifter.lift(
                             Comment(
-                                addr, str(new_comment) if new_comment else "", decompiled=True, func_addr=func_addr
+                                addr,
+                                str(curr_comment) if curr_comment else "",
+                                decompiled=True,
+                                func_addr=func_addr
                             )
-                        )
+                        ),
+                        deleted=curr_comment is None,
                     )
 
-                for addr, new_comment in new_comments.items():
-                    if addr in old_comments:
+                # Find any comment which was newly added in this change
+                for addr, curr_comment in current_comments.items():
+                    if addr in prev_comments:
                         continue
 
-                    if new_comment:
+                    if curr_comment:
                         self._interface.comment_changed(
                             self._interface.art_lifter.lift(
-                                Comment(addr, str(new_comment), decompiled=True, func_addr=func_addr)
+                                Comment(addr, str(curr_comment), decompiled=True, func_addr=func_addr)
                             )
                         )
 

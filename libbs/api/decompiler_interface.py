@@ -469,7 +469,8 @@ class DecompilerInterface:
         for callback_func in self.artifact_write_callbacks[StackVariable]:
             threading.Thread(target=callback_func, args=(svar,), kwargs=kwargs, daemon=True).start()
 
-    def comment_changed(self, comment: Comment, **kwargs):
+    def comment_changed(self, comment: Comment, deleted=False, **kwargs):
+        kwargs["deleted"] = deleted
         for callback_func in self.artifact_write_callbacks[Comment]:
             threading.Thread(target=callback_func, args=(comment,), kwargs=kwargs, daemon=True).start()
 
