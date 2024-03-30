@@ -344,7 +344,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
             bs_cmt.decompiled = True
 
         if cmt_type != IDA_EXTRA_CMT:
-            self.interface.comment_changed(bs_cmt)
+            self.interface.comment_changed(bs_cmt, deleted=not comment)
 
         return 0
 
@@ -439,7 +439,7 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
 
     def cmt_changed(self, cfunc, treeloc, cmt_str, *args):
         self.interface.comment_changed(
-            Comment(treeloc.ea, cmt_str, func_addr=cfunc.entry_ea, decompiled=True)
+            Comment(treeloc.ea, cmt_str, func_addr=cfunc.entry_ea, decompiled=True), deleted=not cmt_str
         )
         return 0
 

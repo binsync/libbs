@@ -175,5 +175,7 @@ class GenericBSAngrManagementPlugin(BasePlugin):
         if func_addr is None:
             return False
 
-        self.interface.comment_changed(Comment(address, new_cmt, func_addr=func_addr, decompiled=True))
+        self.interface.comment_changed(
+            Comment(address, new_cmt, func_addr=func_addr, decompiled=True), deleted=not new_cmt
+        )
         return True
