@@ -36,7 +36,7 @@ def ghidra_transaction(f):
 class GhidraDecompilerInterface(DecompilerInterface):
     def __init__(self, loop_on_plugin=True, start_headless_watchers=False, **kwargs):
         self.loop_on_plugin = loop_on_plugin
-        self.start_headless_watchers = start_headless_watchers
+        self._start_headless_watchers = start_headless_watchers
 
         self._last_addr = None
         self._last_func = None
@@ -65,14 +65,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
             # TODO: generalize superclass method?
             super().start_artifact_watchers()
 
-        return
-
     def stop_artifact_watchers(self):
         if self._artifact_watchers_started:
             self._data_monitor = None
             # TODO: generalize superclass method?
             super().stop_artifact_watchers()
-        return
 
     def _init_headless_components(self, *args, **kwargs):
         if self._headless_dec_path is None:
@@ -103,7 +100,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not self.connect_ghidra_bridge():
             raise Exception(f"Failed to connect to the Ghidra Bridge. Check if the {self._headless_dec_path} binary was ever started.")
 
-        if self.start_headless_watchers:
+        if self._start_headless_watchers:
             self.start_artifact_watchers()
 
     def _find_headless_proc(self):
