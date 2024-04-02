@@ -1,8 +1,10 @@
 import unittest
 from pathlib import Path
+from collections import defaultdict
 import os
 
 from libbs.api import DecompilerInterface
+from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
 
 GHIDRA_HEADLESS_PATH = Path(os.environ.get('GHIDRA_HEADLESS_PATH', ""))
@@ -14,7 +16,6 @@ DEC_TO_HEADLESS = {
     ANGR_DECOMPILER: None,
     BINJA_DECOMPILER: None,
 }
-
 
 class TestHeadlessInterfaces(unittest.TestCase):
     def setUp(self):
@@ -28,7 +29,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
             force_decompiler=GHIDRA_DECOMPILER,
             headless=True,
             headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
-            binary_path=self._fauxware_path
+            binary_path=self._fauxware_path,
+            start_headless_watchers=True
         )
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
@@ -45,6 +47,52 @@ class TestHeadlessInterfaces(unittest.TestCase):
         func_args[1].size = 8
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
+
+        # Test artifact watchers
+        hits = defaultdict(int)
+        def func_hit(*args, **kwargs): hits[args[0].__class__] += 1
+
+        deci.artifact_write_callbacks = {
+            typ: [func_hit] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment)
+        }
+
+        # Change function names
+        func_addr = deci.art_lifter.lift_addr(0x400664)
+        main = deci.functions[func_addr]
+        main.name = "changed"
+        deci.functions[func_addr] = main
+
+        main.name = "main"
+        deci.functions[func_addr] = main
+
+        # TODO: Fix CI for below
+        # main.stack_vars[-24].name = "named_char_array"
+        # main.stack_vars[-12].name = "named_int"
+        # deci.functions[func_addr] = main
+
+        # struct = deci.structs['/eh_frame_hdr']
+        # struct.name = "my_struct_name"
+        # deci.structs['/eh_frame_hdr'] = struct
+
+        # TODO: add argument naming
+        # func_args = main.header.args
+        # func_args[0].name = "changed_name"
+        # func_args[1].name = "changed_name2"
+        # deci.functions[func_addr] = main
+
+        # TODO: add global var support
+        # g1 = deci.global_vars[0x4008e0]
+        # g2 = deci.global_vars[0x601048]
+        # g1.name = "gvar1"
+        # g2.name = "gvar2"
+        # deci.global_vars[0x4008e0] = g1
+        # deci.global_vars[0x601048] = g2
+
+        assert hits[FunctionHeader] == 2
+        #assert hits[StackVariable] == 2
+        #assert hits[Struct] == 2 # One change results in 2 hits because the struct is first removed and then added again.
+        #assert hits[GlobalVariable] == 2
+
         deci.shutdown()
 
     def test_angr(self):

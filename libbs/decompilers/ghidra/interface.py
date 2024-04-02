@@ -17,7 +17,7 @@ import psutil
 
 from .artifact_lifter import GhidraArtifactLifter
 from .compat import GhidraAPIWrapper, Transaction
-from .hooks import create_context_action
+from .hooks import create_context_action, create_data_monitor
 
 _l = logging.getLogger(__name__)
 
@@ -34,8 +34,9 @@ def ghidra_transaction(f):
 
 
 class GhidraDecompilerInterface(DecompilerInterface):
-    def __init__(self, loop_on_plugin=True, **kwargs):
+    def __init__(self, loop_on_plugin=True, start_headless_watchers=False, **kwargs):
         self.loop_on_plugin = loop_on_plugin
+        self._start_headless_watchers = start_headless_watchers
 
         self._last_addr = None
         self._last_func = None
@@ -44,6 +45,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._headless_g_project = None
         self._headless_script_name = "ghidra_libbs_mainthread_server.py"
 
+        self._data_monitor = None
+
         self.ghidra: Optional[GhidraAPIWrapper] = None
         super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
 
@@ -51,6 +54,22 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not self.connect_ghidra_bridge():
             raise Exception("Failed to connect to the Ghidra Bridge. Check the Ghidra GUI for failures!")
         super()._init_gui_components(*args, **kwargs)
+
+    def start_artifact_watchers(self):
+        if not self._artifact_watchers_started:
+            if self.ghidra is None:
+                raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
+
+            self._data_monitor = create_data_monitor(self.ghidra, self)
+            self.ghidra.currentProgram.addListener(self._data_monitor)
+            # TODO: generalize superclass method?
+            super().start_artifact_watchers()
+
+    def stop_artifact_watchers(self):
+        if self._artifact_watchers_started:
+            self._data_monitor = None
+            # TODO: generalize superclass method?
+            super().stop_artifact_watchers()
 
     def _init_headless_components(self, *args, **kwargs):
         if self._headless_dec_path is None:
@@ -80,6 +99,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         time.sleep(1)
         if not self.connect_ghidra_bridge():
             raise Exception(f"Failed to connect to the Ghidra Bridge. Check if the {self._headless_dec_path} binary was ever started.")
+
+        if self._start_headless_watchers:
+            self.start_artifact_watchers()
 
     def _find_headless_proc(self):
         for proc in psutil.process_iter():
@@ -490,7 +512,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         changes = False
         global_var: GlobalVariable = artifact
-        all_global_vars = self.global_vars()
+        all_global_vars = self._global_vars()
 
         rename_label_cmd_cls = self.ghidra.import_module_object("ghidra.app.cmd.label", "RenameLabelCmd")
         src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
@@ -512,11 +534,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return changes
 
-    def global_var(self, addr) -> Optional[GlobalVariable]:
+    def _get_global_var(self, addr) -> Optional[GlobalVariable]:
         """
         TODO: remove me and implement me properly as setters and getters
         """
-        light_global_vars = self.global_vars()
+        light_global_vars = self._global_vars()
         for offset, global_var in light_global_vars.items():
             if offset == addr:
                 lst = self.ghidra.currentProgram.getListing()
@@ -532,7 +554,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 global_var.size = size
                 return global_var
 
-    def global_vars(self) -> Dict[int, GlobalVariable]:
+    def _global_vars(self) -> Dict[int, GlobalVariable]:
         """
         TODO: remove me and implement me properly as setters and getters
         """
