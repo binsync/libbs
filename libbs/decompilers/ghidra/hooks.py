@@ -52,21 +52,20 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                 if changeType in funcEvents:
                     pass
                 elif changeType in typeEvents:
-                    # TODO: Finish debugging struct events
                     pass
-                    # try:
-                    #     struct = self._interface.structs[newValue]
-                    #     self._interface.struct_changed(Struct(None, None, None), deleted=True)
-                    #     self._interface.struct_changed(struct)
-                    # except KeyError:
-                    #     pass
-                    #
-                    # try:
-                    #     enum = self._interface.enums[newValue]
-                    #     self._interface.enum_changed(Enum(None, None), deleted=True)
-                    #     self._interface.enum_changed(enum)
-                    # except KeyError:
-                    #     pass
+                    try:
+                        struct = self._interface.structs[newValue]
+                        self._interface.struct_changed(Struct(None, None, None), deleted=True)
+                        self._interface.struct_changed(struct)
+                    except KeyError:
+                        pass
+
+                    try:
+                        enum = self._interface.enums[newValue]
+                        self._interface.enum_changed(Enum(None, None), deleted=True)
+                        self._interface.enum_changed(enum)
+                    except KeyError:
+                        pass
 
                 elif changeType in symDelEvents:
                     # Currently unused and unsupported
