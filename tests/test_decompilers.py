@@ -32,6 +32,11 @@ class TestHeadlessInterfaces(unittest.TestCase):
             binary_path=self._fauxware_path,
             start_headless_watchers=True
         )
+
+        #
+        # Test Artifact Reading & Writing
+        #
+
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
         main.name = self._generic_renamed_name
@@ -48,15 +53,18 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
 
-        # Test artifact watchers
-        hits = defaultdict(int)
-        def func_hit(*args, **kwargs): hits[args[0].__class__] += 1
+        #
+        # Test Artifact Watchers
+        #
+
+        hits = defaultdict(list)
+        def func_hit(*args, **kwargs): hits[args[0].__class__].append(args[0])
 
         deci.artifact_write_callbacks = {
             typ: [func_hit] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment)
         }
 
-        # Change function names
+        # function names
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
         main.name = "changed"
@@ -64,6 +72,11 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         main.name = "main"
         deci.functions[func_addr] = main
+
+        first_changed_func = hits[FunctionHeader][0]
+        assert first_changed_func.name == "changed"
+        assert first_changed_func.addr == func_addr
+        assert len(hits[FunctionHeader]) == 2
 
         # TODO: Fix CI for below
         # main.stack_vars[-24].name = "named_char_array"
@@ -88,7 +101,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # deci.global_vars[0x4008e0] = g1
         # deci.global_vars[0x601048] = g2
 
-        assert hits[FunctionHeader] == 2
         #assert hits[StackVariable] == 2
         #assert hits[Struct] == 2 # One change results in 2 hits because the struct is first removed and then added again.
         #assert hits[GlobalVariable] == 2
