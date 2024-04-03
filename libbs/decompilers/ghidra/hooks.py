@@ -5,11 +5,12 @@ from ...artifacts import FunctionHeader, Function, FunctionArgument, StackVariab
 
 if typing.TYPE_CHECKING:
     from libbs.decompilers.ghidra.compat.ghidra_api import GhidraAPIWrapper
+    from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
 
-def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
+def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompilerInterface"):
     model = ghidra.import_module("ghidra.framework.model")
     class DataMonitor(model.DomainObjectListener):
-        def __init__(self, interface):
+        def __init__(self, interface: "GhidraDecompilerInterface"):
             self._interface = interface
             self.changeManager = ghidra.import_module_object("ghidra.program.util", "ChangeManager")
             self.programChangeRecord = ghidra.import_module_object("ghidra.program.util", "ProgramChangeRecord")
@@ -71,12 +72,21 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                     # Currently unused and unsupported
                     pass
                 elif changeType in symChgEvents:
-                    if obj == None and newValue != None:
+                    if obj is None and newValue is not None:
                         obj = newValue
                     if "VariableSymbolDB" in str(type(obj)):
-                        if oldValue and newValue:
-                            stackVar = StackVariable(None, newValue, None, None, None)
-                            self._interface.stack_variable_changed(stackVar)
+                        if oldValue and newValue and obj.parentNamespace is not None:
+                            self._interface.stack_variable_changed(
+                                self._interface.art_lifter.lift(
+                                    StackVariable(
+                                        int(obj.variableStorage.stackOffset),
+                                        newValue,
+                                        None,
+                                        None,
+                                        int(obj.parentNamespace.entryPoint.offset)
+                                    )
+                                )
+                            )
                         else:
                             # TODO: figure out how to differentiate type changes
                             # print(f"VariableSymbolDB caught: {obj}")
@@ -94,8 +104,10 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface):
                         # self._interface.global_variable_changed(gVar)
                         continue
                     elif "FunctionSymbol" in str(type(obj)):
-                        header = FunctionHeader(newValue, None)
-                        self._interface.function_header_changed(header)
+                        header = FunctionHeader(newValue, int(obj.getAddress().offset))
+                        self._interface.function_header_changed(
+                            self._interface.art_lifter.lift(header)
+                        )
                     elif "FunctionDB" in str(type(obj)):
                         # TODO: Fix argument name support
                         #changed_arg = FunctionArgument(None, newValue, None, None)

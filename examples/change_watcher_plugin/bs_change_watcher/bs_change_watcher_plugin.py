@@ -3,7 +3,9 @@
 # @category BinSync
 # @menupath Tools.ArtifactChangeWatcher.Start the BS backed for watcher
 
-library_command = "bs_change_watcher --run"
+# Note: this requires that your plugin, which is a package, exposes a function called `create_plugin` AND it
+# exposes a command line interface that can be run (for Ghidra).
+library_command = "bs_change_watcher -s ghidra"
 def create_plugin(*args, **kwargs):
     from bs_change_watcher import create_plugin as _create_plugin
     return _create_plugin(*args, **kwargs)
@@ -25,8 +27,7 @@ if sys.version[0] == "2":
     GhidraBridgeServer.run_server(background=True)
     process = subprocess.Popen(full_command.split(" "))
     if process.poll() is not None:
-        raise RuntimeError(
-            "Failed to run the Python3 backed. It's likely Python3 is not in your Path inside Ghidra.")
+        raise RuntimeError("Failed to run the Python3 backed. It's likely Python3 is not in your Path inside Ghidra.")
 else:
     # Try plugin discovery for other decompilers
     try:
