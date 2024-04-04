@@ -54,6 +54,20 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
 
+        struct = deci.structs['/eh_frame_hdr']
+        struct.name = "my_struct_name"
+        struct.members[0].type = 'undefined'
+        struct.members[1].type = 'undefined'
+        deci.structs['/eh_frame_hdr'] = struct
+        updated = deci.structs['/' + struct.name]
+        assert updated.name == struct.name
+        assert updated.members[0].type == 'undefined'
+        assert updated.members[1].type == 'undefined'
+
+        enum = Enum("my_enum", {"member1": 0, "member2": 1})
+        deci.enums[enum.name] = enum
+        assert deci.enums[enum.name] == enum
+
         #
         # Test Artifact Watchers
         #
