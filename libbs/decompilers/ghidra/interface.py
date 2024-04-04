@@ -505,7 +505,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 name.count('/') == 1} if names else {}
 
     @ghidra_transaction
-    def fill_global_var(self, var_addr, user=None, artifact=None, **kwargs):
+    def _set_global_variable(self, var_addr, user=None, artifact=None, **kwargs):
         """
         TODO: remove me and implement me properly as setters and getters
         """

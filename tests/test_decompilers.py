@@ -23,6 +23,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         self._fauxware_path = TEST_BINARY_DIR / "fauxware"
 
     def test_ghidra(self):
+        # TODO: Add test cases for structs and enums
         # useful command for testing, kills all Headless-Ghidra:
         # kill $(ps aux | grep 'Ghidra-Headless' | awk '{print $2}')
         deci = DecompilerInterface.discover(
@@ -52,6 +53,32 @@ class TestHeadlessInterfaces(unittest.TestCase):
         func_args[1].size = 8
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
+
+        struct = deci.structs['/eh_frame_hdr']
+        struct.name = "my_struct_name"
+        struct.members[0].type = 'undefined'
+        struct.members[1].type = 'undefined'
+        deci.structs['/eh_frame_hdr'] = struct
+        updated = deci.structs['/' + struct.name]
+        assert updated.name == struct.name
+        assert updated.members[0].type == 'undefined'
+        assert updated.members[1].type == 'undefined'
+
+        enum = Enum("my_enum", {"member1": 0, "member2": 1})
+        deci.enums[enum.name] = enum
+        assert deci.enums[enum.name] == enum
+
+        # gvar_addr = deci.art_lifter.lift_addr(0x4008e0)
+        # g1 = deci.global_vars[gvar_addr]
+        # g1.name = "gvar1"
+        # deci.global_vars[gvar_addr] = g1
+        # assert deci.global_vars[gvar_addr] == g1
+
+        stack_var = main.stack_vars[-24]
+        stack_var.name = "named_char_array"
+        stack_var.type = 'double'
+        deci.functions[func_addr] = main
+        assert deci.functions[func_addr].stack_vars[-24] == stack_var
 
         #
         # Test Artifact Watchers
