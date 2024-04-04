@@ -68,6 +68,18 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.enums[enum.name] = enum
         assert deci.enums[enum.name] == enum
 
+        # gvar_addr = deci.art_lifter.lift_addr(0x4008e0)
+        # g1 = deci.global_vars[gvar_addr]
+        # g1.name = "gvar1"
+        # deci.global_vars[gvar_addr] = g1
+        # assert deci.global_vars[gvar_addr] == g1
+
+        stack_var = main.stack_vars[-24]
+        stack_var.name = "named_char_array"
+        stack_var.type = 'double'
+        deci.functions[func_addr] = main
+        assert deci.functions[func_addr].stack_vars[-24] == stack_var
+
         #
         # Test Artifact Watchers
         #

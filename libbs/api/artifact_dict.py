@@ -41,7 +41,7 @@ class ArtifactDict(dict):
             # ArtifactType: (setter, getter, lister)
             Function: (self._deci._set_function, self._deci._get_function, self._deci._functions),
             StackVariable: (self._deci._set_stack_variable, self._deci._get_stack_variable, self._deci._stack_variables),
-            GlobalVariable: (self._deci._set_global_variable, self._deci._get_global_var, self._deci._global_vars),
+            GlobalVariable: (self._deci._set_global_var, self._deci._get_global_var, self._deci._global_vars),
             Struct: (self._deci._set_struct, self._deci._get_struct, self._deci._structs),
             Enum: (self._deci._set_enum, self._deci._get_enum, self._deci._enums),
             Comment: (self._deci._set_comment, self._deci._get_comment, self._deci._comments),
