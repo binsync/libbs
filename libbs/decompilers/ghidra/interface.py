@@ -408,7 +408,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                     ghidra_struct.replaceAtOffset(offset, gtype, member.size, member.name, "")
                     break
         try:
-            if old_ghidra_struct:
+            if old_ghidra_struct is not None:
                 data_manager.replaceDataType(old_ghidra_struct, ghidra_struct, True)
             else:
                 data_manager.addDataType(ghidra_struct, handler.DEFAULT_HANDLER)
@@ -419,8 +419,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def _get_struct(self, name) -> Optional[Struct]:
         ghidra_struct = self._get_struct_by_name(name)
-        bs_struct = Struct(ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(name))
-        return bs_struct
+        if ghidra_struct is None:
+            return None
+
+        return Struct(ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(name))
 
     def _structs(self) -> Dict[str, Struct]:
         name_sizes: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
@@ -636,11 +638,19 @@ class GhidraDecompilerInterface(DecompilerInterface):
             high_func=high_func
         )
 
-    def _get_struct_by_name(self, name: str) -> "GhidraStructure":
-        return self.ghidra.currentProgram.getDataTypeManager().getDataType('/' + name)
+    def _get_struct_by_name(self, name: str) -> Optional["StructureDB"]:
+        """
+        Returns None if the struct does not exist or is not a struct.
+        """
+        StructureDBType = self.ghidra.import_module_object("ghidra.program.database.data", "StructureDB")
+        struct = self.ghidra.currentProgram.getDataTypeManager().getDataType("/" + name)
+        return struct if self.ghidra.isinstance(struct, StructureDBType) else None
 
     def _struct_members_from_gstruct(self, name: str) -> Dict[int, StructMember]:
         ghidra_struct = self._get_struct_by_name(name)
+        if ghidra_struct is None:
+            return {}
+
         members: Optional[List[Tuple[str, int, str, int]]] = self.ghidra.bridge.remote_eval(
             "[(m.getFieldName(), m.getOffset(), m.getDataType().getName(), m.getLength()) if m.getFieldName() else "
             "('field_'+hex(m.getOffset())[2:], m.getOffset(), m.getDataType().getName(), m.getLength()) "

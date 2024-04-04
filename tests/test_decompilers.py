@@ -106,9 +106,12 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert len(hits[FunctionHeader]) == 2
 
         # TODO: Fix CI for below
-        # main.stack_vars[-24].name = "named_char_array"
-        # main.stack_vars[-12].name = "named_int"
-        # deci.functions[func_addr] = main
+        main.stack_vars[-24].name = "named_char_array"
+        main.stack_vars[-12].name = "named_int"
+        deci.functions[func_addr] = main
+        first_changed_sv = hits[StackVariable][0]
+        assert first_changed_sv.name == main.stack_vars[-24].name
+        assert len(hits[StackVariable]) == 2
 
         # struct = deci.structs['eh_frame_hdr']
         # struct.name = "my_struct_name"
@@ -128,7 +131,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # deci.global_vars[0x4008e0] = g1
         # deci.global_vars[0x601048] = g2
 
-        #assert hits[StackVariable] == 2
         #assert hits[Struct] == 2 # One change results in 2 hits because the struct is first removed and then added again.
         #assert hits[GlobalVariable] == 2
 
