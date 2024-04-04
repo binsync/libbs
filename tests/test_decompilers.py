@@ -110,9 +110,9 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # main.stack_vars[-12].name = "named_int"
         # deci.functions[func_addr] = main
 
-        # struct = deci.structs['/eh_frame_hdr']
+        # struct = deci.structs['eh_frame_hdr']
         # struct.name = "my_struct_name"
-        # deci.structs['/eh_frame_hdr'] = struct
+        # deci.structs['eh_frame_hdr'] = struct
 
         # TODO: add argument naming
         # func_args = main.header.args

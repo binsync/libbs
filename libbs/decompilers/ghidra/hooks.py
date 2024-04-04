@@ -54,7 +54,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                     pass
                 elif changeType in typeEvents:
                     try:
-                        struct = self._interface.structs['/'+newValue.name]
+                        struct = self._interface.structs[newValue.name]
                         # TODO: access old name indicate deletion
                         #self._interface.struct_changed(Struct(None, None, None), deleted=True)
                         self._interface.struct_changed(struct)
@@ -62,7 +62,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                         pass
 
                     try:
-                        enum = self._interface.enums['/'+newValue.name]
+                        enum = self._interface.enums[newValue.name]
                         #self._interface.enum_changed(Enum(None, None), deleted=True)
                         self._interface.enum_changed(enum)
                     except KeyError:
