@@ -54,12 +54,12 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
 
-        struct = deci.structs['/eh_frame_hdr']
+        struct = deci.structs['eh_frame_hdr']
         struct.name = "my_struct_name"
         struct.members[0].type = 'undefined'
         struct.members[1].type = 'undefined'
-        deci.structs['/eh_frame_hdr'] = struct
-        updated = deci.structs['/' + struct.name]
+        deci.structs['eh_frame_hdr'] = struct
+        updated = deci.structs[struct.name]
         assert updated.name == struct.name
         assert updated.members[0].type == 'undefined'
         assert updated.members[1].type == 'undefined'
@@ -110,9 +110,9 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # main.stack_vars[-12].name = "named_int"
         # deci.functions[func_addr] = main
 
-        # struct = deci.structs['/eh_frame_hdr']
+        # struct = deci.structs['eh_frame_hdr']
         # struct.name = "my_struct_name"
-        # deci.structs['/eh_frame_hdr'] = struct
+        # deci.structs['eh_frame_hdr'] = struct
 
         # TODO: add argument naming
         # func_args = main.header.args

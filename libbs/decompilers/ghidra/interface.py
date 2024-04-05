@@ -390,7 +390,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ghidra_transaction
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
         struct: Struct = struct
-        old_ghidra_struct = self._get_struct_by_name('/' + struct.name)
+        old_ghidra_struct = self._get_struct_by_name(struct.name)
         data_manager = self.ghidra.currentProgram.getDataTypeManager()
         handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
         structType = self.ghidra.import_module_object("ghidra.program.model.data", "StructureDataType")
@@ -428,7 +428,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for s in currentProgram.getDataTypeManager().getAllStructures()]"
         )
         return {
-            name: Struct(name, size, members=self._struct_members_from_gstruct(name)) for name, size in name_sizes
+            name[1:]: Struct(name[1:], size, members=self._struct_members_from_gstruct(name[1:])) for name, size in name_sizes
         } if name_sizes else {}
 
     @ghidra_transaction
@@ -637,7 +637,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
 
     def _get_struct_by_name(self, name: str) -> "GhidraStructure":
-        return self.ghidra.currentProgram.getDataTypeManager().getDataType(name)
+        return self.ghidra.currentProgram.getDataTypeManager().getDataType('/' + name)
 
     def _struct_members_from_gstruct(self, name: str) -> Dict[int, StructMember]:
         ghidra_struct = self._get_struct_by_name(name)
