@@ -75,7 +75,12 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                     if obj is None and newValue is not None:
                         obj = newValue
                     if "VariableSymbolDB" in str(type(obj)):
-                        if oldValue and newValue and obj.parentNamespace is not None:
+                        parent_namespace = obj.getParentNamespace()
+                        storage = obj.getVariableStorage()
+                        if (
+                            (newValue is not None) and (storage is not None) and bool(storage.isStackStorage())
+                            and (parent_namespace is not None)
+                        ):
                             self._interface.stack_variable_changed(
                                 self._interface.art_lifter.lift(
                                     StackVariable(

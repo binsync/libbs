@@ -408,7 +408,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                     ghidra_struct.replaceAtOffset(offset, gtype, member.size, member.name, "")
                     break
         try:
-            if old_ghidra_struct:
+            if old_ghidra_struct is not None:
                 data_manager.replaceDataType(old_ghidra_struct, ghidra_struct, True)
             else:
                 data_manager.addDataType(ghidra_struct, handler.DEFAULT_HANDLER)
@@ -419,8 +419,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def _get_struct(self, name) -> Optional[Struct]:
         ghidra_struct = self._get_struct_by_name(name)
-        bs_struct = Struct(ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(name))
-        return bs_struct
+        if ghidra_struct is None:
+            return None
+
+        return Struct(ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(name))
 
     def _structs(self) -> Dict[str, Struct]:
         name_sizes: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
@@ -492,7 +494,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return False
 
     def _get_enum(self, name) -> Optional[Enum]:
-        members = self._get_enum_members('/' + name)
+        is_valid_enum = self._get_ghidra_enum(name)
+        if is_valid_enum is None:
+            return None
+
+        members = self._get_enum_members(name)
         return Enum(name, members) if members else None
 
     def _enums(self) -> Dict[str, Enum]:
@@ -501,8 +507,21 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
             "if str(type(dType)) == \"<type 'ghidra.program.database.data.EnumDB'>\"]"
         )
-        return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if
-                name.count('/') == 1} if names else {}
+        enums = {}
+        for name in names:
+            # XXX: we dont really know why this is here, but we assume its because you cant have
+            # an enum nested in a folder in ghidra
+            if name.count("/") != 1:
+                continue
+
+            enum_name = name[1:]
+            is_valid_enum = self._get_ghidra_enum(enum_name)
+            if is_valid_enum is None:
+                continue
+
+            enums[enum_name] = Enum(enum_name, self._get_enum_members(enum_name))
+
+        return enums
 
     @ghidra_transaction
     def _set_global_variable(self, var_addr, user=None, artifact=None, **kwargs):
@@ -636,11 +655,19 @@ class GhidraDecompilerInterface(DecompilerInterface):
             high_func=high_func
         )
 
-    def _get_struct_by_name(self, name: str) -> "GhidraStructure":
-        return self.ghidra.currentProgram.getDataTypeManager().getDataType('/' + name)
+    def _get_struct_by_name(self, name: str) -> Optional["StructureDB"]:
+        """
+        Returns None if the struct does not exist or is not a struct.
+        """
+        StructureDBType = self.ghidra.import_module_object("ghidra.program.database.data", "StructureDB")
+        struct = self.ghidra.currentProgram.getDataTypeManager().getDataType("/" + name)
+        return struct if self.ghidra.isinstance(struct, StructureDBType) else None
 
     def _struct_members_from_gstruct(self, name: str) -> Dict[int, StructMember]:
         ghidra_struct = self._get_struct_by_name(name)
+        if ghidra_struct is None:
+            return {}
+
         members: Optional[List[Tuple[str, int, str, int]]] = self.ghidra.bridge.remote_eval(
             "[(m.getFieldName(), m.getOffset(), m.getDataType().getName(), m.getLength()) if m.getFieldName() else "
             "('field_'+hex(m.getOffset())[2:], m.getOffset(), m.getDataType().getName(), m.getLength()) "
@@ -652,9 +679,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         } if members else {}
 
     def _get_enum_members(self, name: str) -> Optional[Dict[str, int]]:
-        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(name)
-        if not ghidra_enum:
-            return None
+        ghidra_enum = self._get_ghidra_enum(name)
+        if ghidra_enum is None:
+            return {}
+
         name_vals: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
             "[(name, ghidra_enum.getValue(name))"
             "for name in ghidra_enum.getNames()]",
@@ -760,3 +788,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 break
 
             time.sleep(sleep_interval)
+
+    def _get_ghidra_enum(self, enum_name: str) -> Optional["EnumDB"]:
+        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
+        EnumDBType = self.ghidra.import_module_object("ghidra.program.database.data", "EnumDB")
+        return ghidra_enum if self.ghidra.isinstance(ghidra_enum, EnumDBType) else None

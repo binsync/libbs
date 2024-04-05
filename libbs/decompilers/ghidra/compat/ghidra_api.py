@@ -2,6 +2,7 @@ import time
 import logging
 
 import ghidra_bridge
+from jfx_bridge.bridge import BridgedObject
 
 _l = logging.getLogger(__name__)
 
@@ -76,3 +77,11 @@ class GhidraAPIWrapper:
                 pass
 
         return connected
+
+    @staticmethod
+    def isinstance(obj, cls):
+        """
+        A proxy isinstance function that can handle BridgedObjects. This is necessary because the `isinstance` function
+        in the remote namespace will not recognize BridgedObjects as instances of classes in the local namespace.
+        """
+        return obj._bridge_isinstance(cls) if isinstance(obj, BridgedObject) else isinstance(obj, cls)
