@@ -498,7 +498,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if is_valid_enum is None:
             return None
 
-        members = self._get_enum_members('/' + name)
+        members = self._get_enum_members(name)
         return Enum(name, members) if members else None
 
     def _enums(self) -> Dict[str, Enum]:
@@ -790,6 +790,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
             time.sleep(sleep_interval)
 
     def _get_ghidra_enum(self, enum_name: str) -> Optional["EnumDB"]:
-        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(enum_name)
+        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
         EnumDBType = self.ghidra.import_module_object("ghidra.program.database.data", "EnumDB")
         return ghidra_enum if self.ghidra.isinstance(ghidra_enum, EnumDBType) else None
