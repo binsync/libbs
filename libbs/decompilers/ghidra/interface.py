@@ -509,8 +509,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
         enums = {}
         for name in names:
-            enum_name = name if not name.startswith('/') else name[1:]
-            is_valid_enum = self._get_ghidra_enum(name)
+            # XXX: we dont really know why this is here, but we assume its because you cant have
+            # an enum nested in a folder in ghidra
+            if name.count("/") != 1:
+                continue
+
+            enum_name = name[1:]
+            is_valid_enum = self._get_ghidra_enum(enum_name)
             if is_valid_enum is None:
                 continue
 
