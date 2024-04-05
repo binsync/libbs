@@ -494,6 +494,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return False
 
     def _get_enum(self, name) -> Optional[Enum]:
+        is_valid_enum = self._get_ghidra_enum(name)
+        if is_valid_enum is None:
+            return None
+
         members = self._get_enum_members('/' + name)
         return Enum(name, members) if members else None
 
@@ -503,8 +507,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
             "if str(type(dType)) == \"<type 'ghidra.program.database.data.EnumDB'>\"]"
         )
-        return {name[1:]: Enum(name[1:], self._get_enum_members(name)) for name in names if
-                name.count('/') == 1} if names else {}
+        enums = {}
+        for name in names:
+            enum_name = name if not name.startswith('/') else name[1:]
+            is_valid_enum = self._get_ghidra_enum(name)
+            if is_valid_enum is None:
+                continue
+
+            enums[enum_name] = Enum(enum_name, self._get_enum_members(enum_name))
+
+        return enums
 
     @ghidra_transaction
     def _set_global_variable(self, var_addr, user=None, artifact=None, **kwargs):
@@ -662,9 +674,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         } if members else {}
 
     def _get_enum_members(self, name: str) -> Optional[Dict[str, int]]:
-        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(name)
-        if not ghidra_enum:
-            return None
+        ghidra_enum = self._get_ghidra_enum(name)
+        if ghidra_enum is None:
+            return {}
+
         name_vals: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
             "[(name, ghidra_enum.getValue(name))"
             "for name in ghidra_enum.getNames()]",
@@ -770,3 +783,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 break
 
             time.sleep(sleep_interval)
+
+    def _get_ghidra_enum(self, enum_name: str) -> Optional["EnumDB"]:
+        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(enum_name)
+        EnumDBType = self.ghidra.import_module_object("ghidra.program.database.data", "EnumDB")
+        return ghidra_enum if self.ghidra.isinstance(ghidra_enum, EnumDBType) else None
