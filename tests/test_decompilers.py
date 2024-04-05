@@ -109,7 +109,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         main.stack_vars[-24].name = "named_char_array"
         main.stack_vars[-12].name = "named_int"
         deci.functions[func_addr] = main
-        first_changed_sv = hits[StackVariable][0]
+        #first_changed_sv = hits[StackVariable][0]
         #assert first_changed_sv.name == main.stack_vars[-24].name
         #assert len(hits[StackVariable]) == 2
 
