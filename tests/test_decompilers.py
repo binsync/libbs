@@ -81,6 +81,13 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert deci.functions[func_addr].stack_vars[-24] == stack_var
 
         #
+        # Test Random APIs
+        #
+
+        func_size = deci.get_func_size(func_addr)
+        assert func_size != -1
+
+        #
         # Test Artifact Watchers
         #
 

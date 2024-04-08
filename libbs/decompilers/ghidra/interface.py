@@ -199,7 +199,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return self.ghidra.currentProgram.executablePath
 
     def get_func_size(self, func_addr) -> int:
+        func_addr = self.art_lifter.lower_addr(func_addr)
         gfunc = self._get_nearest_function(func_addr)
+        if gfunc is None:
+            _l.critical("Failed to get function size for %s, likely a lifting error, report!", func_addr)
+            return -1
+
         return int(gfunc.getBody().getNumAddresses())
 
     def connect_ghidra_bridge(self):
