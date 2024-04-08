@@ -203,6 +203,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         gfunc = self._get_nearest_function(func_addr)
         if gfunc is None:
             _l.critical("Failed to get function size for %s, likely a lifting error, report!", func_addr)
+            return -1
 
         return int(gfunc.getBody().getNumAddresses())
 
