@@ -5,7 +5,7 @@
 
 # Note: this requires that your plugin, which is a package, exposes a function called `create_plugin` AND it
 # exposes a command line interface that can be run (for Ghidra).
-library_command = "bs_change_watcher -s ghidra"
+plugin_command = "bs_change_watcher -s ghidra"
 def create_plugin(*args, **kwargs):
     from bs_change_watcher import create_plugin as _create_plugin
     return _create_plugin(*args, **kwargs)
@@ -22,10 +22,9 @@ if sys.version[0] == "2":
     # Do Ghidra Py2 entry point
     import subprocess
     from libbs_vendored.ghidra_bridge_server import GhidraBridgeServer
-    full_command = "python3 -m " + library_command
 
     GhidraBridgeServer.run_server(background=True)
-    process = subprocess.Popen(full_command.split(" "))
+    process = subprocess.Popen(plugin_command.split(" "))
     if process.poll() is not None:
         raise RuntimeError("Failed to run the Python3 backed. It's likely Python3 is not in your Path inside Ghidra.")
 else:
