@@ -4,8 +4,7 @@
 # @menupath Tools.MyPlugin.Replace me with short desc shown in Tools>MyPlugin menu
 
 # REPLACE_ME: replace the command to run your plugin from Ghidra Python2 side
-library_command = "my_library_name --run"
-
+plugin_command = "my_library_name --run"
 
 def create_plugin(*args, **kwargs):
     # REPLACE_ME this import with an import of your plugin's create_plugin function
@@ -23,13 +22,13 @@ if sys.version[0] == "2":
     # Do Ghidra Py2 entry point
     import subprocess
     from libbs_vendored.ghidra_bridge_server import GhidraBridgeServer
-    full_command = "python3 -m " + library_command
 
     GhidraBridgeServer.run_server(background=True)
-    process = subprocess.Popen(full_command.split(" "))
+    process = subprocess.Popen(plugin_command.split(" "))
     if process.poll() is not None:
         raise RuntimeError(
-            "Failed to run the Python3 backed. It's likely Python3 is not in your Path inside Ghidra.")
+            "Failed to run the Python3 backed. It's likely Python3 (and its scripts) is not in your Path inside Ghidra."
+        )
 else:
     # Try plugin discovery for other decompilers
     try:
