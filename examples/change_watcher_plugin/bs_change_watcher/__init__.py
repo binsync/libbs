@@ -2,6 +2,8 @@ from pathlib import Path
 
 from libbs.plugin_installer import LibBSPluginInstaller
 
+__version__ = "0.0.1"
+
 
 def create_plugin(*args, **kwargs):
     """

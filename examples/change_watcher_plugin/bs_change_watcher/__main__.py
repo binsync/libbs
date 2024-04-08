@@ -1,6 +1,7 @@
 import argparse
 
 from . import BSChangeWatcherInstaller, create_plugin
+import bs_change_watcher
 
 
 def main():
@@ -11,6 +12,7 @@ def main():
     parser.add_argument(
         "-s", "--server", help="Run a a headless server for the watcher plugin", choices=["ghidra"]
     )
+    parser.add_argument("-v", "--version", action="version", version=bs_change_watcher.__version__)
     args = parser.parse_args()
 
     if args.install:

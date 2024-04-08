@@ -6,10 +6,10 @@ name: Artifact Tests
 on:
   push:
     branches: [ main ]
-    paths: ['libbs/artifacts/**']
+    paths: ['libbs/artifacts/**', 'examples/**']
   pull_request:
     branches: [ main ]
-    paths: ['libbs/artifacts/**']
+    paths: ['libbs/artifacts/**', 'examples/**']
 
 jobs:
   build:
@@ -24,9 +24,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
-          pip install .
+          pip install pytest . ./examples/change_watcher_plugin/
 
       - name: Pytest
         run: |
-          pytest ./tests/test_artifacts.py
+          pytest ./tests/test_artifacts.py ./tests/test_cli.py
