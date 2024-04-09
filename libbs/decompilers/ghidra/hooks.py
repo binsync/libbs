@@ -42,12 +42,12 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
 
             for record in ev:
                 # NOTE: This excludes type changes anything as they are DomainObjectChangeRecord
-                if not "ProgramChangeRecord" in str(type(record)):
+
+                if not self._interface.ghidra.isinstance(record, self.programChangeRecord):
                     continue
 
                 changeType = record.getEventType()
                 newValue = record.getNewValue()
-                oldValue = record.getOldValue()
                 obj = record.getObject()
 
                 if changeType in funcEvents:
@@ -74,7 +74,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                 elif changeType in symChgEvents:
                     if obj is None and newValue is not None:
                         obj = newValue
-                    if "VariableSymbolDB" in str(type(obj)):
+                    if self._interface.ghidra.isinstance(obj, self.db.function.VariableDB):
                         parent_namespace = obj.getParentNamespace()
                         storage = obj.getVariableStorage()
                         if (
@@ -103,17 +103,17 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                             # self._interface.stack_variable_changed(stackVar)
                             pass
                         continue
-                    elif "CodeSymbol" in str(type(obj)):
+                    elif self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
                         # TODO: Find trigger for global var changes
                         # gVar = GlobalVariable(None, newValue)
                         # self._interface.global_variable_changed(gVar)
                         continue
-                    elif "FunctionSymbol" in str(type(obj)):
+                    elif self._interface.ghidra.isinstance(obj, self.db.symbol.FunctionSymbol):
                         header = FunctionHeader(newValue, int(obj.getAddress().offset))
                         self._interface.function_header_changed(
                             self._interface.art_lifter.lift(header)
                         )
-                    elif "FunctionDB" in str(type(obj)):
+                    elif self._interface.ghidra.isinstance(obj, self.db.function.FunctionDB):
                         # TODO: Fix argument name support
                         #changed_arg = FunctionArgument(None, newValue, None, None)
                         #header = FunctionHeader(None, None, args={None: changed_arg})

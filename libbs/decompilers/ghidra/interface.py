@@ -510,7 +510,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         names: Optional[List[str]] = self.ghidra.bridge.remote_eval(
             "[dType.getPathName() "
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
-            "if str(type(dType)) == \"<type 'ghidra.program.database.data.EnumDB'>\"]"
+            "if ghidra.isinstance(dType, EnumDBType)]",
+        ghidra=self.ghidra,
+        EnumDBType=self.ghidra.import_module_object("ghidra.program.model.data", "EnumDB")
         )
         enums = {}
         for name in names:
