@@ -814,15 +814,16 @@ def get_enum_members(_enum) -> typing.Dict[str, int]:
         return enum_members
 
     enum_members[member_name] = member
-
-    while member := ida_enum.get_next_enum_member(_enum, member, 0):
+    
+    member = ida_enum.get_next_enum_member(_enum, member, 0)
+    while member:
         if member == 0xffffffffffffffff: break
         member_addr = ida_enum.get_enum_member(_enum, member, 0, 0)
         member_name = ida_enum.get_enum_member_name(member_addr)
-        if member_name is None:
-            continue
+        if member_name:
+            enum_members[member_name] = member
 
-        enum_members[member_name] = member
+        member = ida_enum.get_next_enum_member(_enum, member, 0)
     return enum_members
 
 
