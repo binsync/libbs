@@ -15,23 +15,24 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
             self.changeManager = ghidra.import_module_object("ghidra.program.util", "ChangeManager")
             self.programChangeRecord = ghidra.import_module_object("ghidra.program.util", "ProgramChangeRecord")
             self.db = ghidra.import_module("ghidra.program.database")
-        def domainObjectChanged(self, ev):
-            funcEvents = [
+
+            # Init event lists
+            self.funcEvents = [
                 self.changeManager.DOCR_FUNCTION_CHANGED,
                 self.changeManager.DOCR_FUNCTION_BODY_CHANGED,
                 self.changeManager.DOCR_VARIABLE_REFERENCE_ADDED,
                 self.changeManager.DOCR_VARIABLE_REFERENCE_REMOVED
             ]
 
-            symDelEvents = [self.changeManager.DOCR_SYMBOL_REMOVED]
+            self.symDelEvents = [self.changeManager.DOCR_SYMBOL_REMOVED]
 
-            symChgEvents = [
+            self.symChgEvents = [
                 self.changeManager.DOCR_SYMBOL_ADDED,
                 self.changeManager.DOCR_SYMBOL_RENAMED,
                 self.changeManager.DOCR_SYMBOL_DATA_CHANGED
             ]
 
-            typeEvents = [
+            self.typeEvents = [
                 self.changeManager.DOCR_DATA_TYPE_CHANGED,
                 self.changeManager.DOCR_DATA_TYPE_REPLACED,
                 self.changeManager.DOCR_DATA_TYPE_RENAMED,
@@ -39,10 +40,15 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                 self.changeManager.DOCR_DATA_TYPE_MOVED,
                 self.changeManager.DOCR_DATA_TYPE_ADDED
             ]
-
+        def domainObjectChanged(self, ev):
             for record in ev:
                 # NOTE: This excludes type changes anything as they are DomainObjectChangeRecord
-
+                # print(f"Event type {record.getEventType()} caught:")
+                # print(f"\tNewValue: {record.getNewValue()}")
+                # print(f"\tOldValue: {record.getOldValue()}")
+                # print(f"\tObjectType: {type(record.getObject())}")
+                if record.getEventType() == 5:
+                    print(record)
                 if not self._interface.ghidra.isinstance(record, self.programChangeRecord):
                     continue
 
@@ -50,9 +56,9 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                 newValue = record.getNewValue()
                 obj = record.getObject()
 
-                if changeType in funcEvents:
+                if changeType in self.funcEvents:
                     pass
-                elif changeType in typeEvents:
+                elif changeType in self.typeEvents:
                     try:
                         struct = self._interface.structs[newValue.name]
                         # TODO: access old name indicate deletion
@@ -68,10 +74,12 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                     except KeyError:
                         pass
 
-                elif changeType in symDelEvents:
+                elif changeType in self.symDelEvents:
                     # Currently unused and unsupported
                     pass
-                elif changeType in symChgEvents:
+                elif changeType in self.symChgEvents:
+                    #if changeType == 52:
+                        #print(f"Record:\n{record}")
                     if obj is None and newValue is not None:
                         obj = newValue
                     if self._interface.ghidra.isinstance(obj, self.db.function.VariableDB):
