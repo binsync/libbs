@@ -51,15 +51,12 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                 obj = record.getObject()
 
                 if changeType in self.funcEvents:
-                    pass
-                elif changeType in self.typeEvents:
-                    try:
-                        struct = self._interface.structs[newValue.name]
-                        # TODO: access old name indicate deletion
-                        #self._interface.struct_changed(Struct(None, None, None), deleted=True)
-                        self._interface.struct_changed(struct)
-                    except KeyError:
-                        pass
+                    subType = record.getSubEventType()
+                    if subType == 5:
+                        # Function return type changed
+                        header = FunctionHeader(None, None, str(obj.getReturnType()))
+                        self._interface.function_header_changed(header)
+
                 elif changeType in self.typeEvents:
                     if changeType == self.changeManager.DOCR_SYMBOL_ADDRESS_CHANGED:
                         # stack variables change address when retyped!
