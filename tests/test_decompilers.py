@@ -128,6 +128,17 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.global_vars[g2_addr] = g2
         # assert len(hits[GlobalVariable]) == old_global_hits + 2
 
+        # function return type
+        main.header.type = 'long'
+        deci.functions[func_addr] = main
+
+        main.header.type = 'double'
+        deci.functions[func_addr] = main
+
+        first_type_change_func = hits[FunctionHeader][2]
+        assert first_type_change_func.header.type == 'long'
+        assert len(hits[FunctionHeader]) == 4
+
         # TODO: Fix CI for below
         main.stack_vars[-24].name = "named_char_array"
         main.stack_vars[-12].name = "named_int"

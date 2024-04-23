@@ -43,6 +43,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
             ]
         def domainObjectChanged(self, ev):
             for record in ev:
+                # NOTE: This excludes type changes anything as they are DomainObjectChangeRecord
                 if not self._interface.ghidra.isinstance(record, self.programChangeRecord):
                     continue
 
