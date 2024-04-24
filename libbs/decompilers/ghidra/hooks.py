@@ -73,7 +73,6 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                         self._interface.enum_changed(enum)
                     except KeyError:
                         pass
-
                 elif changeType in self.symDelEvents:
                     # Globals are deleted first then recreated
                     if self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
@@ -81,13 +80,15 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                         # deleted kwarg not yet handled by global_variable_changed
                         self._interface.global_variable_changed(removed, deleted=True)
                 elif changeType in self.symChgEvents:
-                    if changeType == self.changeManager.DOCR_SYMBOL_ADDED:
-                        # Global re-added: no way to get addr because obj is none
-                        gvar = GlobalVariable(None, newValue)
-                        self._interface.global_variable_changed(gvar)
+                    # For creation events, obj is stored in newValue
                     if obj is None and newValue is not None:
                         obj = newValue
-                    if self._interface.ghidra.isinstance(obj, self.db.function.VariableDB):
+
+                    if changeType == self.changeManager.DOCR_SYMBOL_ADDED:
+                        if self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
+                            gvar = GlobalVariable(obj.getAddress().getOffset(), obj.getName())
+                            self._interface.global_variable_changed(gvar)
+                    elif self._interface.ghidra.isinstance(obj, self.db.function.VariableDB):
                         parent_namespace = obj.getParentNamespace()
                         storage = obj.getVariableStorage()
                         if (
