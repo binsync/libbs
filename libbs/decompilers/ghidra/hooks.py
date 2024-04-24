@@ -75,11 +75,16 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                         pass
 
                 elif changeType in self.symDelEvents:
-                    # Currently unused and unsupported
-                    pass
+                    # Globals are deleted first then recreated
+                    if self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
+                        removed = GlobalVariable(obj.getAddress().getOffset(), obj.getName())
+                        # deleted kwarg not yet handled by global_variable_changed
+                        self._interface.global_variable_changed(removed, deleted=True)
                 elif changeType in self.symChgEvents:
-                    #if changeType == 52:
-                        #print(f"Record:\n{record}")
+                    if changeType == self.changeManager.DOCR_SYMBOL_ADDED:
+                        # Global re-added: no way to get addr because obj is none
+                        gvar = GlobalVariable(None, newValue)
+                        self._interface.global_variable_changed(gvar)
                     if obj is None and newValue is not None:
                         obj = newValue
                     if self._interface.ghidra.isinstance(obj, self.db.function.VariableDB):
@@ -110,11 +115,6 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                             # stackVar = StackVariable(None, None, typ, None, None)
                             # self._interface.stack_variable_changed(stackVar)
                             pass
-                        continue
-                    elif self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
-                        # TODO: Find trigger for global var changes
-                        # gVar = GlobalVariable(None, newValue)
-                        # self._interface.global_variable_changed(gVar)
                         continue
                     elif self._interface.ghidra.isinstance(obj, self.db.symbol.FunctionSymbol):
                         header = FunctionHeader(newValue, int(obj.getAddress().offset))
