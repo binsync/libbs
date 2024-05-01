@@ -42,13 +42,6 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
             ]
         def domainObjectChanged(self, ev):
             for record in ev:
-                # NOTE: This excludes type changes anything as they are DomainObjectChangeRecord
-                # print(f"Event type {record.getEventType()} caught:")
-                # print(f"\tNewValue: {record.getNewValue()}")
-                # print(f"\tOldValue: {record.getOldValue()}")
-                # print(f"\tObjectType: {type(record.getObject())}")
-                if record.getEventType() == 5:
-                    print(record)
                 if not self._interface.ghidra.isinstance(record, self.programChangeRecord):
                     continue
 
