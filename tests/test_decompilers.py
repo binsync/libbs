@@ -111,6 +111,16 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert first_changed_func.addr == func_addr
         assert len(hits[FunctionHeader]) == 2
 
+        # global var names
+        old_global_hits = len(hits[GlobalVariable])
+        g1 = deci.global_vars[0x4008e0]
+        g2 = deci.global_vars[0x601048]
+        g1.name = "gvar1"
+        g2.name = "gvar2"
+        deci.global_vars[0x4008e0] = g1
+        deci.global_vars[0x601048] = g2
+        assert len(hits[GlobalVariable]) == old_global_hits + 2
+
         # TODO: Fix CI for below
         main.stack_vars[-24].name = "named_char_array"
         main.stack_vars[-12].name = "named_int"
@@ -129,16 +139,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # func_args[1].name = "changed_name2"
         # deci.functions[func_addr] = main
 
-        # TODO: add global var support
-        # g1 = deci.global_vars[0x4008e0]
-        # g2 = deci.global_vars[0x601048]
-        # g1.name = "gvar1"
-        # g2.name = "gvar2"
-        # deci.global_vars[0x4008e0] = g1
-        # deci.global_vars[0x601048] = g2
-
         #assert hits[Struct] == 2 # One change results in 2 hits because the struct is first removed and then added again.
-        #assert hits[GlobalVariable] == 2
 
         deci.shutdown()
 
