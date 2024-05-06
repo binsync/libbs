@@ -42,11 +42,6 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
             ]
         def domainObjectChanged(self, ev):
             for record in ev:
-                # print(f"Obj caught: {record.getObject()}")
-                # print(f"Obj type: {type(record.getObject())}")
-                # print(f"Old value: {record.getOldValue()}")
-                # print(f"New value: {record.getNewValue()}")
-                # print(f"Event Type: {record.getEventType()}")
                 if not self._interface.ghidra.isinstance(record, self.programChangeRecord):
                     continue
 
@@ -74,9 +69,6 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                 elif changeType in self.symDelEvents:
                     # Globals are deleted first then recreated
                     if self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
-                        # print(f"Obj caught: {obj}")
-                        # print(f"Obj type: {type(obj)}")
-                        # print(f"New value: {newValue}")
                         removed = GlobalVariable(obj.getAddress().getOffset(), obj.getName())
                         # deleted kwarg not yet handled by global_variable_changed
                         self._interface.global_variable_changed(removed, deleted=True)
@@ -88,14 +80,17 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                     if changeType == self.changeManager.DOCR_SYMBOL_ADDED:
                         if self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
                             gvar = GlobalVariable(obj.getAddress().getOffset(), obj.getName())
-                            # print(f"Obj caught: {obj}")
-                            # print(f"Obj type: {type(obj)}")
-                            # print(f"New value: {newValue}")
                             self._interface.global_variable_changed(gvar)
                     elif changeType == self.changeManager.DOCR_SYMBOL_RENAMED:
                         if self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
                             gvar = GlobalVariable(obj.getAddress().getOffset(), newValue)
                             self._interface.global_variable_changed(gvar)
+
+                        if self._interface.ghidra.isinstance(obj, self.db.symbol.FunctionSymbol):
+                            header = FunctionHeader(newValue, int(obj.getAddress().offset))
+                            self._interface.function_header_changed(
+                                self._interface.art_lifter.lift(header)
+                            )
                     elif self._interface.ghidra.isinstance(obj, self.db.function.VariableDB):
                         parent_namespace = obj.getParentNamespace()
                         storage = obj.getVariableStorage()
@@ -124,27 +119,11 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                             # stackVar = StackVariable(None, None, typ, None, None)
                             # self._interface.stack_variable_changed(stackVar)
                             pass
-                        continue
-                    elif self._interface.ghidra.isinstance(obj, self.db.symbol.FunctionSymbol):
-                        print(f"Obj caught: {record.getObject()}")
-                        print(f"Obj type: {type(record.getObject())}")
-                        print(f"Old value: {record.getOldValue()}")
-                        print(f"New value: {record.getNewValue()}")
-                        print(f"Event Type: {record.getEventType()}")
-                        header = FunctionHeader(newValue, int(obj.getAddress().offset))
-                        self._interface.function_header_changed(
-                            self._interface.art_lifter.lift(header)
-                        )
                     elif self._interface.ghidra.isinstance(obj, self.db.function.FunctionDB):
                         # TODO: Fix argument name support
-                        print(f"Obj caught: {record.getObject()}")
-                        print(f"Obj type: {type(record.getObject())}")
-                        print(f"Old value: {record.getOldValue()}")
-                        print(f"New value: {record.getNewValue()}")
-                        print(f"Event Type: {record.getEventType()}")
-                        changed_arg = FunctionArgument(None, newValue, None, None)
-                        header = FunctionHeader(None, None, args={None: changed_arg})
-                        self._interface.function_header_changed(header)
+                        # changed_arg = FunctionArgument(None, newValue, None, None)
+                        # header = FunctionHeader(None, None, args={None: changed_arg})
+                        # self._interface.function_header_changed(header)
                         pass
                     else:
                         continue
