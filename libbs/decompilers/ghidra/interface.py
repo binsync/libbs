@@ -512,7 +512,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
             "if ghidra.isinstance(dType, EnumDBType)]",
         ghidra=self.ghidra,
-        EnumDBType=self.ghidra.import_module_object("ghidra.program.model.data", "EnumDB")
+        EnumDBType=self.ghidra.import_module_object("ghidra.program.database.data", "EnumDB")
         )
         enums = {}
         for name in names:
