@@ -516,8 +516,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
         enums = {}
         for name in names:
-            # XXX: we dont really know why this is here, but we assume its because you cant have
-            # an enum nested in a folder in ghidra
+            # Filter out enums nested in categories as currently they are unsupported by the current method of updating
+            # the enum name
             if name.count("/") != 1:
                 continue
 
