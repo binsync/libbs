@@ -251,27 +251,27 @@ class DecompilerInterface:
         return True
 
     def decompile(self, addr: int) -> Optional[str]:
-        addr = self.art_lifter.lower_addr(addr)
+        lowered_addr = self.art_lifter.lower_addr(addr)
         if not self.decompiler_available:
             _l.error("Decompiler is not available.")
             return None
 
         # TODO: make this a function call after transitioning decompiler artifacts to LiveState
-        for func_addr, func in self._functions().items():
-            if func.addr <= addr < (func.addr + func.size):
+        sorted_funcs = sorted(self._functions().items(), key=lambda x: x[0])
+        for func_addr, func in sorted_funcs:
+            if func.addr <= lowered_addr < (func.addr + func.size):
                 break
         else:
             func = None
 
         if func is None:
-            self.warning(f"Failed to find function for address {hex(addr)}")
+            self.warning(f"Failed to find function for address {hex(lowered_addr)}")
             return None
 
-        func = self.art_lifter.lower(func)
         try:
             decompilation = self._decompile(func)
         except Exception as e:
-            self.warning(f"Failed to decompile function at {hex(addr)}: {e}")
+            self.warning(f"Failed to decompile function at {hex(lowered_addr)}: {e}")
             decompilation = None
 
         return decompilation
@@ -290,7 +290,7 @@ class DecompilerInterface:
     def _decompile(self, function: Function) -> Optional[str]:
         raise NotImplementedError
 
-    def get_decompilation_object(self, function: Function) -> Optional[object]:
+    def get_decompilation_object(self, function: Function, **kwargs) -> Optional[object]:
         raise NotImplementedError
 
     #
@@ -458,35 +458,55 @@ class DecompilerInterface:
         return False
 
     #
-    # Change Callback API
+    # Change Callback API:
+    # Every callback in this group assumes the input will be decompiler-specific (lowered) and will
+    # lift it ONCE inside this function. Each one will return the lifted form, for easier overriding.
     #
 
-    def function_header_changed(self, fheader: FunctionHeader, **kwargs):
+    def function_header_changed(self, fheader: FunctionHeader, **kwargs) -> FunctionHeader:
+        lifted_fheader = self.art_lifter.lift(fheader)
         for callback_func in self.artifact_write_callbacks[FunctionHeader]:
-            threading.Thread(target=callback_func, args=(fheader,), kwargs=kwargs, daemon=True).start()
+            threading.Thread(target=callback_func, args=(lifted_fheader,), kwargs=kwargs, daemon=True).start()
 
-    def stack_variable_changed(self, svar: StackVariable, **kwargs):
+        return lifted_fheader
+
+    def stack_variable_changed(self, svar: StackVariable, **kwargs) -> StackVariable:
+        lifted_svar = self.art_lifter.lift(svar)
         for callback_func in self.artifact_write_callbacks[StackVariable]:
-            threading.Thread(target=callback_func, args=(svar,), kwargs=kwargs, daemon=True).start()
+            threading.Thread(target=callback_func, args=(lifted_svar,), kwargs=kwargs, daemon=True).start()
 
-    def comment_changed(self, comment: Comment, deleted=False, **kwargs):
+        return lifted_svar
+
+    def comment_changed(self, comment: Comment, deleted=False, **kwargs) -> Comment:
         kwargs["deleted"] = deleted
+        lifted_cmt = self.art_lifter.lift(comment)
         for callback_func in self.artifact_write_callbacks[Comment]:
-            threading.Thread(target=callback_func, args=(comment,), kwargs=kwargs, daemon=True).start()
+            threading.Thread(target=callback_func, args=(lifted_cmt,), kwargs=kwargs, daemon=True).start()
 
-    def struct_changed(self, struct: Struct, deleted=False, **kwargs):
+        return lifted_cmt
+
+    def struct_changed(self, struct: Struct, deleted=False, **kwargs) -> Struct:
         kwargs["deleted"] = deleted
+        lifted_struct = self.art_lifter.lift(struct)
         for callback_func in self.artifact_write_callbacks[Struct]:
-            threading.Thread(target=callback_func, args=(struct,), kwargs=kwargs, daemon=True).start()
+            threading.Thread(target=callback_func, args=(lifted_struct,), kwargs=kwargs, daemon=True).start()
 
-    def enum_changed(self, enum: Enum, deleted=False, **kwargs):
+        return lifted_struct
+
+    def enum_changed(self, enum: Enum, deleted=False, **kwargs) -> Enum:
         kwargs["deleted"] = deleted
+        lifted_enum = self.art_lifter.lift(enum)
         for callback_func in self.artifact_write_callbacks[Enum]:
-            threading.Thread(target=callback_func, args=(enum,), kwargs=kwargs, daemon=True).start()
+            threading.Thread(target=callback_func, args=(lifted_enum,), kwargs=kwargs, daemon=True).start()
 
-    def global_variable_changed(self, gvar: GlobalVariable, **kwargs):
+        return lifted_enum
+
+    def global_variable_changed(self, gvar: GlobalVariable, **kwargs) -> GlobalVariable:
+        lifted_gvar = self.art_lifter.lift(gvar)
         for callback_func in self.artifact_write_callbacks[GlobalVariable]:
-            threading.Thread(target=callback_func, args=(gvar,), kwargs=kwargs, daemon=True).start()
+            threading.Thread(target=callback_func, args=(lifted_gvar,), kwargs=kwargs, daemon=True).start()
+
+        return lifted_gvar
 
     #
     # Special Loggers and Printers

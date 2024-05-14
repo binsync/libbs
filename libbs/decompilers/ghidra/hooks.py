@@ -85,12 +85,9 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                         if self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
                             gvar = GlobalVariable(obj.getAddress().getOffset(), newValue)
                             self._interface.global_variable_changed(gvar)
-
                         if self._interface.ghidra.isinstance(obj, self.db.symbol.FunctionSymbol):
                             header = FunctionHeader(newValue, int(obj.getAddress().offset))
-                            self._interface.function_header_changed(
-                                self._interface.art_lifter.lift(header)
-                            )
+                            self._interface.function_header_changed(header)
                     elif self._interface.ghidra.isinstance(obj, self.db.function.VariableDB):
                         parent_namespace = obj.getParentNamespace()
                         storage = obj.getVariableStorage()
@@ -99,14 +96,12 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                             and (parent_namespace is not None)
                         ):
                             self._interface.stack_variable_changed(
-                                self._interface.art_lifter.lift(
-                                    StackVariable(
-                                        int(obj.variableStorage.stackOffset),
-                                        newValue,
-                                        None,
-                                        None,
-                                        int(obj.parentNamespace.entryPoint.offset)
-                                    )
+                                StackVariable(
+                                    int(obj.variableStorage.stackOffset),
+                                    newValue,
+                                    None,
+                                    None,
+                                    int(obj.parentNamespace.entryPoint.offset)
                                 )
                             )
                         else:
@@ -130,6 +125,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
 
     data_monitor = DataMonitor(interface)
     return data_monitor
+
 
 def create_context_action(ghidra: "GhidraAPIWrapper", name, action_string, callback_func, category=None):
     ProgramLocationContextAction = ghidra.import_module_object("ghidra.app.context", "ProgramLocationContextAction")

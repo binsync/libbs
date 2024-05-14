@@ -33,14 +33,10 @@ class ArtifactLifter:
         pass
 
     def lift_addr(self, addr: int) -> int:
-        # TODO: there seems to be a bug in how we are using this in BinSync/DAILA. When used in DAILA,
-        #   there are cases where the addr is < binary_base_addr, but we still need to lift it, but removing this
-        #   check breaks BinSync. Need to investigate further.
         if addr < self.deci.binary_base_addr:
-            self.deci.debug(f"Lifting an address that appears already lifted: {addr}...")
-            return addr
-        else:
-            return addr - self.deci.binary_base_addr
+            self.deci.warning(f"Lifting an address that appears already lifted: {addr}...")
+
+        return addr - self.deci.binary_base_addr
 
     def lift_stack_offset(self, offset: int, func_addr: int) -> int:
         pass
@@ -49,12 +45,10 @@ class ArtifactLifter:
         pass
 
     def lower_addr(self, addr: int) -> int:
-        # TODO: see comment in lift_addr
         if addr >= self.deci.binary_base_addr:
-            self.deci.debug(f"Lowering an address that appears already lowered: {addr}...")
-            return addr
-        else:
-            return addr + self.deci.binary_base_addr
+            self.deci.warning(f"Lowering an address that appears already lowered: {addr}...")
+
+        return addr + self.deci.binary_base_addr
 
     def lower_stack_offset(self, offset: int, func_addr: int) -> int:
         pass

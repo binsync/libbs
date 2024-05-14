@@ -53,13 +53,11 @@ class DataMonitor(BinaryDataNotification):
                         continue
 
                     self._interface.comment_changed(
-                        self._interface.art_lifter.lift(
-                            Comment(
-                                addr,
-                                str(curr_comment) if curr_comment else "",
-                                decompiled=True,
-                                func_addr=func_addr
-                            )
+                        Comment(
+                            addr,
+                            str(curr_comment) if curr_comment else "",
+                            decompiled=True,
+                            func_addr=func_addr
                         ),
                         deleted=curr_comment is None,
                     )
@@ -71,9 +69,7 @@ class DataMonitor(BinaryDataNotification):
 
                     if curr_comment:
                         self._interface.comment_changed(
-                            self._interface.art_lifter.lift(
-                                Comment(addr, str(curr_comment), decompiled=True, func_addr=func_addr)
-                            )
+                            Comment(addr, str(curr_comment), decompiled=True, func_addr=func_addr)
                         )
 
                 self._seen_comments[func_addr] = current_comments
@@ -119,9 +115,7 @@ class DataMonitor(BinaryDataNotification):
                         diff_arg.size = int(new_arg.size)
 
                     self._interface.function_header_changed(
-                        self._interface.art_lifter.lift(
-                            FunctionHeader(None, old_header.addr, args={off: diff_arg})
-                        )
+                        FunctionHeader(None, old_header.addr, args={off: diff_arg})
                     )
 
                 # new func args added to header
@@ -130,12 +124,9 @@ class DataMonitor(BinaryDataNotification):
                         continue
 
                     self._interface.function_header_changed(
-                        self._interface.art_lifter.lift(
-                            FunctionHeader(None, old_header.addr, args={
-                                    off: FunctionArgument(off, str(new_arg.name), str(new_arg.type), int(new_arg.size))
-                                }
-                            )
-                        )
+                        FunctionHeader(None, old_header.addr, args={
+                            off: FunctionArgument(off, str(new_arg.name), str(new_arg.type), int(new_arg.size))
+                        })
                     )
 
             #
@@ -162,18 +153,14 @@ class DataMonitor(BinaryDataNotification):
                     if old_sv.type != new_sv.type:
                         diff_sv.type = str(new_sv.type)
 
-                    self._interface.stack_variable_changed(
-                        self._interface.art_lifter.lift(diff_sv)
-                    )
+                    self._interface.stack_variable_changed(diff_sv)
 
                 for off, new_sv in new_svs.items():
                     if off in old_svs or new_sv.name in header_args_names:
                         continue
 
                     self._interface.stack_variable_changed(
-                        self._interface.art_lifter.lift(
-                            StackVariable(off, str(new_sv.name), str(new_sv.type), new_sv.size, bs_func.addr)
-                        )
+                        StackVariable(off, str(new_sv.name), str(new_sv.type), new_sv.size, bs_func.addr)
                     )
 
             self._changing_func_pre_change = None
@@ -191,15 +178,13 @@ class DataMonitor(BinaryDataNotification):
             func = view.get_function_at(sym.address)
             bs_func = BinjaInterface.bn_func_to_bs(func)
             self._interface.function_header_changed(
-                self._interface.art_lifter.lift(FunctionHeader(bs_func.name, bs_func.addr))
+                FunctionHeader(bs_func.name, bs_func.addr)
             )
         elif sym.type == SymbolType.DataSymbol:
             l.debug(f"   -> Data Symbol")
             var: binaryninja.DataVariable = view.get_data_var_at(sym.address)
             self._interface.global_variable_changed(
-                self._interface.art_lifter.lift(
-                    GlobalVariable(int(sym.address), str(var.name), type_=str(var.type), size=int(var.type.width))
-                )
+                GlobalVariable(int(sym.address), str(var.name), type_=str(var.type), size=int(var.type.width))
             )
         else:
             print(f"   -> Other Symbol: {sym.type}")
@@ -210,11 +195,7 @@ class DataMonitor(BinaryDataNotification):
         name = str(name)
         if isinstance(type_, StructureType):
             bs_struct = BinjaInterface.bn_struct_to_bs(name, type_)
-            self._interface.struct_changed(
-                self._interface.art_lifter.lift(bs_struct)
-            )
+            self._interface.struct_changed(bs_struct)
         elif isinstance(type_, EnumerationType):
             bs_enum = BinjaInterface.bn_enum_to_bs(name, type_)
-            self._interface.enum_changed(
-                self._interface.art_lifter.lift(bs_enum)
-            )
+            self._interface.enum_changed(bs_enum)
