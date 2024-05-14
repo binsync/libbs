@@ -512,12 +512,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
             "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
             "if ghidra.isinstance(dType, EnumDBType)]",
         ghidra=self.ghidra,
-        EnumDBType=self.ghidra.import_module_object("ghidra.program.model.data", "EnumDB")
+        EnumDBType=self.ghidra.import_module_object("ghidra.program.database.data", "EnumDB")
         )
         enums = {}
         for name in names:
-            # XXX: we dont really know why this is here, but we assume its because you cant have
-            # an enum nested in a folder in ghidra
+            # Filter out enums nested in categories as currently they are unsupported by the current method of updating
+            # the enum name
             if name.count("/") != 1:
                 continue
 
