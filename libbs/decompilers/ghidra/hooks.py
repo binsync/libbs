@@ -52,7 +52,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
 
                 if changeType in self.funcEvents:
                     subType = record.getSubEventType()
-                    if subType == 5:
+                    if subType == self.changeManager.FUNCTION_CHANGED_RETURN:
                         # Function return type changed
                         header = FunctionHeader(None, None, str(obj.getReturnType()))
                         self._interface.function_header_changed(header)
