@@ -109,13 +109,13 @@ class AngrInterface(DecompilerInterface):
         if function.dec_obj is not None:
             dec_text = function.dec_obj.text
         else:
-            function.dec_obj = self.get_decompilation_object(function)
+            function.dec_obj = self.get_decompilation_object(function, do_lower=False)
             dec_text = function.dec_obj.text if function.dec_obj else None
 
         return dec_text
 
-    def get_decompilation_object(self, function: Function) -> Optional[object]:
-        func_addr = self.art_lifter.lower_addr(function.addr)
+    def get_decompilation_object(self, function: Function, do_lower=True, **kwargs) -> Optional[object]:
+        func_addr = self.art_lifter.lower_addr(function.addr) if do_lower else function.addr
         func = self.main_instance.project.kb.functions.get(func_addr, None)
         if func is None:
             return None
@@ -195,14 +195,13 @@ class AngrInterface(DecompilerInterface):
     #
 
     def _set_function(self, func: Function, **kwargs) -> bool:
-        func_addr = self.art_lifter.lower_addr(func.addr)
-        angr_func = self.main_instance.project.kb.functions[func_addr]
+        angr_func = self.main_instance.project.kb.functions[func.addr]
 
         # re-decompile a function if needed
         decompilation = self.decompile_function(angr_func)
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
         if not self.headless:
-            self.refresh_decompilation(func_addr)
+            self.refresh_decompilation(func.addr)
 
         return changes
 
