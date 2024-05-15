@@ -613,7 +613,7 @@ class BridgeResponse(object):
             # will wait forever.
             timeout = None
 
-        if not self.event.wait(timeout):
+        if not self.event.wait(None):
             raise BridgeTimeoutException(
                 "Didn't receive response {} before timeout".format(self.response_id)
             )

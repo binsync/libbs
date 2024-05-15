@@ -254,8 +254,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     def _set_function(self, func: Function, **kwargs) -> bool:
-        func_addr = self.art_lifter.lower_addr(func.header.addr)
-        decompilation = self._ghidra_decompile(self._get_nearest_function(func_addr))
+        decompilation = self._ghidra_decompile(self._get_nearest_function(func.addr))
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
         return changes
 

@@ -114,12 +114,14 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # global var names
         # TODO: The gvar test cant function until gvar setting is fixed
         old_global_hits = len(hits[GlobalVariable])
-        g1 = deci.global_vars[0x4008e0]
-        g2 = deci.global_vars[0x601048]
+        g1_addr = deci.art_lifter.lift_addr(0x4008e0)
+        g2_addr = deci.art_lifter.lift_addr(0x601048)
+        g1 = deci.global_vars[g1_addr]
+        g2 = deci.global_vars[g2_addr]
         g1.name = "gvar1"
         g2.name = "gvar2"
-        deci.global_vars[0x4008e0] = g1
-        deci.global_vars[0x601048] = g2
+        deci.global_vars[g1_addr] = g1
+        deci.global_vars[g2_addr] = g2
         # assert len(hits[GlobalVariable]) == old_global_hits + 2
 
         # TODO: Fix CI for below
