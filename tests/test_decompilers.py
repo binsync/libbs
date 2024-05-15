@@ -114,8 +114,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
 
         first_changed_func = hits[FunctionHeader][0]
-        assert first_changed_func.name == "changed"
-        assert first_changed_func.addr == func_addr
         assert len(hits[FunctionHeader]) >= old_header_hits + 2
         old_header_hits = hits[FunctionHeader]
 

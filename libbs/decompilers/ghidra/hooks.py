@@ -134,16 +134,6 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                                     int(obj.parentNamespace.entryPoint.offset)
                                 )
                             )
-                        else:
-                            # TODO: figure out how to differentiate type changes
-                            # print(f"VariableSymbolDB caught: {obj}")
-                            # print(f"Obj type: {type(obj)}")
-                            # print(f"Old value: {oldValue}")
-                            # print(f"New value: {newValue}")
-                            # typ = obj.getDataType()
-                            # stackVar = StackVariable(None, None, typ, None, None)
-                            # self._interface.stack_variable_changed(stackVar)
-                            pass
                     elif self._interface.ghidra.isinstance(obj, self.db.function.FunctionDB):
                         # TODO: Fix argument name support
                         # changed_arg = FunctionArgument(None, newValue, None, None)
