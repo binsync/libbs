@@ -483,7 +483,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
         handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
         enumType = self.ghidra.import_module_object("ghidra.program.model.data", "EnumDataType")
         categoryPath = self.ghidra.import_module_object("ghidra.program.model.data", "CategoryPath")
-        ghidra_enum = enumType(categoryPath('/'), enum.name, 4)
+
+        # Parse the libbs Enum name into category path and raw enum name for proper Enum creation
+        split = corrected_enum_name.split('/')
+        unpathed_name = split[-1]
+        category_path = '/'.join(split[:-1])
+        ghidra_enum = enumType(categoryPath(category_path), unpathed_name, 4)
         for m_name, m_val in enum.members.items():
             ghidra_enum.add(m_name, m_val)
 
@@ -515,11 +520,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
         enums = {}
         for name in names:
-            # Filter out enums nested in categories as currently they are unsupported by the current method of updating
-            # the enum name
-            if name.count("/") != 1:
-                continue
-
             enum_name = name[1:]
             is_valid_enum = self._get_ghidra_enum(enum_name)
             if is_valid_enum is None:
