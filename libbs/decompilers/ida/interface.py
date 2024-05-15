@@ -131,8 +131,8 @@ class IDAInterface(DecompilerInterface):
 
         return xrefs
 
-    def get_decompilation_object(self, function: Function) -> Optional[object]:
-        function = self.art_lifter.lower(function)
+    def get_decompilation_object(self, function: Function, do_lower=True, **kwargs) -> Optional[object]:
+        function = self.art_lifter.lower(function) if do_lower else function
         dec = idaapi.decompile(function.addr)
         if dec is None:
             return None

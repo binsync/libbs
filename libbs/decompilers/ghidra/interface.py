@@ -212,7 +212,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return self.ghidra.connected
 
     def _decompile(self, function: Function) -> Optional[str]:
-        dec_obj = self.get_decompilation_object(function)
+        dec_obj = self.get_decompilation_object(function, do_lower=False)
         if dec_obj is None:
             return None
 
@@ -222,8 +222,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return str(dec_func.getC())
 
-    def get_decompilation_object(self, function: Function) -> Optional[object]:
-        return self._ghidra_decompile(self._get_nearest_function(self.art_lifter.lower_addr(function.addr)))
+    def get_decompilation_object(self, function: Function, do_lower=True) -> Optional[object]:
+        lowered_addr = self.art_lifter.lower_addr(function.addr) if do_lower else function.addr
+        return self._ghidra_decompile(self._get_nearest_function(lowered_addr))
 
     #
     # Extra API
@@ -253,8 +254,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     def _set_function(self, func: Function, **kwargs) -> bool:
-        func_addr = self.art_lifter.lower_addr(func.header.addr)
-        decompilation = self._ghidra_decompile(self._get_nearest_function(func_addr))
+        decompilation = self._ghidra_decompile(self._get_nearest_function(func.addr))
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
         return changes
 
@@ -357,6 +357,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
 
         # func name
+        self.info(f"Setting function header: {fheader}")
         if fheader.name and fheader.name != ghidra_func.getName():
             with Transaction(self.ghidra, msg="BS::set_function_header::set_name"):
                 ghidra_func.setName(fheader.name, src_type.USER_DEFINED)
@@ -377,10 +378,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
             high_func_util = self.ghidra.import_module_object("ghidra.program.model.pcode", "HighFunctionDBUtil")
             params = ghidra_func.getParameters()
             if len(params) == 0:
-                self.info("Commiting some atuff")
                 with Transaction(self.ghidra, msg="BS::set_function_header::update_params"):
                     high_func_util.commitParamsToDatabase(decompilation.highFunction, True, src_type.USER_DEFINED)
-                self.info("Done commiting ")
 
             with Transaction(self.ghidra, msg="BS::set_function_header::set_arguments"):
                 for offset, param in zip(fheader.args, params):
