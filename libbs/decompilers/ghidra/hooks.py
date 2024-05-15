@@ -67,14 +67,12 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                                 (newValue is not None) and (storage is not None) and bool(storage.isStackStorage())
                                 and (parent_namespace is not None)
                             ):
-                                sv = self._interface.art_lifter.lift(
-                                    StackVariable(
-                                        int(storage.stackOffset),
-                                        None,
-                                        str(obj.getDataType()),
-                                        int(storage.size),
-                                        int(obj.parentNamespace.entryPoint.offset)
-                                    )
+                                sv = StackVariable(
+                                    int(storage.stackOffset),
+                                    None,
+                                    str(obj.getDataType()),
+                                    int(storage.size),
+                                    int(obj.parentNamespace.entryPoint.offset)
                                 )
                                 self._interface.stack_variable_changed(
                                     sv
