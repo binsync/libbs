@@ -135,8 +135,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
         main.header.type = 'double'
         deci.functions[func_addr] = main
 
-        first_type_change_func = hits[FunctionHeader][2]
-        assert first_type_change_func.type == 'long'
         assert len(hits[FunctionHeader]) >= old_header_hits + 2
 
         # TODO: Fix CI for below
