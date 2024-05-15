@@ -67,6 +67,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.enums[enum.name] = enum
         assert deci.enums[enum.name] == enum
 
+        nested_enum = Enum("SomeEnums/nested_enum", {"field": 0, "another_field": 2, "third_field": 3})
+        deci.enums[nested_enum.name] = nested_enum
+        assert deci.enums[nested_enum.name] == nested_enum
+
         # gvar_addr = deci.art_lifter.lift_addr(0x4008e0)
         # g1 = deci.global_vars[gvar_addr]
         # g1.name = "gvar1"

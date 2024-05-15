@@ -67,6 +67,34 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                                 (newValue is not None) and (storage is not None) and bool(storage.isStackStorage())
                                 and (parent_namespace is not None)
                             ):
+                                sv = StackVariable(
+                                    int(storage.stackOffset),
+                                    None,
+                                    str(obj.getDataType()),
+                                    int(storage.size),
+                                    int(obj.parentNamespace.entryPoint.offset)
+                                )
+                                self._interface.stack_variable_changed(
+                                    sv
+                                )
+
+                    else:
+                        try:
+                            struct = self._interface.structs[newValue.name]
+                            # TODO: access old name indicate deletion
+                            #self._interface.struct_changed(Struct(None, None, None), deleted=True)
+                            self._interface.struct_changed(struct)
+                        except KeyError:
+                            pass
+                    if changeType == self.changeManager.DOCR_SYMBOL_ADDRESS_CHANGED:
+                        # stack variables change address when retyped!
+                        if self._interface.ghidra.isinstance(obj, self.db.function.VariableDB):
+                            parent_namespace = obj.getParentNamespace()
+                            storage = obj.getVariableStorage()
+                            if (
+                                (newValue is not None) and (storage is not None) and bool(storage.isStackStorage())
+                                and (parent_namespace is not None)
+                            ):
                                 sv = self._interface.art_lifter.lift(
                                     StackVariable(
                                         int(storage.stackOffset),
