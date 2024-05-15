@@ -33,6 +33,7 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
             ]
 
             self.typeEvents = [
+                self.changeManager.DOCR_SYMBOL_ADDRESS_CHANGED,
                 self.changeManager.DOCR_DATA_TYPE_CHANGED,
                 self.changeManager.DOCR_DATA_TYPE_REPLACED,
                 self.changeManager.DOCR_DATA_TYPE_RENAMED,
@@ -59,13 +60,45 @@ def create_data_monitor(ghidra: "GhidraAPIWrapper", interface: "GhidraDecompiler
                         self._interface.struct_changed(struct)
                     except KeyError:
                         pass
+                elif changeType in self.typeEvents:
+                    if changeType == self.changeManager.DOCR_SYMBOL_ADDRESS_CHANGED:
+                        # stack variables change address when retyped!
+                        if self._interface.ghidra.isinstance(obj, self.db.function.VariableDB):
+                            parent_namespace = obj.getParentNamespace()
+                            storage = obj.getVariableStorage()
+                            if (
+                                (newValue is not None) and (storage is not None) and bool(storage.isStackStorage())
+                                and (parent_namespace is not None)
+                            ):
+                                sv = self._interface.art_lifter.lift(
+                                    StackVariable(
+                                        int(storage.stackOffset),
+                                        None,
+                                        str(obj.getDataType()),
+                                        int(storage.size),
+                                        int(obj.parentNamespace.entryPoint.offset)
+                                    )
+                                )
+                                self._interface.stack_variable_changed(
+                                    sv
+                                )
 
-                    try:
-                        enum = self._interface.enums[newValue.name]
-                        #self._interface.enum_changed(Enum(None, None), deleted=True)
-                        self._interface.enum_changed(enum)
-                    except KeyError:
-                        pass
+                    else:
+                        try:
+                            struct = self._interface.structs[newValue.name]
+                            # TODO: access old name indicate deletion
+                            #self._interface.struct_changed(Struct(None, None, None), deleted=True)
+                            self._interface.struct_changed(struct)
+                        except KeyError:
+                            pass
+
+                        try:
+                            enum = self._interface.enums[newValue.name]
+                            #self._interface.enum_changed(Enum(None, None), deleted=True)
+                            self._interface.enum_changed(enum)
+                        except KeyError:
+                            pass
+
                 elif changeType in self.symDelEvents:
                     # Globals are deleted first then recreated
                     if self._interface.ghidra.isinstance(obj, self.db.symbol.CodeSymbol):
