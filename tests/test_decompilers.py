@@ -111,7 +111,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         first_changed_func = hits[FunctionHeader][0]
         assert len(hits[FunctionHeader]) >= old_header_hits + 2
-        old_header_hits = hits[FunctionHeader]
+        old_header_hits = len(hits[FunctionHeader])
 
         # global var names
         # TODO: The gvar test cant function until gvar setting is fixed
