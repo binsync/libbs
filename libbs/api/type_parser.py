@@ -15,14 +15,15 @@ l = logging.getLogger(__name__)
 
 
 class CType:
-    def __init__(self,
-                 type_=None,
-                 size=0,
-                 is_primitive=True,
-                 is_array=False,
-                 is_ptr=False,
-                 is_unknown=False
-                 ):
+    def __init__(
+        self,
+        type_=None,
+        size=0,
+        is_primitive=True,
+        is_array=False,
+        is_ptr=False,
+        is_unknown=False
+    ):
         self.type = type_
         self._size = size
 
@@ -70,18 +71,18 @@ class CTypeParser:
     It is highly simplified and drops a lot of support for real declaration parsing (like a struct dec).
     Instead, we just use it to parse types.
     """
-    def __init__(self,
-                 sizeof_ptr=8,
-                 sizeof_long=8,
-                 sizeof_double=8,
-                 sizeof_int=4,
-                 sizeof_float=4,
-                 sizeof_short=2,
-                 sizeof_char=1,
-                 sizeof_bool=1,
-                 extra_types=None
-                 ):
-
+    def __init__(
+        self,
+        sizeof_ptr=8,
+        sizeof_long=8,
+        sizeof_double=8,
+        sizeof_int=4,
+        sizeof_float=4,
+        sizeof_short=2,
+        sizeof_char=1,
+        sizeof_bool=1,
+        extra_types=None
+    ):
         # sizes
         self.sizeof_ptr = sizeof_ptr
         self.sizeof_long = sizeof_long
@@ -105,6 +106,7 @@ class CTypeParser:
         self.BASIC_TYPES = {}
         self.STDINT_TYPES = {}
         self.extra_types = extra_types or {}
+        self.SIZE_TO_TYPES = {}
         self._init_all_types()
 
     def _init_all_types(self):
@@ -166,7 +168,11 @@ class CTypeParser:
         self.ALL_TYPES.update(self.STDINT_TYPES)
         self.ALL_TYPES.update(self.extra_types)
 
-    def parse_type(self, defn, preprocess=True, predefined_types=None, arch=None):  # pylint:disable=unused-argument
+        for name, ctype in self.ALL_TYPES.items():
+            if name.startswith("unsigned"):
+                self.SIZE_TO_TYPES[ctype.size] = ctype
+
+    def parse_type(self, defn, preprocess=True, predefined_types=None, arch=None) -> Optional[CType]:  # pylint:disable=unused-argument
         """
         Parse a simple type expression into a SimType
 
@@ -327,3 +333,19 @@ class CTypeParser:
             return self._parse_const(c.expr, extra_types=extra_types)
         else:
             raise ValueError(c)
+
+    def size_to_type(self, size: int) -> CType:
+        if not size:
+            raise ValueError("A type size must be greater than 0")
+
+        ctype = self.SIZE_TO_TYPES.get(size, None)
+        if ctype is None:
+            # one of two possible things have happend here:
+            # 1. this is a type that is larger than the simple types, in which case it's an array
+            # 2. this is a type with a non-aligned size, in which case we default to an array as well
+            array_size = size // self.sizeof_char
+            ctype = self.parse_type(f"char[{array_size}]")
+            if ctype is None:
+                raise RuntimeError(f"Failed to create a CType of array size {array_size}")
+
+        return ctype

@@ -15,8 +15,14 @@ class Patch(Artifact):
         "bytes",
     )
 
-    def __init__(self, addr, bytes_, name=None, last_change=None):
-        super(Patch, self).__init__(last_change=last_change)
+    def __init__(
+        self,
+        addr: int = None,
+        bytes_: bytes = None,
+        name: str = None,
+        **kwargs
+    ):
+        super(Patch, self).__init__(**kwargs)
         self.addr = addr
         self.name = name
         self.bytes = bytes_
@@ -24,22 +30,16 @@ class Patch(Artifact):
     def __str__(self):
         return f"<Patch: {self.name}@{hex(self.addr)} len={len(self.bytes)}>"
 
-    def __repr__(self):
-        return self.__str__()
-
     def __getstate__(self):
-        return {
-            "name": self.name,
-            "addr": hex(self.addr),
-            "bytes": codecs.encode(self.bytes, "hex"),
-            "last_change": self.last_change
-        }
+        data_dict = super().__getstate__()
+        data_dict["bytes"] = codecs.encode(self.bytes, "hex").decode()
+        return data_dict
 
-    @classmethod
-    def parse(cls, s):
-        patch = Patch(None, None, None)
-        patch.__setstate__(toml.loads(s))
-        return patch
+    def __setstate__(self, state):
+        bytes_dat = state.pop("bytes", None)
+        if bytes_dat:
+            self.bytes = codecs.decode(bytes_dat, "hex")
+        super().__setstate__(state)
 
     @classmethod
     def load_many(cls, patches_toml):
@@ -58,11 +58,3 @@ class Patch(Artifact):
         for v in patches.values():
             patches_[hex(v.addr)] = v.__getstate__()
         return patches_
-
-    def copy(self):
-        return Patch(
-            self.addr,
-            self.bytes,
-            name=self.name,
-            last_change=self.last_change
-        )

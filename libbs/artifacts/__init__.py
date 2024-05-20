@@ -1,4 +1,5 @@
-from .artifact import Artifact, TomlHexEncoder
+from .formatting import TomlHexEncoder
+from .artifact import Artifact
 from .comment import Comment
 from .decompilation import Decompilation
 from .enum import Enum

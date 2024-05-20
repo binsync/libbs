@@ -10,8 +10,14 @@ class Decompilation(Artifact):
         "decompiler",
     )
 
-    def __init__(self, addr, decompilation, decompiler=None, last_change=None):
-        super().__init__(last_change=last_change)
+    def __init__(
+        self,
+        addr: int = None,
+        decompilation: str = None,
+        decompiler: str = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
         self.addr = addr
         self.decompilation = decompilation
         self.decompiler = decompiler
@@ -21,9 +27,3 @@ class Decompilation(Artifact):
 
     def __repr__(self):
         return f"<Decompilation: {self.decompiler}@{hex(self.addr)} len={len(self.decompilation)}>"
-
-    @classmethod
-    def parse(cls, s):
-        dec = Decompilation(None, None)
-        dec.__setstate__(toml.loads(s))
-        return dec

@@ -1,57 +1,41 @@
-from typing import Dict
+import json
+from typing import Dict, Optional
+import datetime
 
 import toml
-from toml.encoder import TomlEncoder
 
-
-class TomlHexEncoder(TomlEncoder):
-    def __init__(self, _dict=dict, preserve=False):
-        super(TomlHexEncoder, self).__init__(_dict, preserve=preserve)
-        self.dump_funcs[int] = lambda v: hex(v) if v >= 0 else v
+from .formatting import ArtifactFormat, TomlHexEncoder
 
 
 class Artifact:
+    """
+    The Artifact class acts as the base for all other artifacts that can be produced by a decompiler (or decompiler
+    adjacent tool). In general, the comparisons of these derived classes should only be done on the attributes in
+    __slots__, with the exception of the last_change property.
+    """
+    LST_CHNG_ATTR = "last_change"
     __slots__ = (
-        "last_change",
+        LST_CHNG_ATTR,
     )
 
-    def __init__(self, last_change=None):
+    def __init__(self, last_change: Optional[datetime.datetime] = None):
         self.last_change = last_change
 
     def __getstate__(self) -> Dict:
-        """
-        Returns a dict of all the properties of the artifact. With the key as their name
-        and the value as their value.
-
-        @return:
-        """
         return dict(
             (k, getattr(self, k)) for k in self.__slots__
         )
 
     def __setstate__(self, state):
-        """
-        Sets all the properties of the artifact given a dict of keys and values.
-        Note: the values can also be dicts.
-
-        @param state: Dict
-        @return:
-        """
         for k in self.__slots__:
             setattr(self, k, state.get(k, None))
 
     def __eq__(self, other):
-        """
-        Like a normal == override, but we always ignore last_push.
-
-        @param other: Another Artifact
-        @return:
-        """
         if not isinstance(other, self.__class__):
             return False
 
         for k in self.__slots__:
-            if k == "last_change":
+            if k == self.LST_CHNG_ATTR:
                 continue
 
             if getattr(self, k) != getattr(other, k):
@@ -59,11 +43,93 @@ class Artifact:
 
         return True
 
+    def __hash__(self):
+        long_str = ""
+        for attr in self.__slots__:
+            long_str += getattr(self, attr)
+
+        return hash(long_str)
+
+    def __repr__(self):
+        return self.__str__()
+
+    def copy(self) -> "Artifact":
+        new_obj = self.__class__()
+        for attr in self.__slots__:
+            attr_v = getattr(self, attr)
+            if isinstance(attr_v, list):
+                new_list = []
+                for lobj in attr_v:
+                    if hasattr(lobj, "copy"):
+                        new_list.append(lobj.copy())
+                setattr(new_obj, attr, new_list)
+            elif isinstance(attr_v, dict):
+                new_dict = {}
+                for dk, dv in attr_v.items():
+                    new_dk = dk.copy() if hasattr(dk, "copy") else dk
+                    new_dv = dv.copy() if hasattr(dv, "copy") else dv
+                    new_dict[new_dk] = new_dv
+                setattr(new_obj, attr, new_dict)
+            else:
+                setattr(new_obj, attr, attr_v)
+
+        return new_obj
+
+    #
+    # Serialization
+    #
+
+    def _to_c_string(self):
+        raise NotImplementedError
+
+    @classmethod
+    def _from_c_string(cls, cstring) -> Dict:
+        raise NotImplementedError
+
+    def dumps(self, fmt=ArtifactFormat.TOML) -> str:
+        dict_data = self.__getstate__()
+        if fmt == ArtifactFormat.TOML:
+            return toml.dumps(dict_data, encoder=TomlHexEncoder())
+        elif fmt == ArtifactFormat.JSON:
+            return json.dumps(dict_data)
+        elif fmt == ArtifactFormat.C_LANG:
+            return self._to_c_string()
+        else:
+            raise ValueError(f"Dumping to format {fmt} is not yet supported.")
+
+    @classmethod
+    def loads(cls, string, fmt=ArtifactFormat.TOML) -> "Artifact":
+        if fmt == ArtifactFormat.TOML:
+            dict_data = toml.loads(string)
+        elif fmt == ArtifactFormat.JSON:
+            dict_data = json.loads(string)
+        elif fmt == ArtifactFormat.C_LANG:
+            dict_data = cls._from_c_string(string)
+        else:
+            raise ValueError(f"Loading from format {fmt} is not yet supported.")
+
+        art = cls()
+        art.__setstate__(dict_data)
+        return art
+
+    @classmethod
+    def load(cls, fp, fmt=ArtifactFormat.TOML):
+        data = fp.read()
+        return cls.loads(data, fmt=fmt)
+
+    #
+    # Public API
+    #
+
+    @property
+    def commit_msg(self) -> str:
+        return f"Updated {self}"
+
     def diff(self, other, **kwargs) -> Dict:
         diff_dict = {}
         if not isinstance(other, self.__class__):
             for k in self.__slots__:
-                if k == "last_change":
+                if k == self.LST_CHNG_ATTR:
                     continue
 
                 diff_dict[k] = {
@@ -75,7 +141,7 @@ class Artifact:
         for k in self.__slots__:
             self_attr, other_attr = getattr(self, k), getattr(other, k)
             if self_attr != other_attr:
-                if k == "last_change":
+                if k == self.LST_CHNG_ATTR:
                     continue
 
                 diff_dict[k] = {
@@ -83,32 +149,6 @@ class Artifact:
                     "after": other_attr
                 }
         return diff_dict
-
-    def dump(self) -> str:
-        """
-        Returns a string in TOML form of the properties of the current artifact. Best used to
-        write directly into a file and save as a .toml file.
-
-        @return:
-        """
-        return toml.dumps(self.__getstate__(), encoder=TomlHexEncoder())
-
-    def copy(self) -> "Artifact":
-        return None
-
-    @property
-    def commit_msg(self) -> str:
-        return f"Updated {self}"
-
-    @classmethod
-    def parse(cls, s):
-        """
-        Parses a TOML form string.
-
-        @param s:
-        @return:
-        """
-        raise NotImplementedError()
 
     @classmethod
     def invert_diff(cls, diff_dict: Dict):

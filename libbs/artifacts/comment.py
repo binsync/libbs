@@ -1,3 +1,5 @@
+from typing import Optional
+
 import toml
 
 from .artifact import Artifact
@@ -9,22 +11,24 @@ class Comment(Artifact):
         "func_addr",
         "comment",
         "decompiled",
-
     )
 
-    def __init__(self, addr, comment,  func_addr=None, decompiled=False, last_change=None):
-        super(Comment, self).__init__(last_change=last_change)
-
-        self.comment = self.linewrap_comment(comment) if comment else ""
-        self.decompiled = decompiled
-        self.addr = addr  # type: int
+    def __init__(
+        self,
+        addr: int = None,
+        comment: Optional[str] = None,
+        func_addr: int = None,
+        decompiled: bool = False,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.addr = addr
+        self.comment = self.linewrap_comment(comment) if comment else None
         self.func_addr = func_addr
+        self.decompiled = decompiled
 
     def __str__(self):
         return f"<Comment: @{hex(self.addr)} len={len(self.comment)}>"
-
-    def __repr__(self):
-        return self.__str__()
 
     @staticmethod
     def linewrap_comment(comment: str, width=80):
@@ -44,12 +48,6 @@ class Comment(Artifact):
             final_comment += "\n"
 
         return final_comment
-
-    @classmethod
-    def parse(cls, s):
-        comm = Comment(None, None)
-        comm.__setstate__(toml.loads(s))
-        return comm
 
     @classmethod
     def load_many(cls, comms_toml):
@@ -72,8 +70,8 @@ class Comment(Artifact):
 
     def copy(self):
         return Comment(
-            self.addr,
-            self.comment,
+            addr=self.addr,
+            comment=self.comment,
             func_addr=self.func_addr,
             decompiled=self.decompiled,
             last_change=self.last_change

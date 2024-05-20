@@ -1,8 +1,6 @@
 from typing import Dict, Optional
 
-import toml
-
-from .artifact import Artifact, TomlHexEncoder
+from .artifact import Artifact
 from .stack_variable import StackVariable
 
 
@@ -18,8 +16,15 @@ class FunctionArgument(Artifact):
         "size",
     )
 
-    def __init__(self, offset, name, type_, size, last_change=None):
-        super(FunctionArgument, self).__init__(last_change=last_change)
+    def __init__(
+        self,
+        offset: int = None,
+        name: str = None,
+        type_: str = None,
+        size: int = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
         self.offset = offset
         self.name = name
         self.type = type_
@@ -27,18 +32,6 @@ class FunctionArgument(Artifact):
 
     def __str__(self):
         return f"<FuncArg: {self.type} {self.name}; @{self.offset}>"
-
-    def __repr__(self):
-        return self.__str__()
-
-    @classmethod
-    def parse(cls, s):
-        fa = FunctionArgument(None, None, None, None)
-        fa.__setstate__(toml.loads(s))
-        return fa
-
-    def copy(self):
-        return FunctionArgument(self.offset, self.name, self.type, self.size, last_change=self.last_change)
 
 
 class FunctionHeader(Artifact):
@@ -49,47 +42,43 @@ class FunctionHeader(Artifact):
         "args"
     )
 
-    def __init__(self, name, addr, type_=None, args=None, last_change=None):
-        super(FunctionHeader, self).__init__(last_change=last_change)
+    def __init__(
+        self,
+        name: str = None,
+        addr: int = None,
+        type_: str = None,
+        args: Optional[Dict[str, FunctionArgument]] = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
         self.name = name
         self.addr = addr
         self.type = type_
-        self.args: Dict[str, FunctionArgument] = args or {}
+        self.args: Dict = args or {}
 
     def __str__(self):
         return f"<FuncHeader: {self.type} {self.name}(args={len(self.args)}); @{hex(self.addr)}>"
 
-    def __repr__(self):
-        return self.__str__()
-
     def __getstate__(self):
-        args = {str(idx): arg.__getstate__() for idx, arg in self.args.items()} if self.args else {}
+        data_dict = super().__getstate__()
+        args_dict = data_dict["args"]
+        if args_dict is None:
+            return data_dict
 
-        return {
-            "last_change": self.last_change,
-            "name": self.name,
-            "addr": self.addr,
-            "type": self.type,
-            "args": args if len(args) > 0 else None,
-        }
+        new_args_dict = {hex(k): v for k, v in args_dict.items()}
+        data_dict["args"] = new_args_dict
+        return data_dict
 
     def __setstate__(self, state):
-        self.last_change = state.get("last_change", None)
-        self.name = state.get("name", None)
-        self.addr = state["addr"]
-        self.type = state.get("type", None)
-        args = state.get("args", {})
-        self.args = {int(idx, 16): FunctionArgument.parse(toml.dumps(arg, encoder=TomlHexEncoder())) for idx, arg in args.items()}
+        args_dict = state.pop("args", {})
+        new_args_dict = {}
+        for k, v in args_dict.items():
+            fa = FunctionArgument()
+            fa.__setstate__(v)
+            new_args_dict[int(k, 0)] = fa
 
-    @classmethod
-    def parse(cls, s):
-        loaded_s = toml.loads(s)
-        if len(loaded_s) <= 0:
-            return None
-
-        fh = FunctionHeader(None, None)
-        fh.__setstate__(toml.loads(s))
-        return fh
+        self.args = new_args_dict
+        super().__setstate__(state)
 
     def diff(self, other, **kwargs) -> Dict:
         diff_dict = {}
@@ -131,11 +120,6 @@ class FunctionHeader(Artifact):
             diff_dict["args"][idx] = self.invert_diff(other_arg.diff(None))
 
         return diff_dict
-
-    def copy(self):
-        fh = FunctionHeader(self.name, self.addr, type_=self.type, last_change=self.last_change)
-        fh.args = {k: v.copy() for k, v in self.args.items()}
-        return fh
 
     def reset_last_change(self):
         if self.args:
@@ -200,8 +184,7 @@ class Function(Artifact):
     and arguments (including their types). The stack vars contain StackVariables.
     """
 
-    __slots__ = (
-        "last_change",
+    __slots__ = Artifact.__slots__ + (
         "addr",
         "size",
         "header",
@@ -209,11 +192,19 @@ class Function(Artifact):
         "dec_obj",
     )
 
-    def __init__(self, addr, size, header=None, stack_vars=None, dec_obj=None, last_change=None):
-        super(Function, self).__init__(last_change=last_change)
-        self.addr: int = addr
-        self.size: int = size
-        self.header: Optional[FunctionHeader] = header
+    def __init__(
+        self,
+        addr: int = None,
+        size: int = None,
+        header: Optional[FunctionHeader] = None,
+        stack_vars: Optional[Dict[int, StackVariable]] = None,
+        dec_obj: Optional[object] = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.addr = addr
+        self.size = size
+        self.header = header
         self.stack_vars: Dict[int, StackVariable] = stack_vars or {}
 
         # a special property which can only be set while running inside the decompiler.
@@ -227,39 +218,38 @@ class Function(Artifact):
 
         return f"<Function: @{hex(self.addr)} len={hex(self.size)}>"
 
-    def __repr__(self):
-        return self.__str__()
-
     def __getstate__(self):
         header = self.header.__getstate__() if self.header else None
-        stack_vars = {hex(offset): stack_var.__getstate__() for offset, stack_var in self.stack_vars.items()} if \
-            self.stack_vars else {}
+        stack_vars = {
+            hex(offset): stack_var.__getstate__() for offset, stack_var in self.stack_vars.items()
+        } if self.stack_vars else None
 
-        return {
-            "metadata": {
-                "addr": self.addr,
-                "size": self.size,
-                "last_change": self.last_change
-            },
-            "header": header,
-            "stack_vars": stack_vars if len(stack_vars) > 0 else None
-        }
+        state = super().__getstate__()
+        state["header"] = header
+        state["stack_vars"] = stack_vars
+        return state
 
     def __setstate__(self, state):
-        if not isinstance(state["metadata"]["addr"], int):
-            raise TypeError("Unsupported type %s for addr." % type(state["metadata"]["addr"]))
+        header_dat = state.pop("header", None)
+        if header_dat:
+            header = FunctionHeader()
+            header.__setstate__(header_dat)
+        else:
+            header = None
+        self.header = header
 
-        metadata, header, stack_vars = state["metadata"], state.get("header", None), state.get("stack_vars", {})
+        stack_vars_dat = state.pop("stack_vars", {})
+        if stack_vars_dat:
+            stack_vars = {}
+            for off, stack_var in stack_vars_dat.items():
+                sv = StackVariable()
+                sv.__setstate__(stack_var)
+                stack_vars[int(off, 0)] = sv
+        else:
+            stack_vars = None
+        self.stack_vars = stack_vars
 
-        self.addr = metadata["addr"]
-        self.size = metadata["size"]
-        self.last_change = metadata.get("last_change", None)
-
-        self.header = FunctionHeader.parse(toml.dumps(header, encoder=TomlHexEncoder())) if header else None
-
-        self.stack_vars = {
-            int(off, 16): StackVariable.parse(toml.dumps(stack_var, encoder=TomlHexEncoder())) for off, stack_var in stack_vars.items()
-        } if stack_vars else {}
+        super().__setstate__(state)
 
     def diff(self, other, **kwargs) -> Dict:
         diff_dict = {}
@@ -312,25 +302,6 @@ class Function(Artifact):
             diff_dict["stack_vars"][off] = self.invert_diff(other_var.diff(None))
 
         return diff_dict
-
-    def copy(self):
-        func = Function(self.addr, self.size, last_change=self.last_change, dec_obj=self.dec_obj)
-        func.header = self.header.copy() if self.header else None
-        func.stack_vars = {k: v.copy() for k, v in self.stack_vars.items()}
-
-        return func
-
-    @classmethod
-    def parse(cls, s):
-        func = Function(None, None)
-        func.__setstate__(s)
-        return func
-
-    @classmethod
-    def load(cls, func_toml):
-        f = Function(None, None)
-        f.__setstate__(func_toml)
-        return f
 
     def reset_last_change(self):
         if self.header:
@@ -397,12 +368,9 @@ class Function(Artifact):
     def name(self, value):
         # create a header if one does not exist for this function
         if not self.header:
-            self.header = FunctionHeader(None, self.addr)
+            self.header = FunctionHeader(name=None, addr=self.addr)
         self.header.name = value
 
     @property
     def args(self):
-        return self.header.args
-
-    def set_stack_var(self, name, off: int, off_type: int, size: int, type_, last_change):
-        self.stack_vars[off] = StackVariable(off, off_type, name, type_, size, self.addr, last_change=last_change)
+        return self.header.args if self.header else {}
