@@ -12,6 +12,7 @@ import libbs
 from libbs.api.artifact_lifter import ArtifactLifter
 from libbs.api.artifact_dict import ArtifactDict
 from libbs.api.type_parser import CTypeParser, CType
+from libbs.configuration import LibbsConfig
 from libbs.artifacts import (
     Artifact,
     Function, FunctionHeader, StackVariable,
@@ -107,9 +108,19 @@ class DecompilerInterface:
         else:
             self._init_headless_components()
 
+
+
    # Checks for config file and creates/loads from it
     def _init_config(self):
-        return None
+        config = LibbsConfig(None, self._headless_dec_path)
+        if not config.load():
+            _l.info(f"Config file not found, saving to {config.path}")
+            config.save()
+        else:
+            _l.info(f"Loaded config from {config.path}")
+
+        config.plugin_data[self._plugin_name] = {}
+        self.config = config
 
     def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
         if check_dec_path and not self._headless_dec_path.exists():
@@ -147,6 +158,8 @@ class DecompilerInterface:
         return None
 
     def shutdown(self):
+        self.config.save()
+        _l.info(f"Saved config to {self.config.path}")
         if self._artifact_watchers_started:
             self.stop_artifact_watchers()
 

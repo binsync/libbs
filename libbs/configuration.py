@@ -5,6 +5,7 @@ import toml
 # Use binsync Config obj as base
 class LibbsConfig():
     __slots__ = (
+        "path",
         "plugin_path",
         "headless_binary_path",
         "last_project",
@@ -12,21 +13,19 @@ class LibbsConfig():
     )
 
     def __init__(self, plugin_path, headless_binary_path=None):
-        self.path = user_config_dir("libbs")+"/libbs.toml"
+        self.path = pathlib.Path(user_config_dir("libbs")) / "libbs.toml"
+        # TODO: Figure out plugin_path
         self.plugin_path = plugin_path
-        if not headless_binary_path:
-            # Attempt to locate automatically from install location
-            pass
-        self.headless_binary_path = headless_binary_path
+        # TODO: Attempt to infer binary path from installation data
+        self.headless_binary_path = pathlib.Path(headless_binary_path) if headless_binary_path else None
         self.last_project = None
         # self.data will be a dict of dicts keyed by plugin_name
         # each dict in self.data contains what a particular plugin wants stored in the config file
         self.plugin_data = {}
 
     def save(self):
-        self.path = pathlib.Path(self.path)
         if not self.path.parent.exists():
-            return None
+            self.path.parent.mkdir()
 
         dump_dict = {}
         for attr in self.__slots__:
@@ -49,6 +48,9 @@ class LibbsConfig():
 
         for attr in self.__slots__:
             setattr(self, attr, load_dict.get(attr, None))
+
+        self.path = pathlib.Path(self.path)
+        self.headless_binary_path = pathlib.Path(self.headless_binary_path)
 
         return self
 
