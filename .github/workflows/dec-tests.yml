@@ -25,6 +25,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        pip install platformdirs
         pip install .[test]
     # taken from https://github.com/mandiant/capa/blob/master/.github/workflows/tests.yml#L107-L147
     - name: Install Binary Ninja
