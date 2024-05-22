@@ -50,7 +50,7 @@ class LibbsConfig():
             setattr(self, attr, load_dict.get(attr, None))
 
         self.path = pathlib.Path(self.path)
-        self.headless_binary_path = pathlib.Path(self.headless_binary_path)
+        self.headless_binary_path = pathlib.Path(self.headless_binary_path) if self.headless_binary_path else None
 
         return self
 
