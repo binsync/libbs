@@ -97,12 +97,19 @@ class DecompilerInterface:
         self.global_vars = ArtifactDict(GlobalVariable, self, error_on_duplicate=error_on_artifact_duplicates)
 
         self._decompiler_available = decompiler_available
+
+        self._init_config()
+
         if not self.headless:
             args = gui_init_args or []
             kwargs = gui_init_kwargs or {}
             self._init_gui_components(*args, **kwargs)
         else:
             self._init_headless_components()
+
+   # Checks for config file and creates/loads from it
+    def _init_config(self):
+        return None
 
     def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
         if check_dec_path and not self._headless_dec_path.exists():
