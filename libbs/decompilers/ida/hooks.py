@@ -95,15 +95,13 @@ class ScreenHook(ida_kernwin.View_Hooks):
         if not form_type:
             return
 
-        # check if view is decomp or disassembly before doing expensive ea lookup
-        if not decomp_view and not form_type == idaapi.BWN_DISASM:
-            return
-
+        is_disass_view = form_type == idaapi.BWN_DISASM
         ea = idc.get_screen_ea()
-        if not ea:
+        if ea is None:
             return
 
         self.interface.update_active_context(ea)
+        self.interface.gui_context_changed("disassembly" if is_disass_view else "decompilation", addr=ea)
 
 
 class IDAHotkeyHook(ida_kernwin.UI_Hooks):

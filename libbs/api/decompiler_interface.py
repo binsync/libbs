@@ -529,6 +529,17 @@ class DecompilerInterface:
     # lift it ONCE inside this function. Each one will return the lifted form, for easier overriding.
     #
 
+    def gui_context_changed(self, view_name: str, func: Optional[Function] = None, addr: Optional[int] = None, **kwargs):
+        if not self._watchers_started:
+            return None, None, None
+
+        lifted_func = self.art_lifter.lift(func) if func is not None else None
+        lifted_addr = self.art_lifter.lift_addr(addr) if addr is not None else None
+        for callback_func in self.gui_ctx_change_callbacks:
+            threading.Thread(target=callback_func, args=(view_name, lifted_func, lifted_addr), kwargs=kwargs, daemon=True).start()
+
+        return lifted_func, lifted_addr, view_name
+
     def function_header_changed(self, fheader: FunctionHeader, **kwargs) -> FunctionHeader:
         lifted_fheader = self.art_lifter.lift(fheader)
         for callback_func in self.artifact_write_callbacks[FunctionHeader]:

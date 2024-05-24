@@ -290,7 +290,7 @@ class BinjaInterface(DecompilerInterface):
         return None
 
     def start_artifact_watchers(self):
-        if not self._artifact_watchers_started:
+        if not self._watchers_started:
             from .hooks import DataMonitor
             if self.bv is None:
                 raise RuntimeError("Cannot start artifact watchers without a BinaryView.")
@@ -300,7 +300,7 @@ class BinjaInterface(DecompilerInterface):
             super().start_artifact_watchers()
 
     def stop_artifact_watchers(self):
-        if self._artifact_watchers_started:
+        if self._watchers_started:
             self.bv.unregister_notification(self._data_monitor)
             self._data_monitor = None
             super().stop_artifact_watchers()
