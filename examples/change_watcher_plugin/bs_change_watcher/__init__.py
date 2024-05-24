@@ -24,11 +24,13 @@ def create_plugin(*args, **kwargs):
         gui_init_kwargs=kwargs
     )
     # create a function to print a string in the decompiler console
-    decompiler_printer = lambda *x: deci.print(f"Changed {x}")
+    decompiler_printer = lambda *x, **y: deci.print(f"Changed {x}")
+    ctx_printer = lambda *x, **y: deci.print(f"Context changed: {x}")
     # register the callback for all the types we want to print
     deci.artifact_write_callbacks = {
         typ: [decompiler_printer] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment,)
     }
+    deci.gui_ctx_change_callbacks.append(ctx_printer)
 
     # register a menu to open when you right click on the psuedocode view
     deci.gui_register_ctx_menu(

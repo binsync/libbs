@@ -152,6 +152,7 @@ class IDAInterface(DecompilerInterface):
     #
 
     def start_artifact_watchers(self):
+        super().start_artifact_watchers()
         self._artifact_watcher_hooks = [
             IDBHooks(self),
             # this hook is special because it relies on the decompiler being present, which can only be checked
@@ -163,6 +164,7 @@ class IDAInterface(DecompilerInterface):
             hook.hook()
 
     def stop_artifact_watchers(self):
+        super().stop_artifact_watchers()
         for hook in self._artifact_watcher_hooks:
             hook.unhook()
 

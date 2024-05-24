@@ -57,6 +57,7 @@ class DecompilerInterface:
         gui_init_kwargs: Optional[Dict] = None,
         # [artifact_class] = list(callback_func)
         artifact_write_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
+        gui_ctx_change_callbacks: Optional[List[Callable]] = None,
     ):
         self.name = name
         self.art_lifter = artifact_lifter
@@ -76,13 +77,14 @@ class DecompilerInterface:
         self._gui_ctx_menu_actions = []
         self._plugin_name = plugin_name
         self.gui_plugin = None
-        self._artifact_watchers_started = False
+        self._watchers_started = False
 
         # locks
         self.artifact_write_lock = threading.Lock()
 
         # callback functions, keyed by Artifact class
         self.artifact_write_callbacks = artifact_write_callbacks or defaultdict(list)
+        self.gui_ctx_change_callbacks = gui_ctx_change_callbacks or []
 
         # artifact dict aliases:
         # these are the public API for artifacts that are used by the decompiler interface
@@ -137,7 +139,7 @@ class DecompilerInterface:
         return None
 
     def shutdown(self):
-        if self._artifact_watchers_started:
+        if self._watchers_started:
             self.stop_artifact_watchers()
 
     #
@@ -194,7 +196,7 @@ class DecompilerInterface:
         @return:
         """
         self.info("Starting BinSync artifact watchers...")
-        self._artifact_watchers_started = True
+        self._watchers_started = True
 
     def stop_artifact_watchers(self):
         """
@@ -204,7 +206,7 @@ class DecompilerInterface:
         react to them.
         """
         self.info("Stopping BinSync artifact watchers...")
-        self._artifact_watchers_started = False
+        self._watchers_started = False
 
     @property
     def binary_base_addr(self) -> int:
@@ -462,6 +464,17 @@ class DecompilerInterface:
     # Every callback in this group assumes the input will be decompiler-specific (lowered) and will
     # lift it ONCE inside this function. Each one will return the lifted form, for easier overriding.
     #
+
+    def gui_context_changed(self, view_name: str, func: Optional[Function] = None, addr: Optional[int] = None, **kwargs):
+        if not self._watchers_started:
+            return None, None, None
+
+        lifted_func = self.art_lifter.lift(func) if func is not None else None
+        lifted_addr = self.art_lifter.lift_addr(addr) if addr is not None else None
+        for callback_func in self.gui_ctx_change_callbacks:
+            threading.Thread(target=callback_func, args=(view_name, lifted_func, lifted_addr), kwargs=kwargs, daemon=True).start()
+
+        return lifted_func, lifted_addr, view_name
 
     def function_header_changed(self, fheader: FunctionHeader, **kwargs) -> FunctionHeader:
         lifted_fheader = self.art_lifter.lift(fheader)
