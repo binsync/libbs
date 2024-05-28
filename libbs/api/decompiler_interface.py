@@ -112,14 +112,7 @@ class DecompilerInterface:
 
    # Checks for config file and creates/loads from it
     def _init_config(self):
-        config = LibbsConfig(None, self._headless_dec_path)
-        if not config.load():
-            _l.info(f"Config file not found, saving to {config.path}")
-            config.save()
-        else:
-            _l.info(f"Loaded config from {config.path}")
-
-        config.plugin_data[self._plugin_name] = {}
+        config = LibbsConfig.update_or_make()
         self.config = config
 
     def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
