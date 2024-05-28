@@ -181,3 +181,15 @@ def _infer_plugins_path(decompiler):
         return default_path if default_path.exists() else None
 
     return None
+
+def _create_path(path_str):
+    return pathlib.Path(path_str).expanduser().absolute()
+def _infer_headless_path(plugin_path):
+    plugin_path = _create_path(plugin_path)
+    # TODO: Implement me
+    return None
+
+def _infer_plugins_path(headless_path):
+    headless_path = _create_path(headless_path)
+    # TODO: Implement me
+    return None
