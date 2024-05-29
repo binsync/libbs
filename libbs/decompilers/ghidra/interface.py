@@ -284,7 +284,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         args = {}
         if arg_variable_info:
             args = {
-                i: FunctionArgument(offset=i, name=info[0], type_=info[1], size=info[2], addr=addr) for i, info in enumerate(arg_variable_info)
+                i: FunctionArgument(offset=i, name=info[0], type_=info[1], size=info[2]) for i, info in enumerate(arg_variable_info)
             }
 
         # grab the return type of the function from ghidra
