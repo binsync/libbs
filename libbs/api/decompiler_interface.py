@@ -152,7 +152,7 @@ class DecompilerInterface:
 
     def shutdown(self):
         self.config.save()
-        _l.info(f"Saved config to {self.config.path}")
+        _l.info(f"Saved config to {self.config.save_location}")
         if self._artifact_watchers_started:
             self.stop_artifact_watchers()
 

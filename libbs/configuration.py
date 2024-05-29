@@ -3,6 +3,7 @@ from platformdirs import user_config_dir
 import pathlib
 import logging
 import toml
+import os
 
 _l = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ class BSConfig:
     def __init__(self, save_location=None):
         if not save_location:
             save_location = user_config_dir("libbs")
-        self.save_location = _create_path(save_location) / f"{__class__.__name__}.toml"
+        self.save_location = _create_path(save_location)
 
     def save(self):
         if not self.save_location.parent.exists():
@@ -46,14 +47,21 @@ class BSConfig:
         return self
 
     @classmethod
-    def load_from_file(cls, save_location):
+    def load_from_file(cls, save_location=None):
         config = cls(save_location)
         return config.load()
 
     @classmethod
-    def update_or_make(cls, save_location, **attrs_to_update):
-        save_location = _create_path(save_location) if save_location else None
-        config = cls.load_from_file(save_location) if save_location.exists() else cls(save_location)
+    def update_or_make(cls, save_location=None, **attrs_to_update):
+        exists = False
+        if save_location:
+            save_location = _create_path(save_location)
+            exists = save_location.exists()
+
+        if not exists:
+            config = cls(save_location)
+        else:
+            config = cls.load_from_file(save_location)
 
         for attr, val in attrs_to_update.items():
             if attr in config.__slots__:
@@ -71,9 +79,12 @@ class LibbsConfig(BSConfig):
         "gdbinit_path",
     )
 
-    def __init__(self, save_location, plugins_paths=None, headless_binary_paths=None, gdbinit_path=None):
-        super(BSConfig, self).__init__(save_location)
+    def __init__(self, save_location=None, plugins_paths={}, headless_binary_paths={}, gdbinit_path=None):
+        super().__init__(save_location)
+        self.save_location = self.save_location / f"{__class__.__name__}.toml"
         self.gdbinit_path = gdbinit_path
+        self.plugins_paths = {}
+        self.headless_binary_paths = {}
         for decompiler in SUPPORTED_DECOMPILERS:
             plugins_path = plugins_paths[decompiler] if decompiler in plugins_paths else None
             headless_path = headless_binary_paths[decompiler] if decompiler in headless_binary_paths else None
@@ -85,15 +96,51 @@ class LibbsConfig(BSConfig):
             self.plugins_paths[decompiler] = plugins_path
             self.headless_binary_paths[decompiler] = headless_path
 
+    @classmethod
+    def update_or_make(cls, save_location=None, **attrs_to_update):
+        exists = False
+        if save_location:
+            save_location = _create_path(save_location)
+            exists = save_location.exists()
+
+        if not exists:
+            config = cls(save_location)
+        else:
+            config = cls.load_from_file(save_location)
+
+        for attr, val in attrs_to_update.items():
+            if attr in config.__slots__:
+                setattr(config, attr, val)
+
+        for decompiler in SUPPORTED_DECOMPILERS:
+            plugins_path = config.plugins_paths[decompiler] if decompiler in config.plugins_paths else None
+            headless_path = config.headless_binary_paths[decompiler] if decompiler in config.headless_binary_paths else None
+            # Attempt to find default plugins_path
+            plugins_path = _infer_plugins_path(headless_path, decompiler)
+            # Check if only plugins path exists and attempt to infer headless path
+            if plugins_path and not headless_path:
+                headless_path = _infer_headless_path(plugins_path, decompiler)
+            config.plugins_paths[decompiler] = plugins_path
+            config.headless_binary_paths[decompiler] = headless_path
+
+        config.save()
+        return config
+
 
 def _create_path(path_str):
     return pathlib.Path(path_str).expanduser().absolute()
-def _infer_headless_path(plugin_path):
-    plugin_path = _create_path(plugin_path)
-    # TODO: Implement me
+def _infer_headless_path(plugins_path, decompiler):
+    if decompiler == 'ghidra':
+        # Infer ghidra headless
+        plugins_path = _create_path(plugins_path)
+        install_root = plugins_path.parent
+        headless_path = install_root / "support" / ("analyzeHeadless.bat" if os.name == 'nt' else "analyzeHeadless")
+        return headless_path if headless_path.exists() else None
     return None
 
-def _infer_plugins_path(headless_path):
-    headless_path = _create_path(headless_path)
-    # TODO: Implement me
+def _infer_plugins_path(decompiler):
+    if decompiler == 'ghidra':
+        # Ghidra plugins isn't in install root, so just attempt to use default
+        default_path = _create_path(os.getenv("HOME") or "~/") / "ghidra_scripts"
+        return default_path if default_path.exists() else None
     return None
