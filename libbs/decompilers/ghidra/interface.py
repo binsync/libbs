@@ -769,7 +769,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         dt_service = aam.getDataTypeManagerService()
         dt_parser = dtp_class(dt_service, dtp_class.AllowedDataTypes.ALL)
         try:
-            parsed_type = dt_parser.loads(typestr)
+            parsed_type = dt_parser.parse(typestr)
         except Exception as e:
             _l.warning(f"Failed to parse type string: {typestr}")
             return None
