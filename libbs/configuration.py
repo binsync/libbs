@@ -184,12 +184,18 @@ def _infer_plugins_path(decompiler):
 
 def _create_path(path_str):
     return pathlib.Path(path_str).expanduser().absolute()
-def _infer_headless_path(plugin_path):
-    plugin_path = _create_path(plugin_path)
-    # TODO: Implement me
+def _infer_headless_path(plugins_path, decompiler):
+    if decompiler == 'ghidra':
+        # Infer ghidra headless
+        plugins_path = _create_path(plugins_path)
+        install_root = plugins_path.parent
+        headless_path = install_root / "support" / ("analyzeHeadless.bat" if os.name == 'nt' else "analyzeHeadless")
+        return headless_path if headless_path.exists() else None
     return None
 
-def _infer_plugins_path(headless_path):
-    headless_path = _create_path(headless_path)
-    # TODO: Implement me
+def _infer_plugins_path(decompiler):
+    if decompiler == 'ghidra':
+        # Ghidra plugins isn't in install root, so just attempt to use default
+        default_path = _create_path(os.getenv("HOME") or "~/") / "ghidra_scripts"
+        return default_path if default_path.exists() else None
     return None
