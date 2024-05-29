@@ -1,8 +1,8 @@
 import logging
 import subprocess
 import sys
-from jfx_bridge import bridge
-from ghidra_bridge_port import DEFAULT_SERVER_PORT
+from .jfx_bridge import bridge
+from .ghidra_bridge_port import DEFAULT_SERVER_PORT
 
 # NOTE: we definitely DON'T want to exclude ghidra from ghidra_bridge :P
 import ghidra
