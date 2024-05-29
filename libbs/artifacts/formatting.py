@@ -1,4 +1,3 @@
-from enum import StrEnum
 import typing
 
 from toml import TomlEncoder
@@ -7,7 +6,7 @@ if typing.TYPE_CHECKING:
     from ..api import CTypeParser, CType
 
 
-class ArtifactFormat(StrEnum):
+class ArtifactFormat:
     TOML = "toml"
     JSON = "json"
     C_LANG = "c"
