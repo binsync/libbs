@@ -275,7 +275,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 stack_variable_info
             }
 
-        arg_variable_info: Optional[List[Tuple[int, str, str, int]]] = self.ghidra.bridge.remote_eval(
+        arg_variable_info: Optional[List[Tuple[str, str, int]]] = self.ghidra.bridge.remote_eval(
             "[(sym.getName(), str(sym.getDataType()), sym.getSize()) "
             "for sym in dec.getHighFunction().getLocalSymbolMap().getSymbols() "
             "if sym.isParameter()]",
@@ -284,7 +284,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         args = {}
         if arg_variable_info:
             args = {
-                i: FunctionArgument(i, info[0], info[1], info[2], addr) for i, info in enumerate(arg_variable_info)
+                i: FunctionArgument(offset=i, name=info[0], type_=info[1], size=info[2], addr=addr) for i, info in enumerate(arg_variable_info)
             }
 
         # grab the return type of the function from ghidra
@@ -718,8 +718,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return None
 
         bs_func = Function(
-            gfunc.getEntryPoint().getOffset(), gfunc.getBody().getNumAddresses(),
-            header=FunctionHeader(gfunc.getName(), gfunc.getEntryPoint().getOffset()),
+            addr=gfunc.getEntryPoint().getOffset(), size=gfunc.getBody().getNumAddresses(),
+            header=FunctionHeader(name=gfunc.getName(), addr=gfunc.getEntryPoint().getOffset()),
         )
         return bs_func
 

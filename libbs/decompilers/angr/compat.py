@@ -114,10 +114,12 @@ class GenericBSAngrManagementPlugin(BasePlugin):
         func_args = AngrInterface.func_args_as_libbs_args(decompilation)
         self.interface.function_header_changed(
             FunctionHeader(
-                None,
-                func.addr,
+                name=None,
+                addr=func.addr,
                 type_=None,
-                args={offset: FunctionArgument(offset, new_name, None, func_args[offset].size)},
+                args={
+                    offset: FunctionArgument(offset=offset, name=new_name, type_=None, size=func_args[offset].size)
+                },
             )
         )
 
@@ -129,10 +131,12 @@ class GenericBSAngrManagementPlugin(BasePlugin):
         func_args = AngrInterface.func_args_as_libbs_args(decompilation)
         self.interface.function_header_changed(
             FunctionHeader(
-                None,
-                func.addr,
+                name=None,
+                addr=func.addr,
                 type_=None,
-                args={offset: FunctionArgument(offset, None, new_type, func_args[offset].size)},
+                args={
+                    offset: FunctionArgument(offset=offset, name=None, type_=new_type, size=func_args[offset].size)
+                },
             )
         )
 
@@ -141,14 +145,14 @@ class GenericBSAngrManagementPlugin(BasePlugin):
     # pylint: disable=unused-argument,no-self-use
     def handle_global_var_renamed(self, address, old_name, new_name):
         self.interface.global_variable_changed(
-            GlobalVariable(address, new_name, type_=None)
+            GlobalVariable(addr=address, name=new_name, type_=None)
         )
         return True
 
     # pylint: disable=unused-argument,no-self-use
     def handle_global_var_retyped(self, address, old_type, new_type):
         self.interface.global_variable_changed(
-            GlobalVariable(address, None, type_=new_type)
+            GlobalVariable(addr=address, name=None, type_=new_type)
         )
         return True
 
@@ -157,7 +161,7 @@ class GenericBSAngrManagementPlugin(BasePlugin):
         if func is None:
             return False
 
-        self.interface.function_header_changed(FunctionHeader(new_name, func.addr))
+        self.interface.function_header_changed(FunctionHeader(name=new_name, addr=func.addr))
         return True
 
     # pylint: disable=unused-argument,no-self-use
@@ -165,7 +169,7 @@ class GenericBSAngrManagementPlugin(BasePlugin):
         if func is None:
             return False
 
-        self.interface.function_header_changed(FunctionHeader(None, func.addr, type_=new_type))
+        self.interface.function_header_changed(FunctionHeader(name=None, addr=func.addr, type_=new_type))
         return True
 
     # pylint: disable=unused-argument
@@ -176,6 +180,6 @@ class GenericBSAngrManagementPlugin(BasePlugin):
             return False
 
         self.interface.comment_changed(
-            Comment(address, new_cmt, func_addr=func_addr, decompiled=True), deleted=not new_cmt
+            Comment(addr=address, comment=new_cmt, func_addr=func_addr, decompiled=True), deleted=not new_cmt
         )
         return True
