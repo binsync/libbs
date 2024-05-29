@@ -28,7 +28,8 @@ class Artifact:
 
     def __setstate__(self, state):
         for k in self.__slots__:
-            setattr(self, k, state.get(k, None))
+            if k in state:
+                setattr(self, k, state[k])
 
     def __eq__(self, other):
         if not isinstance(other, self.__class__):

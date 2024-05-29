@@ -47,7 +47,7 @@ class FunctionHeader(Artifact):
         name: str = None,
         addr: int = None,
         type_: str = None,
-        args: Optional[Dict[str, FunctionArgument]] = None,
+        args: Optional[Dict[int, FunctionArgument]] = None,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -57,7 +57,7 @@ class FunctionHeader(Artifact):
         self.args: Dict = args or {}
 
     def __str__(self):
-        return f"<FuncHeader: {self.type} {self.name}(args={len(self.args)}); @{hex(self.addr)}>"
+        return f"<FuncHeader: {self.type} {self.name}(args={len(self.args or {})}); @{hex(self.addr)}>"
 
     def __getstate__(self):
         data_dict = super().__getstate__()
@@ -65,7 +65,7 @@ class FunctionHeader(Artifact):
         if args_dict is None:
             return data_dict
 
-        new_args_dict = {hex(k): v for k, v in args_dict.items()}
+        new_args_dict = {hex(k): v.__getstate__() for k, v in args_dict.items()}
         data_dict["args"] = new_args_dict
         return data_dict
 
@@ -247,7 +247,7 @@ class Function(Artifact):
                 stack_vars[int(off, 0)] = sv
         else:
             stack_vars = None
-        self.stack_vars = stack_vars
+        self.stack_vars = stack_vars or {}
 
         super().__setstate__(state)
 

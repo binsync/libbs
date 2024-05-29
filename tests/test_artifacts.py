@@ -3,34 +3,41 @@ import json
 
 import unittest
 
+import toml
 from libbs.artifacts import (
-    FunctionHeader, StackVariable, FunctionArgument, Function
+    FunctionHeader, StackVariable, FunctionArgument, Function, ArtifactFormat, Struct, StructMember
 )
 
+
+def generate_test_funcs(func_addr):
+    fh1 = FunctionHeader(name="main", addr=func_addr, type_="int *", args={
+        0: FunctionArgument(offset=0, name="a1", type_="int", size=4),
+        1: FunctionArgument(offset=1, name="a2", type_="long", size=8)
+    })
+    fh2 = FunctionHeader("binsync_main", func_addr, type_="long *", args={
+        0: FunctionArgument(offset=0, name="a1", type_="int", size=4),
+        1: FunctionArgument(offset=1, name="a2", type_="int", size=4)
+    })
+
+    stack_vars1 = {
+        0x0: StackVariable(stack_offset=0, name="v0", type_="int", size=4, addr=func_addr),
+        0x4: StackVariable(stack_offset=4, name="v4", type_="int", size=4, addr=func_addr)
+    }
+    stack_vars2 = {
+        0x0: StackVariable(stack_offset=0, name="v0", type_="int", size=4, addr=func_addr),
+        0x4: StackVariable(stack_offset=4, name="v4", type_="long", size=8, addr=func_addr),
+        0x8: StackVariable(stack_offset=8, name="v8", type_="long", size=8, addr=func_addr)
+    }
+
+    func1 = Function(addr=func_addr, size=0x100, header=fh1, stack_vars=stack_vars1)
+    func2 = Function(addr=func_addr, size=0x150, header=fh2, stack_vars=stack_vars2)
+    return func1, func2
 
 class TestArtifacts(unittest.TestCase):
     def test_func_diffing(self):
         # setup top
         func_addr = 0x400000
-        fh1 = FunctionHeader("main", func_addr, type_="int *", args={
-            0: FunctionArgument(0, "a1", "int", 4), 1: FunctionArgument(1, "a2", "long", 8)
-        })
-        fh2 = FunctionHeader("binsync_main", func_addr, type_="long *", args={
-            0: FunctionArgument(0, "a1", "int", 4), 1: FunctionArgument(1, "a2", "int", 4)
-        })
-
-        stack_vars1 = {
-            0x0: StackVariable(0, "v0", "int", 4, func_addr),
-            0x4: StackVariable(4, "v4", "int", 4, func_addr)
-        }
-        stack_vars2 = {
-            0x0: StackVariable(0, "v0", "int", 4, func_addr),
-            0x4: StackVariable(4, "v4", "long", 8, func_addr),
-            0x8: StackVariable(8, "v8", "long", 8, func_addr)
-        }
-
-        func1 = Function(func_addr, 0x100, header=fh1, stack_vars=stack_vars1)
-        func2 = Function(func_addr, 0x150, header=fh2, stack_vars=stack_vars2)
+        func1, func2 = generate_test_funcs(func_addr)
 
         diff_dict = func1.diff(func2)
         header_diff = diff_dict["header"]
@@ -63,26 +70,24 @@ class TestArtifacts(unittest.TestCase):
                 assert var_diff["addr"]["before"] is None
                 assert var_diff["addr"]["after"] == func1.addr
 
-        print(json.dumps(diff_dict, sort_keys=False, indent=4))
-
     def test_func_nonconflict_merge(self):
         # setup top
         func_addr = 0x400000
-        fh1 = FunctionHeader("user1_func", func_addr, type_="int *", args={})
-        fh2 = FunctionHeader("main", func_addr, type_="long *", args={})
+        fh1 = FunctionHeader(name="user1_func", addr=func_addr, type_="int *", args={})
+        fh2 = FunctionHeader(name="main", addr=func_addr, type_="long *", args={})
 
         stack_vars1 = {
-            0x0: StackVariable(0, "v0", "int", 4, func_addr),
-            0x4: StackVariable(4, "my_var", "int", 4, func_addr)
+            0x0: StackVariable(stack_offset=0, name="v0", type_="int", size=4, addr=func_addr),
+            0x4: StackVariable(stack_offset=4, name="my_var", type_="int", size=4, addr=func_addr)
         }
         stack_vars2 = {
-            0x0: StackVariable(0, "v0", "int", 4, func_addr),
-            0x4: StackVariable(4, "v4", "long", 8, func_addr),
-            0x8: StackVariable(8, "v8", "long", 8, func_addr)
+            0x0: StackVariable(stack_offset=0, name="v0", type_="int", size=4, addr=func_addr),
+            0x4: StackVariable(stack_offset=4, name="v4", type_="long", size=8, addr=func_addr),
+            0x8: StackVariable(stack_offset=8, name="v8", type_="long", size=8, addr=func_addr)
         }
 
-        func1 = Function(func_addr, 0x100, header=fh1, stack_vars=stack_vars1)
-        func2 = Function(func_addr, 0x100, header=fh2, stack_vars=stack_vars2)
+        func1 = Function(addr=func_addr, size=0x100, header=fh1, stack_vars=stack_vars1)
+        func2 = Function(addr=func_addr, size=0x100, header=fh2, stack_vars=stack_vars2)
         merge_func = func1.nonconflict_merge(func2)
 
         assert merge_func.name == "user1_func"
@@ -95,25 +100,25 @@ class TestArtifacts(unittest.TestCase):
     def test_func_overwrite_merge(self):
         func_addr = 0x400000
         func_size = 0x100
-        fh1 = FunctionHeader("main", func_addr, type_="int *", args={
-            0: FunctionArgument(0, "a1", "int", 4)
+        fh1 = FunctionHeader(name="main", addr=func_addr, type_="int *", args={
+            0: FunctionArgument(offset=0, name="a1", type_="int", size=4)
         })
-        fh2 = FunctionHeader("binsync_main", func_addr, type_="long *", args={
-            1: FunctionArgument(1, "bs_2", "int", 4)
+        fh2 = FunctionHeader(name="binsync_main", addr=func_addr, type_="long *", args={
+            1: FunctionArgument(offset=1, name="bs_2", type_="int", size=4)
         })
 
         stack_vars1 = {
-            0x0: StackVariable(0, "v0", "int", 4, func_addr),
-            0x4: StackVariable(4, "v4", "long", 8, func_addr),
-            0x8: StackVariable(8, "v8", "long", 8, func_addr)
+            0x0: StackVariable(stack_offset=0, name="v0", type_="int", size=4, addr=func_addr),
+            0x4: StackVariable(stack_offset=4, name="v4", type_="long", size=8, addr=func_addr),
+            0x8: StackVariable(stack_offset=8, name="v8", type_="long", size=8, addr=func_addr)
         }
         stack_vars2 = {
-            0x0: StackVariable(0, "v0", "long", 4, func_addr),
-            0x4: StackVariable(4, "my_var", "int", 4, func_addr)
+            0x0: StackVariable(stack_offset=0, name="v0", type_="long", size=4, addr=func_addr),
+            0x4: StackVariable(stack_offset=4, name="my_var", type_="int", size=4, addr=func_addr)
         }
 
-        func1 = Function(func_addr, func_size, header=fh1, stack_vars=stack_vars1)
-        func2 = Function(func_addr, func_size, header=fh2, stack_vars=stack_vars2)
+        func1 = Function(addr=func_addr, size=func_size, header=fh1, stack_vars=stack_vars1)
+        func2 = Function(addr=func_addr, size=func_size, header=fh2, stack_vars=stack_vars2)
 
         merge_func = func1.overwrite_merge(func2)
 
@@ -124,6 +129,42 @@ class TestArtifacts(unittest.TestCase):
         assert merge_func.stack_vars[0].type == stack_vars2[0].type
         assert merge_func.stack_vars[0x4] == stack_vars2[0x4]
         assert merge_func.stack_vars[0x8] == stack_vars1[0x8]
+
+    def test_serialization(self):
+        native_load_funcs = {
+            ArtifactFormat.JSON: json.loads,
+            ArtifactFormat.TOML: toml.loads
+        }
+
+        func, _ = generate_test_funcs(0x400000)
+        struct = Struct(name="some_struct", size=8, members={
+            0: StructMember(offset=0, name="m0", type_="int", size=4),
+            4: StructMember(offset=4, name="m4", type_="long", size=8)
+        })
+        for fmt, load_func in native_load_funcs.items():
+            serialized_func = func.dumps(fmt=fmt)
+            loaded_func_dict = load_func(serialized_func)
+
+            assert loaded_func_dict["addr"] == func.addr
+            assert loaded_func_dict["size"] == func.size
+            assert loaded_func_dict["header"]["name"] == func.header.name
+            assert loaded_func_dict["header"]["type"] == func.header.type
+            assert loaded_func_dict["header"]["args"]["0x0"]["name"] == func.header.args[0].name
+            # XXX: critical point: keys are strings, not integers
+            assert loaded_func_dict["stack_vars"]["0x0"]["name"] == func.stack_vars[0].name
+
+            loaded_func = Function.loads(serialized_func, fmt=fmt)
+            assert loaded_func == func
+
+            serialized_struct = struct.dumps(fmt=fmt)
+            loaded_struct_dict = load_func(serialized_struct)
+            assert loaded_struct_dict["name"] == struct.name
+            assert loaded_struct_dict["size"] == struct.size
+            assert loaded_struct_dict["members"]["0x0"]["name"] == struct.members[0].name
+            assert loaded_struct_dict["members"]["0x4"]["type"] == struct.members[4].type
+
+            loaded_struct = Struct.loads(serialized_struct, fmt=fmt)
+            assert loaded_struct == struct
 
 
 if __name__ == "__main__":

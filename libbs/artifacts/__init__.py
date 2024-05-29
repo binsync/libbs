@@ -1,4 +1,4 @@
-from .formatting import TomlHexEncoder
+from .formatting import TomlHexEncoder, ArtifactFormat
 from .artifact import Artifact
 from .comment import Comment
 from .decompilation import Decompilation
