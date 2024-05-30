@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Type
 import datetime
 
 import toml
@@ -14,6 +14,7 @@ class Artifact:
     __slots__, with the exception of the last_change property.
     """
     LST_CHNG_ATTR = "last_change"
+    ADDR_ATTR = "addr"
     __slots__ = (
         LST_CHNG_ATTR,
     )
@@ -98,6 +99,10 @@ class Artifact:
         else:
             raise ValueError(f"Dumping to format {fmt} is not yet supported.")
 
+    def dump(self, fp, fmt=ArtifactFormat.TOML):
+        data = self.dumps(fmt=fmt)
+        fp.write(data)
+
     @classmethod
     def loads(cls, string, fmt=ArtifactFormat.TOML) -> "Artifact":
         if fmt == ArtifactFormat.TOML:
@@ -117,6 +122,36 @@ class Artifact:
     def load(cls, fp, fmt=ArtifactFormat.TOML):
         data = fp.read()
         return cls.loads(data, fmt=fmt)
+
+    @classmethod
+    def dumps_many(cls, artifacts: List["Artifact"], key_attr=ADDR_ATTR, fmt=ArtifactFormat.TOML) -> str:
+        artifacts_dict = {
+            getattr(art, key_attr): art.__getstate__() for art in artifacts
+        }
+
+        if fmt == ArtifactFormat.TOML:
+            return toml.dumps(artifacts_dict, encoder=TomlHexEncoder())
+        elif fmt == ArtifactFormat.JSON:
+            return json.dumps(artifacts_dict)
+        else:
+            raise ValueError(f"Dumping many to format {fmt} is not yet supported.")
+
+    @classmethod
+    def loads_many(cls, string, fmt=ArtifactFormat.TOML) -> List["Artifact"]:
+        if fmt == ArtifactFormat.TOML:
+            dict_data = toml.loads(string)
+        elif fmt == ArtifactFormat.JSON:
+            dict_data = json.loads(string)
+        else:
+            raise ValueError(f"Loading many from format {fmt} is not yet supported.")
+
+        arts = []
+        for _, v in dict_data.items():
+            art = cls()
+            art.__setstate__(v)
+            arts.append(art)
+
+        return arts
 
     #
     # Public API

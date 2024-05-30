@@ -40,21 +40,3 @@ class Patch(Artifact):
         if bytes_dat:
             self.bytes = codecs.decode(bytes_dat, "hex")
         super().__setstate__(state)
-
-    @classmethod
-    def load_many(cls, patches_toml):
-        for patch_toml in patches_toml.values():
-            patch = Patch(None, None, None)
-            try:
-                patch.__setstate__(patch_toml)
-            except TypeError:
-                # skip all incorrect ones
-                continue
-            yield patch
-
-    @classmethod
-    def dump_many(cls, patches):
-        patches_ = {}
-        for v in patches.values():
-            patches_[hex(v.addr)] = v.__getstate__()
-        return patches_

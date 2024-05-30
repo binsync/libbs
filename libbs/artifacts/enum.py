@@ -1,10 +1,7 @@
 from collections import OrderedDict
 from typing import Dict
 
-import toml
-
 from .artifact import Artifact
-from .formatting import ArtifactFormat
 
 
 class Enum(Artifact):
@@ -30,25 +27,6 @@ class Enum(Artifact):
     @staticmethod
     def _order_members(members):
         return OrderedDict(sorted(members.items(), key=lambda kv: kv[1]))
-
-    @classmethod
-    def load_many(cls, enums_toml):
-        for enum_toml in enums_toml.values():
-            enum = Enum(None, {})
-            try:
-                enum.__setstate__(enum_toml)
-            except TypeError:
-                # skip all incorrect ones
-                continue
-            yield enum
-
-    @classmethod
-    def dump_many(cls, enums):
-        enums_ = {}
-
-        for name, enum in enums.items():
-            enums_[name] = enum.__getstate__()
-        return enums_
 
     def nonconflict_merge(self, enum2: "Enum", **kwargs):
         enum1: Enum = self.copy()
