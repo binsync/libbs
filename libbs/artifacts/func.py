@@ -206,7 +206,8 @@ class Function(Artifact):
         self.addr = addr
         self.size = size
         self.header = header
-        self.name = name
+        if name is not None:
+            self.name = name
         self.stack_vars: Dict[int, StackVariable] = stack_vars or {}
 
         # a special property which can only be set while running inside the decompiler.
