@@ -65,3 +65,15 @@ for func_addr, light_func in deci.functions.items():
 
 Notice, when using the `items` function the function is `light`, meaning it does not contain stack vars and other 
 info. This also means using `keys`, `values`, or `list` on an artifact dictionary will have the same affect. 
+
+### Serializing Artifacts
+All artifacts are serializable to the TOML and JSON formats. Serialization is done like so:
+```python
+from libbs.artifacts import Function
+import json
+
+my_func = Function(name="my_func", addr=0x4000, size=0x10)
+json_str = my_func.dumps(fmt="json")
+loaded_dict = json.loads(json_str) # now loadable through normal JSON parsing
+print(json_str)
+```

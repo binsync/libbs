@@ -230,6 +230,12 @@ class Function(Artifact):
         return state
 
     def __setstate__(self, state):
+        # XXX: this is a backport of the old state format. Remove this after a few releases.
+        if "metadata" in state:
+            metadata: Dict = state.pop("metadata")
+            metadata.update(state)
+            state = metadata
+
         header_dat = state.pop("header", None)
         if header_dat:
             header = FunctionHeader()
