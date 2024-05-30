@@ -1,4 +1,4 @@
-from libbs.decompilers import SUPPORTED_DECOMPILERS
+from libbs.decompilers import SUPPORTED_DECOMPILERS, GHIDRA_DECOMPILER, IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER
 from platformdirs import user_config_dir
 import pathlib
 import logging
@@ -85,16 +85,6 @@ class LibbsConfig(BSConfig):
         self.gdbinit_path = gdbinit_path
         self.plugins_paths = {}
         self.headless_binary_paths = {}
-        for decompiler in SUPPORTED_DECOMPILERS:
-            plugins_path = plugins_paths[decompiler] if decompiler in plugins_paths else None
-            headless_path = headless_binary_paths[decompiler] if decompiler in headless_binary_paths else None
-            # Check if only one is set and infer the other path
-            if plugins_path and not headless_path:
-                headless_path = _infer_headless_path(plugins_path)
-            elif headless_path and not plugins_path:
-                plugins_path = _infer_plugins_path(headless_path)
-            self.plugins_paths[decompiler] = plugins_path
-            self.headless_binary_paths[decompiler] = headless_path
 
     @classmethod
     def update_or_make(cls, save_location=None, **attrs_to_update):
@@ -115,8 +105,9 @@ class LibbsConfig(BSConfig):
         for decompiler in SUPPORTED_DECOMPILERS:
             plugins_path = config.plugins_paths[decompiler] if decompiler in config.plugins_paths else None
             headless_path = config.headless_binary_paths[decompiler] if decompiler in config.headless_binary_paths else None
-            # Attempt to find default plugins_path
-            plugins_path = _infer_plugins_path(headless_path, decompiler)
+            # Attempt to find default plugins_path if not given
+            if not plugins_path:
+                plugins_path = _infer_plugins_path(decompiler)
             # Check if only plugins path exists and attempt to infer headless path
             if plugins_path and not headless_path:
                 headless_path = _infer_headless_path(plugins_path, decompiler)
@@ -130,17 +121,35 @@ class LibbsConfig(BSConfig):
 def _create_path(path_str):
     return pathlib.Path(path_str).expanduser().absolute()
 def _infer_headless_path(plugins_path, decompiler):
-    if decompiler == 'ghidra':
+    if decompiler == GHIDRA_DECOMPILER:
         # Infer ghidra headless
         plugins_path = _create_path(plugins_path)
         install_root = plugins_path.parent
         headless_path = install_root / "support" / ("analyzeHeadless.bat" if os.name == 'nt' else "analyzeHeadless")
         return headless_path if headless_path.exists() else None
+
+    if decompiler == IDA_DECOMPILER:
+        # Infer ida headless
+        plugins_path = _create_path(plugins_path)
+        install_root = plugins_path.parent.parent
+        headless_path = install_root / "idat64"
+        return headless_path if headless_path.exists() else None
+
     return None
 
 def _infer_plugins_path(decompiler):
-    if decompiler == 'ghidra':
+    home = _create_path(os.gentenv("HOME") or "~/")
+    if decompiler == GHIDRA_DECOMPILER:
         # Ghidra plugins isn't in install root, so just attempt to use default
-        default_path = _create_path(os.getenv("HOME") or "~/") / "ghidra_scripts"
+        default_path = home / "ghidra_scripts"
         return default_path if default_path.exists() else None
+
+    if decompiler == IDA_DECOMPILER:
+        default_path = home / ".idapro" / "plugins"
+        return default_path if default_path.exists() else None
+
+    if decompiler == BINJA_DECOMPILER:
+        default_path = home / ".binaryninja" / "plugins"
+        return default_path if default_path.exists() else None
+
     return None
