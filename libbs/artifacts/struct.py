@@ -1,8 +1,9 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import toml
 
-from .artifact import Artifact, TomlHexEncoder
+from .artifact import Artifact
+from . import TomlHexEncoder
 
 import logging
 l = logging.getLogger(name=__name__)
@@ -20,8 +21,15 @@ class StructMember(Artifact):
         "size",
     )
 
-    def __init__(self, name, offset, type_, size, last_change=None):
-        super(StructMember, self).__init__(last_change=last_change)
+    def __init__(
+        self,
+        name: str = None,
+        offset: int = None,
+        type_: Optional[str] = None,
+        size: int = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
         self.name: str = name
         self.offset: int = offset
         self.type: str = type_
@@ -29,25 +37,6 @@ class StructMember(Artifact):
 
     def __str__(self):
         return f"<StructMember: {self.type} {self.name}; @{hex(self.offset)}>"
-
-    def __repr__(self):
-        return self.__str__()
-
-    @classmethod
-    def parse(cls, s):
-        sm = StructMember(None, None, None, None)
-        sm.__setstate__(toml.loads(s))
-        return sm
-
-    def copy(self):
-        sm = StructMember(
-            self.name,
-            self.offset,
-            self.type,
-            self.size
-        )
-
-        return sm
 
 
 class Struct(Artifact):
@@ -61,40 +50,45 @@ class Struct(Artifact):
         "members",
     )
 
-    def __init__(self, name: str, size: int, members: Dict[int, StructMember], last_change=None):
-        super(Struct, self).__init__(last_change=last_change)
+    def __init__(
+        self,
+        name: str = None,
+        size: int = None,
+        members: Dict[int, StructMember] = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
         self.name = name
         self.size = size or 0
-        self.members: Dict[int, StructMember] = members
+        self.members: Dict[int, StructMember] = members or {}
 
     def __str__(self):
         return f"<Struct: {self.name} membs={len(self.members)} ({hex(self.size)})>"
 
-    def __repr__(self):
-        return self.__str__()
-
     def __getstate__(self):
-        return {
-            "metadata": {
-                "name": self.name, "size": self.size, "last_change": self.last_change
-            },
-
-            "members": {
-                hex(offset): member.__getstate__() for offset, member in self.members.items()
-            }
+        data_dict = super().__getstate__()
+        data_dict["members"] = {
+            hex(offset): member.__getstate__() for offset, member in self.members.items()
         }
+
+        return data_dict
 
     def __setstate__(self, state):
-        metadata = state["metadata"]
-        members = state["members"]
+        # XXX: this is a backport of the old state format. Remove this after a few releases.
+        if "metadata" in state:
+            metadata: Dict = state.pop("metadata")
+            metadata.update(state)
+            state = metadata
 
-        self.name = metadata["name"]
-        self.size = metadata["size"]
-        self.last_change = metadata.get("last_change", None)
-
-        self.members = {
-            int(off, 16): StructMember.parse(toml.dumps(member, encoder=TomlHexEncoder())) for off, member in members.items()
-        }
+        members_dat = state.pop("members", None)
+        if members_dat:
+            for off, member in members_dat.items():
+                sm = StructMember()
+                sm.__setstate__(member)
+                self.members[int(off, 0)] = sm
+        else:
+            self.members = {}
+        super().__setstate__(state)
 
     def add_struct_member(self, mname, moff, mtype, size):
         self.members[moff] = StructMember(mname, moff, mtype, size)
@@ -130,23 +124,6 @@ class Struct(Artifact):
             diff_dict["members"][off] = self.invert_diff(other_mem.diff(None))
 
         return diff_dict
-
-    def copy(self):
-        members = {offset: member.copy() for offset, member in self.members.items()}
-        struct = Struct(self.name, self.size, members, last_change=self.last_change)
-        return struct
-
-    @classmethod
-    def parse(cls, s):
-        struct = Struct(None, None, None)
-        struct.__setstate__(s)
-        return struct
-
-    @classmethod
-    def load(cls, struct_toml):
-        s = Struct(None, None, None)
-        s.__setstate__(struct_toml)
-        return s
 
     def nonconflict_merge(self, struct2: "Struct", **kwargs) -> "Struct":
         struct1: "Struct" = self.copy()

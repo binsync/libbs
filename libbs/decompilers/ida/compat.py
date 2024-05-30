@@ -200,7 +200,7 @@ def functions():
 
         func_name = get_func_name(func_addr)
         func_size = get_func_size(func_addr)
-        func = Function(func_addr, func_size)
+        func = Function(addr=func_addr, size=func_size)
         func.name = func_name
         funcs[func_addr] = func
 
