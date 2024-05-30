@@ -196,6 +196,7 @@ class Function(Artifact):
         self,
         addr: int = None,
         size: int = None,
+        name: str = None,
         header: Optional[FunctionHeader] = None,
         stack_vars: Optional[Dict[int, StackVariable]] = None,
         dec_obj: Optional[object] = None,
@@ -205,6 +206,7 @@ class Function(Artifact):
         self.addr = addr
         self.size = size
         self.header = header
+        self.name = name
         self.stack_vars: Dict[int, StackVariable] = stack_vars or {}
 
         # a special property which can only be set while running inside the decompiler.

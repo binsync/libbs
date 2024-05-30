@@ -75,5 +75,5 @@ import json
 my_func = Function(name="my_func", addr=0x4000, size=0x10)
 json_str = my_func.dumps(fmt="json")
 loaded_dict = json.loads(json_str) # now loadable through normal JSON parsing
-print(json_str)
+loaded_func = Function.loads(json_str, fmt="json")
 ```
