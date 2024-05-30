@@ -196,10 +196,10 @@ class Function(Artifact):
         self,
         addr: int = None,
         size: int = None,
-        name: str = None,
         header: Optional[FunctionHeader] = None,
         stack_vars: Optional[Dict[int, StackVariable]] = None,
         dec_obj: Optional[object] = None,
+        name: str = None,
         **kwargs
     ):
         super().__init__(**kwargs)
