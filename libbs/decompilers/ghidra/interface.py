@@ -474,8 +474,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 "if codeUnit.getComment(1)]",
                 addrSet=addrSet
             ) or []
-            comments |= {addr: Comment(addr=addr, comment=str(text)) for text, addr in eol_text_addrs}
-            comments |= {addr: Comment(addr=addr, comment=str(text), decompiled=True) for text, addr in pre_text_addrs}
+            # TODO: this could be bad if we have multiple comments at the same address (pre and eol)
+            comments.update({addr: Comment(addr=addr, comment=str(text)) for text, addr in eol_text_addrs})
+            comments.update(
+                {addr: Comment(addr=addr, comment=str(text), decompiled=True) for text, addr in pre_text_addrs}
+            )
         return comments
 
     @ghidra_transaction
