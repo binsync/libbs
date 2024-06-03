@@ -462,20 +462,20 @@ class GhidraDecompilerInterface(DecompilerInterface):
         comments = {}
         for func in self.ghidra.currentProgram.getFunctionManager().getFunctions(True):
             addrSet = func.getBody()
-            eol_text_addrs: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_exec(
+            eol_text_addrs: List[Tuple[str, int]] = self.ghidra.bridge.remote_exec(
                 "[(codeUnit.getComment(0), codeUnit.address)"
                 "for codeUnit in currentProgram.getListing().getCodeUnits(addrSet, True)"
                 "if codeUnit.getComment(0)]",
                 addrSet=addrSet
-            )
-            pre_text_addrs: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_exec(
+            ) or []
+            pre_text_addrs: List[Tuple[str, int]] = self.ghidra.bridge.remote_exec(
                 "[(codeUnit.getComment(1), codeUnit.address)"
                 "for codeUnit in currentProgram.getListing().getCodeUnits(addrSet, True)"
                 "if codeUnit.getComment(1)]",
                 addrSet=addrSet
-            )
-            comments |= {addr: Comment(addr, text) for text, addr in eol_text_addrs}
-            comments |= {addr: Comment(addr, text, decompiled=True) for text, addr in pre_text_addrs}
+            ) or []
+            comments |= {addr: Comment(addr=addr, comment=str(text)) for text, addr in eol_text_addrs}
+            comments |= {addr: Comment(addr=addr, comment=str(text), decompiled=True) for text, addr in pre_text_addrs}
         return comments
 
     @ghidra_transaction

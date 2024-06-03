@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 from collections import defaultdict
@@ -52,6 +53,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
             json_strings.append(gvar.dumps(fmt=ArtifactFormat.JSON))
         for comment in deci.comments.values():
             json_strings.append(comment.dumps(fmt=ArtifactFormat.JSON))
+
+        # validate each one is not corrupted
+        for json_str in json_strings:
+            json.loads(json_str)
 
         deci.shutdown()
 
