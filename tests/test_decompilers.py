@@ -38,8 +38,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             function = deci.functions[addr]
             if function.header.type == "void":
                 function.header.type = "int"
-
-            deci.functions[function.addr] = function
+                deci.functions[function.addr] = function
 
         deci.shutdown()
 
