@@ -61,6 +61,9 @@ class ArtifactDict(dict):
     def _lifted_art_lister(self):
         d = self._artifact_lister()
         d_items = list(d.items())
+        if not d_items:
+            return {}
+
         is_addr = hasattr(d_items[0][1], "addr")
         new_d = {}
         for k, v in d_items:

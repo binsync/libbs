@@ -1,10 +1,11 @@
+import json
 import unittest
 from pathlib import Path
 from collections import defaultdict
 import os
 
 from libbs.api import DecompilerInterface
-from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment
+from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
 
 GHIDRA_HEADLESS_PATH = Path(os.environ.get('GHIDRA_HEADLESS_PATH', ""))
@@ -23,22 +24,39 @@ class TestHeadlessInterfaces(unittest.TestCase):
         self._generic_renamed_name = "binsync_main"
         self._fauxware_path = TEST_BINARY_DIR / "fauxware"
 
-    def test_readme_example(self):
+    def test_setting_and_listing_arts(self):
         """
         TODO: Test more than just Ghidra here.
         """
+        # the direct example from the README:
         deci = DecompilerInterface.discover(
             force_decompiler=GHIDRA_DECOMPILER,
             headless=True,
             headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
             binary_path=TEST_BINARY_DIR / "posix_syscall",
         )
-
         for addr in deci.functions:
             function = deci.functions[addr]
             if function.header.type == "void":
                 function.header.type = "int"
                 deci.functions[function.addr] = function
+
+        # list all the different artifacts
+        json_strings = []
+        for func in deci.functions.values():
+            json_strings.append(func.dumps(fmt=ArtifactFormat.JSON))
+        for struct in deci.structs.values():
+            json_strings.append(struct.dumps(fmt=ArtifactFormat.JSON))
+        for enum in deci.enums.values():
+            json_strings.append(enum.dumps(fmt=ArtifactFormat.JSON))
+        for gvar in deci.global_vars.values():
+            json_strings.append(gvar.dumps(fmt=ArtifactFormat.JSON))
+        for comment in deci.comments.values():
+            json_strings.append(comment.dumps(fmt=ArtifactFormat.JSON))
+
+        # validate each one is not corrupted
+        for json_str in json_strings:
+            json.loads(json_str)
 
         deci.shutdown()
 
