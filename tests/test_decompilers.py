@@ -42,15 +42,15 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # list all the different artifacts
         json_strings = []
-        for func in deci.functions:
+        for func in deci.functions.values():
             json_strings.append(func.dumps(fmt=ArtifactFormat.JSON))
-        for struct in deci.structs:
+        for struct in deci.structs.values():
             json_strings.append(struct.dumps(fmt=ArtifactFormat.JSON))
-        for enum in deci.enums:
+        for enum in deci.enums.values():
             json_strings.append(enum.dumps(fmt=ArtifactFormat.JSON))
-        for gvar in deci.global_vars:
+        for gvar in deci.global_vars.values():
             json_strings.append(gvar.dumps(fmt=ArtifactFormat.JSON))
-        for comment in deci.comments:
+        for comment in deci.comments.values():
             json_strings.append(comment.dumps(fmt=ArtifactFormat.JSON))
 
         deci.shutdown()
