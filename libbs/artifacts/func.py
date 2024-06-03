@@ -228,6 +228,9 @@ class Function(Artifact):
         } if self.stack_vars else None
 
         state = super().__getstate__()
+        # give alias for name and type for convenience
+        state["name"] = self.name
+        state["type"] = self.type
         state["header"] = header
         state["stack_vars"] = stack_vars
         return state
@@ -246,6 +249,13 @@ class Function(Artifact):
         else:
             header = None
         self.header = header
+
+        # alias for name overrides header if it exists
+        if "name" in state:
+            self.name = state.pop("name")
+        # alias for type overrides header if it exists
+        if "type" in state:
+            self.type = state.pop("type")
 
         stack_vars_dat = state.pop("stack_vars", {})
         if stack_vars_dat:
@@ -379,6 +389,17 @@ class Function(Artifact):
         if not self.header:
             self.header = FunctionHeader(name=None, addr=self.addr)
         self.header.name = value
+
+    @property
+    def type(self):
+        return self.header.type if self.header else None
+
+    @type.setter
+    def type(self, value):
+        # create a header if one does not exist for this function
+        if not self.header:
+            self.header = FunctionHeader(name=None, addr=self.addr)
+        self.header.type = value
 
     @property
     def args(self):
