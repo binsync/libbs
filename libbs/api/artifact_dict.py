@@ -58,6 +58,18 @@ class ArtifactDict(dict):
     def __len__(self):
         return len(self._artifact_lister())
 
+    def _lifted_art_lister(self):
+        d = self._artifact_lister()
+        d_items = list(d.items())
+        is_addr = hasattr(d_items[0][1], "addr")
+        new_d = {}
+        for k, v in d_items:
+            if is_addr:
+                k = self._deci.art_lifter.lift_addr(k)
+            new_d[k] = self._deci.art_lifter.lift(v)
+
+        return new_d
+
     def __getitem__(self, item):
         """
         Takes a lifted identifier as input and returns a lifted artifact
@@ -97,19 +109,19 @@ class ArtifactDict(dict):
         pass
 
     def __iter__(self):
-        return iter(self._artifact_lister())
+        return iter(self._lifted_art_lister())
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: {self._artifact_class.__name__} len={self.__len__()}>"
 
     def __str__(self):
-        return f"{self._artifact_lister()}"
+        return f"{self._lifted_art_lister()}"
 
     def keys(self):
-        return self._artifact_lister().keys()
+        return self._lifted_art_lister().keys()
 
     def values(self):
-        return self._artifact_lister().values()
+        return self._lifted_art_lister().values()
 
     def items(self):
-        return self._artifact_lister().items()
+        return self._lifted_art_lister().items()
