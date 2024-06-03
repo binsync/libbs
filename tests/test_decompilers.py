@@ -17,10 +17,30 @@ DEC_TO_HEADLESS = {
     BINJA_DECOMPILER: None,
 }
 
+
 class TestHeadlessInterfaces(unittest.TestCase):
     def setUp(self):
         self._generic_renamed_name = "binsync_main"
         self._fauxware_path = TEST_BINARY_DIR / "fauxware"
+
+    def test_readme_example(self):
+        """
+        TODO: Test more than just Ghidra here.
+        """
+        deci = DecompilerInterface.discover(
+            force_decompiler=GHIDRA_DECOMPILER,
+            headless=True,
+            headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
+            binary_path=TEST_BINARY_DIR / "posix_syscall",
+        )
+
+        for addr in deci.functions:
+            function = deci.functions[addr]
+            if function.header.type == "void":
+                function.header.type = "int"
+                deci.functions[function.addr] = function
+
+        deci.shutdown()
 
     def test_ghidra(self):
         # useful command for testing, kills all Headless-Ghidra:

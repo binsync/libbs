@@ -260,6 +260,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def _get_function(self, addr, **kwargs) -> Optional[Function]:
         func = self._get_nearest_function(addr)
+        if func is None:
+            return None
+
         dec = self._ghidra_decompile(func)
         # optimize on remote
         stack_variable_info: Optional[List[Tuple[int, str, str, int]]] = self.ghidra.bridge.remote_eval(

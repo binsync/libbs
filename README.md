@@ -33,8 +33,7 @@ for addr in deci.functions:
     function = deci.functions[addr]
     if function.header.type == "void":
         function.header.type = "int"
-
-    deci.functions[function.addr] = function
+        deci.functions[function.addr] = function
 ```
 
 ### Headless Mode 
@@ -43,7 +42,7 @@ To use headless mode you must specify a decompiler to use. You can get the tradi
 ```python 
 from libbs.api import DecompilerInterface
 
-deci = DecompilerInterface.discover(force_decompiler="ida", headless=True)
+deci = DecompilerInterface.discover(force_decompiler="ghidra", headless=True)
 ```
 
 In the case of decompilers that don't have a native python library for working with, like Ghidra and IDA, you will to 
