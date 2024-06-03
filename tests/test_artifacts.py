@@ -33,6 +33,7 @@ def generate_test_funcs(func_addr):
     func2 = Function(addr=func_addr, size=0x150, header=fh2, stack_vars=stack_vars2)
     return func1, func2
 
+
 class TestArtifacts(unittest.TestCase):
     def test_func_diffing(self):
         # setup top
@@ -141,12 +142,15 @@ class TestArtifacts(unittest.TestCase):
             0: StructMember(offset=0, name="m0", type_="int", size=4),
             4: StructMember(offset=4, name="m4", type_="long", size=8)
         })
+        # TODO: add comments, enums, patches, and global vars to the test
         for fmt, load_func in native_load_funcs.items():
             serialized_func = func.dumps(fmt=fmt)
             loaded_func_dict = load_func(serialized_func)
 
             assert loaded_func_dict["addr"] == func.addr
             assert loaded_func_dict["size"] == func.size
+            assert loaded_func_dict["name"] == func.name
+            assert loaded_func_dict["type"] == func.type
             assert loaded_func_dict["header"]["name"] == func.header.name
             assert loaded_func_dict["header"]["type"] == func.header.type
             assert loaded_func_dict["header"]["args"]["0x0"]["name"] == func.header.args[0].name
