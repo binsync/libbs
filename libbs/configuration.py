@@ -1,4 +1,5 @@
-from libbs.decompilers import SUPPORTED_DECOMPILERS, GHIDRA_DECOMPILER, IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER
+from libbs.decompilers import SUPPORTED_DECOMPILERS, GHIDRA_DECOMPILER, IDA_DECOMPILER, ANGR_DECOMPILER, \
+    BINJA_DECOMPILER
 from platformdirs import user_config_dir
 import pathlib
 import logging
@@ -6,6 +7,7 @@ import toml
 import os
 
 _l = logging.getLogger(__name__)
+
 
 # TODO: Add file locking to prevent simultaneous file accessing
 class BSConfig:
@@ -104,7 +106,8 @@ class LibbsConfig(BSConfig):
 
         for decompiler in SUPPORTED_DECOMPILERS:
             plugins_path = config.plugins_paths[decompiler] if decompiler in config.plugins_paths else None
-            headless_path = config.headless_binary_paths[decompiler] if decompiler in config.headless_binary_paths else None
+            headless_path = config.headless_binary_paths[
+                decompiler] if decompiler in config.headless_binary_paths else None
             # Attempt to find default plugins_path if not given
             if not plugins_path:
                 plugins_path = _infer_plugins_path(decompiler)
@@ -120,6 +123,8 @@ class LibbsConfig(BSConfig):
 
 def _create_path(path_str):
     return pathlib.Path(path_str).expanduser().absolute()
+
+
 def _infer_headless_path(plugins_path, decompiler):
     if decompiler == GHIDRA_DECOMPILER:
         # Infer ghidra headless
@@ -136,6 +141,7 @@ def _infer_headless_path(plugins_path, decompiler):
         return headless_path if headless_path.exists() else None
 
     return None
+
 
 def _infer_plugins_path(decompiler):
     home = _create_path(os.gentenv("HOME") or "~/")
