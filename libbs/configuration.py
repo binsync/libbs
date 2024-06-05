@@ -184,6 +184,8 @@ def _infer_plugins_path(decompiler):
 
 def _create_path(path_str):
     return pathlib.Path(path_str).expanduser().absolute()
+
+
 def _infer_headless_path(plugins_path, decompiler):
     if decompiler == GHIDRA_DECOMPILER:
         # Infer ghidra headless
@@ -200,6 +202,7 @@ def _infer_headless_path(plugins_path, decompiler):
         return headless_path if headless_path.exists() else None
 
     return None
+
 
 def _infer_plugins_path(decompiler):
     home = _create_path(os.gentenv("HOME") or "~/")
