@@ -10,19 +10,6 @@ from libbs.plugin_installer import LibBSPluginInstaller
 _l = logging.getLogger(__name__)
 
 
-def run_ghidra_ui():
-    libbs_path = Path(str(importlib.resources.files("libbs"))).absolute()
-    decompilers_path = libbs_path / "decompilers"
-    if not decompilers_path.exists():
-        _l.error("Known plugins path does not exist, which means BinSync did not install correctly!")
-        return False
-
-    sys.path.insert(1, str(decompilers_path))
-    plugin = importlib.import_module(f"ghidra.gui")
-    _l.debug(f"Executing Ghidra UI...")
-    return plugin.start_file_selector_ui()
-
-
 def install():
     LibBSPluginInstaller().install()
 

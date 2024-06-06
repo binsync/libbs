@@ -13,9 +13,6 @@ class GhidraArtifactLifter(ArtifactLifter):
         "undefined8": "char",
     }
 
-    def __init__(self, deci):
-        super(GhidraArtifactLifter, self).__init__(deci)
-
     def lift_type(self, type_str: str) -> str:
         for ghidra_t, bs_t in self.lift_map.items():
             type_str = type_str.replace(ghidra_t, bs_t)

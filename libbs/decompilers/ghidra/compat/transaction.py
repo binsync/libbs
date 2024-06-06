@@ -1,18 +1,12 @@
-import typing
-
-if typing.TYPE_CHECKING:
-    from .ghidra_api import GhidraAPIWrapper
-
+from .state import get_current_program
 
 class Transaction:
-    def __init__(self, ghidra: "GhidraAPIWrapper", msg="BinSync transaction"):
-        self._ghidra = ghidra
+    def __init__(self, msg="BinSync transaction"):
         self._trans_msg = msg
-
         self.trans_id = None
 
     def __enter__(self):
-        self.trans_id = self._ghidra.currentProgram.startTransaction(self._trans_msg)
+        self.trans_id = get_current_program().startTransaction(self._trans_msg)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._ghidra.currentProgram.endTransaction(self.trans_id, True)
+        get_current_program().endTransaction(self.trans_id, True)

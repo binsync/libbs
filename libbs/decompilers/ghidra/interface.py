@@ -25,7 +25,7 @@ _l = logging.getLogger(__name__)
 def ghidra_transaction(f):
     @wraps(f)
     def _ghidra_transaction(self: "GhidraDecompilerInterface", *args, **kwargs):
-        with Transaction(self.ghidra, msg=f"BS::{f.__name__}(args={args})"):
+        with Transaction(msg=f"BS::{f.__name__}(args={args})"):
             ret_val = f(self, *args, **kwargs)
 
         return ret_val
@@ -320,6 +320,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @ghidra_transaction
     def _set_stack_variable(self, svar: StackVariable, **kwargs) -> bool:
+        from .compat.imports import SourceType
         changes = False
         if not svar:
             return changes
@@ -330,18 +331,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not gstack_var:
             return changes
 
-        src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
-
         # name
         if svar.name and svar.name != gstack_var.getName():
-            gstack_var.setName(svar.name, src_type.USER_DEFINED)
+            gstack_var.setName(svar.name, SourceType.USER_DEFINED)
             changes = True
 
         # type
         if svar.type:
             parsed_type = self.typestr_to_gtype(svar.type)
             if parsed_type is not None and parsed_type != str(gstack_var.getDataType()):
-                gstack_var.setDataType(parsed_type, False, True, src_type.USER_DEFINED)
+                gstack_var.setDataType(parsed_type, False, True, SourceType.USER_DEFINED)
                 changes = True
 
         return changes
@@ -362,7 +361,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         # func name
         self.info(f"Setting function header: {fheader}")
         if fheader.name and fheader.name != ghidra_func.getName():
-            with Transaction(self.ghidra, msg="BS::set_function_header::set_name"):
+            with Transaction(msg="BS::set_function_header::set_name"):
                 ghidra_func.setName(fheader.name, src_type.USER_DEFINED)
             changes = True
 
@@ -371,7 +370,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             parsed_type = self.typestr_to_gtype(fheader.type)
             if parsed_type is not None and \
                     parsed_type != str(decompilation.highFunction.getFunctionPrototype().getReturnType()):
-                with Transaction(self.ghidra, msg="BS::set_function_header::set_rettype"):
+                with Transaction(msg="BS::set_function_header::set_rettype"):
                     ghidra_func.setReturnType(parsed_type, src_type.USER_DEFINED)
                 changes = True
 
@@ -381,10 +380,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
             high_func_util = self.ghidra.import_module_object("ghidra.program.model.pcode", "HighFunctionDBUtil")
             params = ghidra_func.getParameters()
             if len(params) == 0:
-                with Transaction(self.ghidra, msg="BS::set_function_header::update_params"):
+                with Transaction(msg="BS::set_function_header::update_params"):
                     high_func_util.commitParamsToDatabase(decompilation.highFunction, True, src_type.USER_DEFINED)
 
-            with Transaction(self.ghidra, msg="BS::set_function_header::set_arguments"):
+            with Transaction(msg="BS::set_function_header::set_arguments"):
                 for offset, param in zip(fheader.args, params):
                     arg = fheader.args[offset]
                     gtype = self.typestr_to_gtype(arg.type)
