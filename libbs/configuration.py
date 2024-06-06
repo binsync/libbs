@@ -205,7 +205,7 @@ def _infer_headless_path(plugins_path, decompiler):
 
 
 def _infer_plugins_path(decompiler):
-    home = _create_path(os.gentenv("HOME") or "~/")
+    home = _create_path(os.getenv("HOME") or "~/")
     if decompiler == GHIDRA_DECOMPILER:
         # Ghidra plugins isn't in install root, so just attempt to use default
         default_path = home / "ghidra_scripts"
