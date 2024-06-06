@@ -125,9 +125,13 @@ class Artifact:
 
     @classmethod
     def dumps_many(cls, artifacts: List["Artifact"], key_attr=ADDR_ATTR, fmt=ArtifactFormat.TOML) -> str:
-        artifacts_dict = {
-            getattr(art, key_attr): art.__getstate__() for art in artifacts
-        }
+        artifacts_dict = {}
+        for art in artifacts:
+            k = getattr(art, key_attr)
+            if isinstance(k, int):
+                k = hex(k)
+
+            artifacts_dict[k] = art.__getstate__()
 
         if fmt == ArtifactFormat.TOML:
             return toml.dumps(artifacts_dict, encoder=TomlHexEncoder())
