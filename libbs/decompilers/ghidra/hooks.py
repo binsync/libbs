@@ -13,7 +13,7 @@ if typing.TYPE_CHECKING:
     from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
 
 
-@JImplements(DomainObjectListener)
+@JImplements(DomainObjectListener, deferred=True)
 class DataMonitor:
     @JOverride
     def __init__(self, interface: "GhidraDecompilerInterface"):
