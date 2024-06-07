@@ -1,5 +1,6 @@
 from .state import get_current_program
 
+
 class Transaction:
     def __init__(self, msg="BinSync transaction"):
         self._trans_msg = msg

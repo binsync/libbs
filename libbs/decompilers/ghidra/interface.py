@@ -16,13 +16,12 @@ from libbs.plugin_installer import PluginInstaller
 import psutil
 
 from .artifact_lifter import GhidraArtifactLifter
-from .compat import GhidraAPIWrapper, Transaction
-from .hooks import create_context_action, create_data_monitor
 
 _l = logging.getLogger(__name__)
 
 
 def ghidra_transaction(f):
+    from .compat.transaction import Transaction
     @wraps(f)
     def _ghidra_transaction(self: "GhidraDecompilerInterface", *args, **kwargs):
         with Transaction(msg=f"BS::{f.__name__}(args={args})"):
@@ -56,11 +55,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         super()._init_gui_components(*args, **kwargs)
 
     def start_artifact_watchers(self):
+        from .hooks import create_data_monitor
+
         if not self._artifact_watchers_started:
             if self.ghidra is None:
                 raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
 
-            self._data_monitor = create_data_monitor(self.ghidra, self)
+            self._data_monitor = create_data_monitor(self)
             self.ghidra.currentProgram.addListener(self._data_monitor)
             # TODO: generalize superclass method?
             super().start_artifact_watchers()
@@ -353,6 +354,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return self._gstack_var_to_bsvar(gstack_var)
 
     def _set_function_header(self, fheader: FunctionHeader, decompilation=None, **kwargs) -> bool:
+        from .compat.transaction import Transaction
         changes = False
         func_addr = fheader.addr
         ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(func_addr)
