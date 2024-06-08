@@ -634,18 +634,12 @@ class DecompilerInterface:
         except ImportError:
             pass
 
-        # Ghidra: which is all done over a remote connection check
-        import socket
-        from libbs.decompiler_stubs.ghidra_libbs.libbs_vendored.ghidra_bridge_port import DEFAULT_SERVER_PORT
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)  # 2 Second Timeout
-        available.add(GHIDRA_DECOMPILER)
-        try:
-            if sock.connect_ex(('127.0.0.1', DEFAULT_SERVER_PORT)) == 0:
-                if not force:
-                    return GHIDRA_DECOMPILER
-        except ConnectionError:
-            pass
+        # Ghidra
+        this_obj = DecompilerInterface._find_global_in_call_frames("__this__")
+        if (this_obj is not None) and (hasattr(this_obj, "currentProgram")):
+            if not force:
+                return GHIDRA_DECOMPILER
+            available.add(GHIDRA_DECOMPILER)
 
         # Binary Ninja
         # this check needs to be done last since there is no way to traverse the stack frame to find the correct
@@ -707,7 +701,7 @@ class DecompilerInterface:
         elif current_decompiler == GHIDRA_DECOMPILER:
             from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
             deci_class = GhidraDecompilerInterface
-            extra_kwargs = {}
+            extra_kwargs = {"flat_api": DecompilerInterface._find_global_in_call_frames('__this__')}
         else:
             raise ValueError("Please use LibBS with our supported decompiler set!")
 

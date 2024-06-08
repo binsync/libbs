@@ -3,7 +3,7 @@ from ghidra.framework.model import DomainObjectListener
 from ghidra.program.model.symbol import SourceType, SymbolType
 from ghidra.program.model.pcode import HighFunctionDBUtil
 from ghidra.program.model.data import (
-    DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath, StructureDB
+    DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath,
 )
 from ghidra.program.util import ChangeManager, ProgramChangeRecord
 from ghidra.program.database.function import VariableDB, FunctionDB
@@ -17,18 +17,13 @@ from ghidra.app.plugin.core.analysis import AutoAnalysisManager
 from ghidra.app.util.cparser.C import CParserUtils
 from ghidra.util.task import ConsoleTaskMonitor
 from ghidra.util.data import DataTypeParser
-from ghidra.util.exception.ghidra.util.exception import CancelledException
+from ghidra.util.exception import CancelledException
 from docking.action import MenuData
 
 # TODO: XXX: these are broken still (because private):
-# from ghidra.program.model.data import EnumDB
+# from ghidra.program.database.data import EnumDB, StructureDB
 
 __all__ = [
-    # flatapi objects
-    "getState",
-    "askString",
-    "toAddr",
-    "getSymbolAt",
     # forcefully imported objects
     "DomainObjectListener",
     "SourceType",

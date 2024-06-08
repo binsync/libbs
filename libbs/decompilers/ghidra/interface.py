@@ -21,10 +21,10 @@ _l = logging.getLogger(__name__)
 
 
 def ghidra_transaction(f):
-    from .compat.transaction import Transaction
     @wraps(f)
     def _ghidra_transaction(self: "GhidraDecompilerInterface", *args, **kwargs):
-        with Transaction(msg=f"BS::{f.__name__}(args={args})"):
+        from .compat.transaction import Transaction
+        with Transaction(flat_api=self.flat_api, msg=f"BS::{f.__name__}(args={args})"):
             ret_val = f(self, *args, **kwargs)
 
         return ret_val
@@ -35,8 +35,10 @@ def ghidra_transaction(f):
 class GhidraDecompilerInterface(DecompilerInterface):
     CACHE_TIMEOUT = 5
 
-    def __init__(self, loop_on_plugin=True, start_headless_watchers=False, **kwargs):
+    def __init__(self, flat_api=None, loop_on_plugin=True, start_headless_watchers=False, **kwargs):
         self.loop_on_plugin = loop_on_plugin
+        self.flat_api = flat_api
+
         self._start_headless_watchers = start_headless_watchers
 
         self._last_addr = None
@@ -156,20 +158,21 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 self.warning(f"Exception in ctx menu callback {name}: {e}")
                 raise
         ctx_menu_action = create_context_action(self.ghidra, name, action_string, callback_func_wrap, category or "LibBS")
-        self.ghidra.getState().getTool().addAction(ctx_menu_action)
+        self.flat_api.getState().getTool().addAction(ctx_menu_action)
         return True
 
     def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        from .compat.imports import askString, CancelledException
+        from .compat.imports import CancelledException
         try:
-            answer = askString(title, question)
+            answer = self.flat_api.askString(title, question)
         except CancelledException:
             answer = None
 
         return answer if answer is not None else ""
 
     def gui_active_context(self):
-        active_addr = self.ghidra.currentLocation.getAddress().getOffset()
+        from .compat.state import get_current_address
+        active_addr = get_current_address(flat_api=self.flat_api)
         if active_addr is None:
             return Function(0, 0)
 
@@ -182,7 +185,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def gui_goto(self, func_addr) -> None:
         func_addr = self.art_lifter.lower_addr(func_addr)
-        self.ghidra.goTo(self.ghidra.toAddr(func_addr))
+        self.flat_api.goTo(self.flat_api.toAddr(func_addr))
 
     #
     # Mandatory API
@@ -190,24 +193,20 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
-        from .compat.state import get_current_program
-
         # TODO: this is a hack for a dumb cache, and can cause bugs, but good enough for now:
         if (time.time() - self._last_base_addr_access > self.CACHE_TIMEOUT) or self._binary_base_addr is None:
-            self._binary_base_addr = int(get_current_program().getImageBase().getOffset())
+            self._binary_base_addr = int(self.currentProgram.getImageBase().getOffset())
             self._last_base_addr_access = time.time()
 
         return self._binary_base_addr
 
     @property
     def binary_hash(self) -> str:
-        from .compat.state import get_current_program
-        return get_current_program().currentProgram.executableMD5
+        return self.currentProgram.executableMD5
 
     @property
     def binary_path(self) -> Optional[str]:
-        from .compat.state import get_current_program
-        return get_current_program().executablePath
+        return self.currentProgram.executablePath
 
     def get_func_size(self, func_addr) -> int:
         func_addr = self.art_lifter.lower_addr(func_addr)
@@ -238,8 +237,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     def undo(self):
-        from .compat.state import get_current_program
-        get_current_program().undo()
+        self.currentProgram.undo()
 
     def local_variable_names(self, func: Function) -> List[str]:
         symbols_by_name = self._get_local_variable_symbols(func)
@@ -284,10 +282,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
 
     def _functions(self) -> Dict[int, Function]:
-        from .compat.state import get_current_program
-
         funcs = {}
-        for func in get_current_program().getFunctionManager().getFunctions(True):
+        for func in self.currentProgram.getFunctionManager().getFunctions(True):
             addr = int(func.getEntryPoint().getOffset())
             funcs[addr] = Function(
                 addr=addr, size=int(func.getBody().getNumAddresses()),
@@ -410,11 +406,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ghidra_transaction
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
         from .compat.imports import DataTypeConflictHandler, StructureDataType, ByteDataType
-        from .compat.state import get_current_program
+
 
         struct: Struct = struct
         old_ghidra_struct = self._get_struct_by_name(struct.name)
-        data_manager = get_current_program().getDataTypeManager()
+        data_manager = self.currentProgram.getDataTypeManager()
         ghidra_struct = StructureDataType(struct.name, 0)
         for offset in struct.members:
             member = struct.members[offset]
@@ -445,9 +441,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return Struct(ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(name))
 
     def _structs(self) -> Dict[str, Struct]:
-        from .compat.state import get_current_program
+
         structs = {}
-        for struct in get_current_program().getDataTypeManager().getAllStructures():
+        for struct in self.currentProgram.getDataTypeManager().getAllStructures():
             name = struct.getPathName()[1:]
             structs[name] = Struct(name=name, size=struct.getLength(), mambers=self._struct_members_from_gstruct(name))
 
@@ -455,8 +451,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @ghidra_transaction
     def _set_comment(self, comment: Comment, **kwargs) -> bool:
-        from .compat.imports import CodeUnit, SetCommentCmd, toAddr
-        from .compat.state import get_current_program
+        from .compat.imports import CodeUnit, SetCommentCmd
+
 
         cmt_type = CodeUnit.PRE_COMMENT if comment.decompiled else CodeUnit.EOL_COMMENT
         if comment.addr == comment.func_addr:
@@ -465,8 +461,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if comment.comment:
             # TODO: check if comment already exists, and append?
             return SetCommentCmd(
-                toAddr(comment.addr), cmt_type, comment.comment
-            ).applyTo(get_current_program())
+                self.flat_api.toAddr(comment.addr), cmt_type, comment.comment
+            ).applyTo(self.currentProgram)
         return True
 
     def _get_comment(self, addr) -> Optional[Comment]:
@@ -474,12 +470,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return None
 
     def _comments(self) -> Dict[int, Comment]:
-        from .compat.state import get_current_program
+
 
         comments = {}
-        for func in get_current_program().getFunctionManager().getFunctions(True):
+        for func in self.currentProgram.getFunctionManager().getFunctions(True):
             addr_set = func.getBody()
-            for codeUnit in get_current_program().getListing().getCodeUnits(addr_set, True):
+            for codeUnit in self.currentProgram.getListing().getCodeUnits(addr_set, True):
                 # TODO: this could be bad if we have multiple comments at the same address (pre and eol)
                 # eol comment
                 addr = int(codeUnit.address)
@@ -498,11 +494,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ghidra_transaction
     def _set_enum(self, enum: Enum, **kwargs) -> bool:
         from .compat.imports import EnumDataType, CategoryPath, DataTypeConflictHandler
-        from .compat.state import get_current_program
+
 
         corrected_enum_name = "/" + enum.name
-        old_ghidra_enum = get_current_program().getDataTypeManager().getDataType(corrected_enum_name)
-        data_manager = get_current_program().getDataTypeManager()
+        old_ghidra_enum = self.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
+        data_manager = self.currentProgram.getDataTypeManager()
 
         # Parse the libbs Enum name into category path and raw enum name for proper Enum creation
         split = corrected_enum_name.split('/')
@@ -532,10 +528,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def _enums(self) -> Dict[str, Enum]:
         from .compat.imports import EnumDB
-        from .compat.state import get_current_program
+
 
         enums = {}
-        for dType in get_current_program().getDataTypeManager().getAllDataTypes():
+        for dType in self.currentProgram.getDataTypeManager().getAllDataTypes():
             if not isinstance(dType, EnumDB):
                 continue
 
@@ -552,8 +548,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         """
         TODO: remove me and implement me properly as setters and getters
         """
-        from .compat.imports import RenameLabelCmd, SourceType, getSymbolAt, toAddr
-        from .compat.state import get_current_program
+        from .compat.imports import RenameLabelCmd, SourceType
+
 
         changes = False
         global_var: GlobalVariable = artifact
@@ -564,9 +560,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 continue
 
             if global_var.name and global_var.name != gvar.name:
-                sym = getSymbolAt(toAddr(var_addr))
+                sym = self.flat_api.getSymbolAt(self.flat_api.toAddr(var_addr))
                 cmd = RenameLabelCmd(sym, global_var.name, SourceType.USER_DEFINED)
-                cmd.applyTo(get_current_program())
+                cmd.applyTo(self.currentProgram)
                 changes = True
 
             if global_var.type:
@@ -581,19 +577,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
         """
         TODO: remove me and implement me properly as setters and getters
         """
-        from .compat.imports import toAddr
-        from .compat.state import get_current_program
-
         light_global_vars = self._global_vars()
         for offset, global_var in light_global_vars.items():
             if offset == addr:
-                lst = get_current_program().getListing()
-                g_addr = toAddr(addr)
+                lst = self.currentProgram.getListing()
+                g_addr = self.flat_api.toAddr(addr)
                 data = lst.getDataAt(g_addr)
                 if not data or data.isStructure():
                     return None
                 if str(data.getDataType()) == "undefined":
-                    size = get_current_program().getDefaultPointerSize()
+                    size = self.currentProgram.getDefaultPointerSize()
                 else:
                     size = data.getLength()
 
@@ -605,9 +598,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         TODO: remove me and implement me properly as setters and getters
         """
         from .compat.imports import SymbolType
-        from .compat.state import get_current_program
 
-        symbol_table = get_current_program().getSymbolTable()
+
+        symbol_table = self.currentProgram.getSymbolTable()
         gvars = {}
         for sym in symbol_table.getAllSymbols(True):
             if sym.getSymbolType() != SymbolType.LABEL:
@@ -658,6 +651,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # Ghidra Specific API
     #
 
+    @property
+    def currentProgram(self):
+        from .compat.state import get_current_program
+        return get_current_program(flat_api=self.flat_api)
+
     @ghidra_transaction
     def _update_local_variable_symbols(
         self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]
@@ -687,9 +685,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         Returns None if the struct does not exist or is not a struct.
         """
         from .compat.imports import StructureDB
-        from .compat.state import get_current_program
 
-        struct = get_current_program().getDataTypeManager().getDataType("/" + name)
+        struct = self.currentProgram.getDataTypeManager().getDataType("/" + name)
         return struct if isinstance(struct, StructureDB) else None
 
     def _struct_members_from_gstruct(self, name: str) -> Dict[int, StructMember]:
@@ -720,8 +717,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return {name: value for name, value in name_vals} if name_vals else {}
 
     def _get_nearest_function(self, addr: int) -> "GhidraFunction":
-        func_manager = self.ghidra.currentProgram.getFunctionManager()
-        return func_manager.getFunctionContaining(self.ghidra.toAddr(addr))
+        func_manager = self.currentProgram.getFunctionManager()
+        return func_manager.getFunctionContaining(self.flat_api.toAddr(addr))
 
     def _gstack_var_to_bsvar(self, gstack_var: "LocalVariableDB"):
         if gstack_var is None:
@@ -766,7 +763,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         from .compat.imports import DecompInterface, ConsoleTaskMonitor
 
         dec_interface = DecompInterface()
-        dec_interface.openProgram(self.ghidra.currentProgram)
+        dec_interface.openProgram(self.currentProgram)
         dec_results = dec_interface.decompileFunction(func, 0, ConsoleTaskMonitor())
         return dec_results
 
@@ -798,7 +795,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not typestr:
             return None
 
-        aam = AutoAnalysisManager.getAnalysisManager(self.ghidra.currentProgram)
+        aam = AutoAnalysisManager.getAnalysisManager(self.currentProgram)
         dt_service = aam.getDataTypeManagerService()
         dt_parser = DataTypeParser(dt_service, DataTypeParser.AllowedDataTypes.ALL)
         try:
@@ -819,7 +816,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not progotype_str:
             return None
 
-        program = self.ghidra.currentProgram
+        program = self.currentProgram
         return CParserUtils.parseSignature(program, progotype_str)
 
     def _run_until_server_closed(self, sleep_interval=30):
@@ -832,5 +829,5 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def _get_ghidra_enum(self, enum_name: str) -> Optional["EnumDB"]:
         from .compat.imports import EnumDB
 
-        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
+        ghidra_enum = self.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
         return ghidra_enum if self.ghidra.isinstance(ghidra_enum, EnumDB) else None
