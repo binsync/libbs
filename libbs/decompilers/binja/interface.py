@@ -13,7 +13,7 @@ except ImportError:
 BN_UI_AVAILABLE = True
 try:
     import binaryninjaui
-except ImportError:
+except Exception:
     BN_UI_AVAILABLE = False
 
 if BN_AVAILABLE:
@@ -582,6 +582,11 @@ class BinjaInterface(DecompilerInterface):
             i: FunctionArgument(i, parameter.name, parameter.type.get_string_before_name(), parameter.type.width)
             for i, parameter in enumerate(bn_func.parameter_vars)
         }
+        # XXX: this a hack to fix the void (*arg) issue
+        for i, arg in args.items():
+            # notice the missing end parenthesis
+            if arg.type.endswith("(*"):
+                arg.type = arg.type.replace("(*", "*")
 
         sync_header = FunctionHeader(
             bn_func.name,

@@ -26,39 +26,40 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
     def test_setting_and_listing_arts(self):
         """
-        TODO: Test more than just Ghidra here.
+        TODO: Add angr an IDA
         """
-        # the direct example from the README:
-        deci = DecompilerInterface.discover(
-            force_decompiler=GHIDRA_DECOMPILER,
-            headless=True,
-            headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
-            binary_path=TEST_BINARY_DIR / "posix_syscall",
-        )
-        for addr in deci.functions:
-            function = deci.functions[addr]
-            if function.header.type == "void":
-                function.header.type = "int"
-                deci.functions[function.addr] = function
+        for dec_name in [BINJA_DECOMPILER, GHIDRA_DECOMPILER]:
+            # the direct example from the README:
+            deci = DecompilerInterface.discover(
+                force_decompiler=dec_name,
+                headless=True,
+                headless_dec_path=DEC_TO_HEADLESS[dec_name],
+                binary_path=TEST_BINARY_DIR / "posix_syscall",
+            )
+            for addr in deci.functions:
+                function = deci.functions[addr]
+                if function.header.type == "void":
+                    function.header.type = "int"
+                    deci.functions[function.addr] = function
 
-        # list all the different artifacts
-        json_strings = []
-        for func in deci.functions.values():
-            json_strings.append(func.dumps(fmt=ArtifactFormat.JSON))
-        for struct in deci.structs.values():
-            json_strings.append(struct.dumps(fmt=ArtifactFormat.JSON))
-        for enum in deci.enums.values():
-            json_strings.append(enum.dumps(fmt=ArtifactFormat.JSON))
-        for gvar in deci.global_vars.values():
-            json_strings.append(gvar.dumps(fmt=ArtifactFormat.JSON))
-        for comment in deci.comments.values():
-            json_strings.append(comment.dumps(fmt=ArtifactFormat.JSON))
+            # list all the different artifacts
+            json_strings = []
+            for func in deci.functions.values():
+                json_strings.append(func.dumps(fmt=ArtifactFormat.JSON))
+            for struct in deci.structs.values():
+                json_strings.append(struct.dumps(fmt=ArtifactFormat.JSON))
+            for enum in deci.enums.values():
+                json_strings.append(enum.dumps(fmt=ArtifactFormat.JSON))
+            for gvar in deci.global_vars.values():
+                json_strings.append(gvar.dumps(fmt=ArtifactFormat.JSON))
+            for comment in deci.comments.values():
+                json_strings.append(comment.dumps(fmt=ArtifactFormat.JSON))
 
-        # validate each one is not corrupted
-        for json_str in json_strings:
-            json.loads(json_str)
+            # validate each one is not corrupted
+            for json_str in json_strings:
+                json.loads(json_str)
 
-        deci.shutdown()
+            deci.shutdown()
 
     def test_ghidra(self):
         # useful command for testing, kills all Headless-Ghidra:
