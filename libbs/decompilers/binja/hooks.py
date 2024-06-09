@@ -1,14 +1,14 @@
 from collections import defaultdict
 from typing import Dict
-
-import binaryninja
-from binaryninja.types import StructureType, EnumerationType
-from binaryninja import SymbolType
-from binaryninja.binaryview import BinaryDataNotification
-
 import logging
 
-from .interface import BinjaInterface
+from .interface import BinjaInterface, BN_AVAILABLE
+if BN_AVAILABLE:
+    import binaryninja
+    from binaryninja.types import StructureType, EnumerationType
+    from binaryninja import SymbolType
+    from binaryninja.binaryview import BinaryDataNotification
+
 from libbs.artifacts import (
     FunctionHeader, FunctionArgument, GlobalVariable, StackVariable, Comment
 )
