@@ -4,6 +4,7 @@
 name: Decompiler Tests
 env:
   BN_SERIAL: ${{ secrets.BN_SERIAL }}
+  BN_LICENSE: ${{ secrets.BN_LICENSE }}
 
 on:
   push:
