@@ -10,13 +10,21 @@ try:
 except ImportError:
     BN_AVAILABLE = False
 
+BN_UI_AVAILABLE = True
+try:
+    import binaryninjaui
+except ImportError:
+    BN_UI_AVAILABLE = False
+
 if BN_AVAILABLE:
     from binaryninja import SymbolType, PluginCommand, lineardisassembly
-    from binaryninjaui import UIContext
     from binaryninja.function import DisassemblySettings
     from binaryninja.enums import DisassemblyOption, LinearDisassemblyLineType, InstructionTextTokenType
     from binaryninja.enums import VariableSourceType
     from binaryninja.types import StructureType, EnumerationType
+if BN_UI_AVAILABLE:
+    from binaryninjaui import UIContext
+
 
 from libbs.api.decompiler_interface import DecompilerInterface
 import libbs
