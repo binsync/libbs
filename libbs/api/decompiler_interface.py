@@ -635,11 +635,13 @@ class DecompilerInterface:
             pass
 
         # Ghidra
+        # It is always available, and we don't have an import check, because when started in headless mode we create
+        # the interface by which ghidra can now be imported.
+        available.add(GHIDRA_DECOMPILER)
         this_obj = DecompilerInterface._find_global_in_call_frames("__this__")
         if (this_obj is not None) and (hasattr(this_obj, "currentProgram")):
             if not force:
                 return GHIDRA_DECOMPILER
-            available.add(GHIDRA_DECOMPILER)
 
         # Binary Ninja
         # this check needs to be done last since there is no way to traverse the stack frame to find the correct
