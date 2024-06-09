@@ -13,7 +13,9 @@ from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
 )
 from libbs.plugin_installer import PluginInstaller
+
 import psutil
+import pyhidra
 
 from .artifact_lifter import GhidraArtifactLifter
 
@@ -35,7 +37,7 @@ def ghidra_transaction(f):
 class GhidraDecompilerInterface(DecompilerInterface):
     CACHE_TIMEOUT = 5
 
-    def __init__(self, flat_api=None, loop_on_plugin=True, start_headless_watchers=False, **kwargs):
+    def __init__(self, flat_api=None, loop_on_plugin=True, start_headless_watchers=False, analyze=True, **kwargs):
         self.loop_on_plugin = loop_on_plugin
         self.flat_api = flat_api
 
@@ -46,24 +48,29 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._binary_base_addr = None
         self._last_base_addr_access = time.time()
 
-        self._headless_g_project = None
-        self._headless_script_name = "ghidra_libbs_mainthread_server.py"
+        self._headless_analyze = analyze
+        self._pyhidra_ctx = None
 
         self._data_monitor = None
         super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
+
+    def __del__(self):
+        self.shutdown()
 
     def _init_gui_components(self, *args, **kwargs):
         super()._init_gui_components(*args, **kwargs)
 
     def start_artifact_watchers(self):
+        # TODO: fixme!
         from .hooks import create_data_monitor
+        from .compat.state import get_current_program
 
         if not self._artifact_watchers_started:
-            if self.ghidra is None:
+            if self.flat_api is None:
                 raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
 
             self._data_monitor = create_data_monitor(self)
-            self.ghidra.currentProgram.addListener(self._data_monitor)
+            get_current_program().addListener(self._data_monitor)
             # TODO: generalize superclass method?
             super().start_artifact_watchers()
 
@@ -73,59 +80,28 @@ class GhidraDecompilerInterface(DecompilerInterface):
             # TODO: generalize superclass method?
             super().stop_artifact_watchers()
 
+    def _shutdown_pyhidra_ctx(self):
+        if self._pyhidra_ctx is not None:
+            self._pyhidra_ctx.__exit__(None, None, None)
+            self._pyhidra_ctx = None
+
     def _init_headless_components(self, *args, **kwargs):
-        if self._headless_dec_path is None:
-            # attempt to grab it from the env vars
-            path = os.environ.get("GHIDRA_HEADLESS_PATH", None)
-            if path:
-                self._headless_dec_path = Path(path).absolute()
+        if not self._binary_path.exists():
+            raise FileNotFoundError(f"Binary path does not exist: {self._binary_path}")
 
-        super()._init_headless_components(*args, **kwargs)
-        script_dir_path = PluginInstaller.find_pkg_files("libbs") / "decompiler_stubs" / "ghidra_libbs"
-        if not script_dir_path.joinpath(self._headless_script_name).exists():
-            raise SystemError("Failed to find the internal ghidra scripts for BinSync. Is your install corrupted?")
+        self._pyhidra_ctx = pyhidra.open_program(self._binary_path, analyze=self._headless_analyze)
+        self.flat_api = self._pyhidra_ctx.__enter__()
+        if self.flat_api is None:
+            self._shutdown_pyhidra_ctx()
+            raise RuntimeError("Failed to open program with Pyhidra")
 
-        self._headless_g_project = tempfile.TemporaryDirectory()
-        subprocess.Popen([
-            str(self._headless_dec_path),
-            self._headless_g_project.name,
-            "headless",
-            "-import",
-            str(self._binary_path),
-            "-scriptPath",
-            str(script_dir_path),
-            "-postScript",
-            self._headless_script_name
-        ])
-
-        time.sleep(1)
         if self._start_headless_watchers:
             self.start_artifact_watchers()
 
-    def _find_headless_proc(self):
-        for proc in psutil.process_iter():
-            try:
-                cmd = " ".join(proc.cmdline())
-            except Exception as e:
-                continue
-
-            if "headless" in cmd and \
-                    "-import" in cmd and \
-                    "-postScript" in cmd and \
-                    self._headless_script_name in cmd:
-                break
-        else:
-            proc = None
-
-        return proc
-
     def shutdown(self):
         super().shutdown()
-        self.ghidra.bridge.remote_shutdown()
-        # Wait until headless binary gets shutdown
-        while self._find_headless_proc():
-            time.sleep(1)
-        self._headless_g_project.cleanup()
+        if self.headless and self._pyhidra_ctx is not None:
+            self._shutdown_pyhidra_ctx()
 
     #
     # GUI
@@ -357,7 +333,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
             offset = int(sym.getStorage().getStackOffset())
             stack_variables[int(sym.getStorage().getStackOffset())] = StackVariable(
-                offset=offset, name=str(sym.getName()), type_=str(sym.getDataType()), size=sym.getSize(), addr=func_addr
+                stack_offset=offset, name=str(sym.getName()), type_=str(sym.getDataType()), size=sym.getSize(),
+                addr=func_addr
             )
 
         return stack_variables

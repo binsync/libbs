@@ -21,11 +21,23 @@ def _get_python_plugin(flat_api=None):
     return plugin
 
 
-def get_current_program(flat_api=None):
-    return _get_python_plugin(flat_api=flat_api).getCurrentProgram()
+def _in_headless_mode(flat_api):
+    return flat_api is not None and not hasattr(flat_api, "getState")
+
+#
+# Public API for interacting with the Ghidra state
+#
 
 
-def get_current_address(flat_api=None):
+def get_current_program(flat_api=None) -> "ProgramDB":
+    api = _get_python_plugin(flat_api=flat_api) if not _in_headless_mode(flat_api) else flat_api
+    return api.getCurrentProgram()
+
+
+def get_current_address(flat_api=None) -> int:
+    if _in_headless_mode(flat_api):
+        raise RuntimeError("Cannot get current address in headless mode")
+
     addr = _get_python_plugin(flat_api=flat_api).getProgramLocation().getAddress().offset
     if addr is not None:
         addr = int(addr)
