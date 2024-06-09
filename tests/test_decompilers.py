@@ -212,6 +212,17 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert deci.functions[func_addr].name == self._generic_renamed_name
         assert self._generic_renamed_name in deci.main_instance.project.kb.functions
 
+    def test_binja(self):
+        deci = DecompilerInterface.discover(
+            force_decompiler=BINJA_DECOMPILER,
+            headless=True,
+            binary_path=self._fauxware_path
+        )
+        func_addr = deci.art_lifter.lift_addr(0x400664)
+        main = deci.functions[func_addr]
+        main.name = self._generic_renamed_name
+        deci.functions[func_addr] = main
+        assert deci.functions[func_addr].name == self._generic_renamed_name
 
 if __name__ == "__main__":
     unittest.main()
