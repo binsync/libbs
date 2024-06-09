@@ -607,25 +607,30 @@ class DecompilerInterface:
             return None
 
     @staticmethod
-    def find_current_decompiler(forced=False) -> Optional[str]:
+    def find_current_decompiler(force: str = None) -> Optional[str]:
         """
         Finds the name of the current decompiler that this function is running inside of. Note, this function
         does not create an interface, but instead finds the name of the decompiler that is currently running.
         """
+        available = set()
 
         # IDA Pro
         try:
             import idaapi
-            return IDA_DECOMPILER
+            if not force:
+                return IDA_DECOMPILER
+            available.add(IDA_DECOMPILER)
         except ImportError:
             pass
 
         # angr-management
         try:
             import angr
+            available.add(ANGR_DECOMPILER)
             import angrmanagement
             if DecompilerInterface._find_global_in_call_frames('workspace') is not None:
-                return ANGR_DECOMPILER
+                if not force:
+                    return ANGR_DECOMPILER
         except ImportError:
             pass
 
@@ -634,9 +639,11 @@ class DecompilerInterface:
         from libbs.decompiler_stubs.ghidra_libbs.libbs_vendored.ghidra_bridge_port import DEFAULT_SERVER_PORT
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)  # 2 Second Timeout
+        available.add(GHIDRA_DECOMPILER)
         try:
             if sock.connect_ex(('127.0.0.1', DEFAULT_SERVER_PORT)) == 0:
-                return GHIDRA_DECOMPILER
+                if not force:
+                    return GHIDRA_DECOMPILER
         except ConnectionError:
             pass
 
@@ -645,13 +652,27 @@ class DecompilerInterface:
         # BV at this point in time.
         try:
             import binaryninja
-            return BINJA_DECOMPILER
-        except ImportError:
-            pass
+            if not force:
+                return BINJA_DECOMPILER
+            available.add(BINJA_DECOMPILER)
+        # error can be thrown for an invalid license
+        except Exception as e:
+            if "License is not valid" in str(e):
+                _l.warning("Binary Ninja license is invalid, skipping...")
 
-        if not forced:
-            _l.warning("LibBS does not know the current decompiler you are running in... it may not be supported!")
-        return None
+        if not available:
+            _l.critical("LibBS was unable to find the current decompiler you are running in or any headless instances!")
+            return None
+
+        if force is not None and force not in available:
+            _l.critical("LibBS was unable to force the decompiler you requested... please check your environment.")
+            return None
+
+        if force is None:
+            return available.pop()
+
+        if force in available:
+            return force
 
     @staticmethod
     def discover(
@@ -670,20 +691,20 @@ class DecompilerInterface:
         if force_decompiler and force_decompiler not in SUPPORTED_DECOMPILERS:
             raise ValueError(f"Unsupported decompiler {force_decompiler}")
 
-        current_decompiler = DecompilerInterface.find_current_decompiler(forced=bool(force_decompiler))
-        if force_decompiler == IDA_DECOMPILER or current_decompiler == IDA_DECOMPILER:
+        current_decompiler = DecompilerInterface.find_current_decompiler(force=force_decompiler)
+        if current_decompiler == IDA_DECOMPILER:
             from libbs.decompilers.ida.interface import IDAInterface
             deci_class = IDAInterface
             extra_kwargs = {}
-        elif force_decompiler == BINJA_DECOMPILER or current_decompiler == BINJA_DECOMPILER:
+        elif current_decompiler == BINJA_DECOMPILER:
             from libbs.decompilers.binja.interface import BinjaInterface
             deci_class = BinjaInterface
             extra_kwargs = {"bv": DecompilerInterface._find_global_in_call_frames('bv')}
-        elif force_decompiler == ANGR_DECOMPILER or current_decompiler == ANGR_DECOMPILER:
+        elif current_decompiler == ANGR_DECOMPILER:
             from libbs.decompilers.angr.interface import AngrInterface
             deci_class = AngrInterface
             extra_kwargs = {"workspace": DecompilerInterface._find_global_in_call_frames('workspace')}
-        elif force_decompiler == GHIDRA_DECOMPILER or current_decompiler == GHIDRA_DECOMPILER:
+        elif current_decompiler == GHIDRA_DECOMPILER:
             from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
             deci_class = GhidraDecompilerInterface
             extra_kwargs = {}
