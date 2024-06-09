@@ -20,8 +20,12 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: "3.8"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install .[test]
     # taken from https://github.com/mandiant/capa/blob/master/.github/workflows/tests.yml#L107-L147
-    - name: install Binary Ninja
+    - name: Install Binary Ninja
       if: ${{ env.BN_SERIAL != 0 }}
       run: |
         mkdir ./.github/binja
@@ -29,10 +33,6 @@ jobs:
         python ./.github/binja/download_headless.py --serial ${{ env.BN_SERIAL }} --output .github/binja/BinaryNinja-headless.zip
         unzip .github/binja/BinaryNinja-headless.zip -d .github/binja/
         python .github/binja/binaryninja/scripts/install_api.py --install-on-root --silent
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install .[test]
     - name: Set up Java 17
       uses: actions/setup-java@v4
       with:
