@@ -12,7 +12,7 @@ _l = logging.getLogger(__name__)
 # TODO: Add file locking to prevent simultaneous file accessing
 class BSConfig:
     __slots__ = (
-        "save_location"
+        "save_location",
     )
 
     def __init__(self, save_location=None):
