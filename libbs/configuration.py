@@ -21,6 +21,7 @@ class BSConfig:
         self.save_location = _create_path(save_location)
 
     def save(self):
+        self.save_location = _create_path(self.save_location)
         if not self.save_location.parent.exists():
             self.save_location.parent.mkdir()
 
