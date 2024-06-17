@@ -31,9 +31,6 @@ class BSConfig:
             if isinstance(attr_val, pathlib.Path):
                 attr_val = str(attr_val)
 
-            if isinstance(attr_val, dict):
-                attr_val = {key: str(value) for key, value in attr_val.items()}
-
             dump_dict[attr] = attr_val
 
         with open(self.save_location, "w") as fp:
