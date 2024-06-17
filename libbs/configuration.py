@@ -1,6 +1,7 @@
 from libbs.decompilers import SUPPORTED_DECOMPILERS, GHIDRA_DECOMPILER, IDA_DECOMPILER, ANGR_DECOMPILER, \
     BINJA_DECOMPILER
 from platformdirs import user_config_dir
+from filelock import FileLock
 import pathlib
 import logging
 import toml
@@ -9,16 +10,17 @@ import os
 _l = logging.getLogger(__name__)
 
 
-# TODO: Add file locking to prevent simultaneous file accessing
 class BSConfig:
     __slots__ = (
         "save_location",
+        "_config_lock",
     )
 
     def __init__(self, save_location=None):
         if not save_location:
             save_location = user_config_dir("libbs")
         self.save_location = _create_path(save_location)
+        self._config_lock = FileLock(save_location + ".lock", timeout=-1)
 
     def save(self):
         self.save_location = _create_path(self.save_location)
@@ -36,16 +38,18 @@ class BSConfig:
 
             dump_dict[attr] = attr_val
 
-        with open(self.save_location, "w") as fp:
-            toml.dump(dump_dict, fp)
+        with self._config_lock:
+            with open(self.save_location, "w") as fp:
+                toml.dump(dump_dict, fp)
 
     def load(self):
         self.save_location = _create_path(self.save_location)
         if not self.save_location.exists():
             return None
 
-        with open(self.save_location, "r") as fp:
-            load_dict = toml.load(fp)
+        with self._config_lock:
+            with open(self.save_location, "r") as fp:
+                load_dict = toml.load(fp)
 
         for attr in self.__slots__:
             setattr(self, attr, load_dict.get(attr, None))
