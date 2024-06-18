@@ -29,6 +29,8 @@ class BSConfig:
 
         dump_dict = {}
         for attr in self.__slots__:
+            if attr == '_config_lock':
+                continue
             attr_val = getattr(self, attr)
             if isinstance(attr_val, pathlib.Path):
                 attr_val = str(attr_val)
@@ -52,6 +54,8 @@ class BSConfig:
                 load_dict = toml.load(fp)
 
         for attr in self.__slots__:
+            if attr == '_config_lock':
+                continue
             setattr(self, attr, load_dict.get(attr, None))
 
         return self
