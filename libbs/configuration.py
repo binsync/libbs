@@ -20,7 +20,7 @@ class BSConfig:
         if not save_location:
             save_location = user_config_dir("libbs")
         self.save_location = _create_path(save_location)
-        self._config_lock = FileLock(save_location + ".lock", timeout=-1)
+        self._config_lock = FileLock(save_location + f"/{self.__class__.__name__}.lock", timeout=-1)
 
     def save(self):
         self.save_location = _create_path(self.save_location)
