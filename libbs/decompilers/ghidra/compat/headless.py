@@ -30,11 +30,11 @@ def open_program(
     from ghidra.program.flatapi import FlatProgramAPI
     project, program = _setup_project(
         binary_path,
-        project_location,
-        project_name,
-        language,
-        compiler,
-        loader
+        project_location=project_location,
+        project_name=project_name,
+        language=language,
+        compiler=compiler,
+        loader=loader
     )
     GhidraScriptUtil.acquireBundleHostReference()
     flat_api = FlatProgramAPI(program)
