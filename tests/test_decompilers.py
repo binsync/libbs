@@ -29,7 +29,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         """
         TODO: Add angr an IDA
         """
-        for dec_name in [GHIDRA_DECOMPILER]:
+        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
             # the direct example from the README:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
