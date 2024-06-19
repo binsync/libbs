@@ -1,3 +1,4 @@
+import logging
 import typing
 import threading
 
@@ -12,8 +13,10 @@ from jpype import JImplements, JOverride
 if typing.TYPE_CHECKING:
     from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
 
+_l = logging.getLogger(__name__)
 
-@JImplements(DomainObjectListener, deferred=True)
+
+@JImplements(DomainObjectListener, deferred=False)
 class DataMonitor:
     @JOverride
     def __init__(self, interface: "GhidraDecompilerInterface"):
@@ -46,8 +49,9 @@ class DataMonitor:
 
     @JOverride
     def domainObjectChanged(self, ev):
+        _l.debug("Event seen: %s", ev)
         for record in ev:
-            if not self._interface.ghidra.isinstance(record, ProgramChangeRecord):
+            if not isinstance(record, ProgramChangeRecord):
                 continue
 
             changeType = record.getEventType()
@@ -58,13 +62,15 @@ class DataMonitor:
                 subType = record.getSubEventType()
                 if subType == ChangeManager.FUNCTION_CHANGED_RETURN:
                     # Function return type changed
-                    header = FunctionHeader(None, None, str(obj.getReturnType()))
+                    header = FunctionHeader(
+                        name=None, addr=obj.getEntryPoint().getOffset(), type_=str(obj.getReturnType())
+                    )
                     self._interface.function_header_changed(header)
 
             elif changeType in self.typeEvents:
                 if changeType == ChangeManager.DOCR_SYMBOL_ADDRESS_CHANGED:
                     # stack variables change address when retyped!
-                    if self._interface.ghidra.isinstance(obj, VariableDB):
+                    if isinstance(obj, VariableDB):
                         parent_namespace = obj.getParentNamespace()
                         storage = obj.getVariableStorage()
                         if (
@@ -92,7 +98,7 @@ class DataMonitor:
                         pass
                 if changeType == ChangeManager.DOCR_SYMBOL_ADDRESS_CHANGED:
                     # stack variables change address when retyped!
-                    if self._interface.ghidra.isinstance(obj, VariableDB):
+                    if isinstance(obj, VariableDB):
                         parent_namespace = obj.getParentNamespace()
                         storage = obj.getVariableStorage()
                         if (
@@ -127,7 +133,7 @@ class DataMonitor:
 
             elif changeType in self.symDelEvents:
                 # Globals are deleted first then recreated
-                if self._interface.ghidra.isinstance(obj, CodeSymbol):
+                if isinstance(obj, CodeSymbol):
                     removed = GlobalVariable(obj.getAddress().getOffset(), obj.getName())
                     # deleted kwarg not yet handled by global_variable_changed
                     self._interface.global_variable_changed(removed, deleted=True)
@@ -137,17 +143,17 @@ class DataMonitor:
                     obj = newValue
 
                 if changeType == ChangeManager.DOCR_SYMBOL_ADDED:
-                    if self._interface.ghidra.isinstance(obj, CodeSymbol):
+                    if isinstance(obj, CodeSymbol):
                         gvar = GlobalVariable(obj.getAddress().getOffset(), obj.getName())
                         self._interface.global_variable_changed(gvar)
                 elif changeType == ChangeManager.DOCR_SYMBOL_RENAMED:
-                    if self._interface.ghidra.isinstance(obj, CodeSymbol):
+                    if isinstance(obj, CodeSymbol):
                         gvar = GlobalVariable(obj.getAddress().getOffset(), newValue)
                         self._interface.global_variable_changed(gvar)
-                    if self._interface.ghidra.isinstance(obj, FunctionSymbol):
-                        header = FunctionHeader(newValue, int(obj.getAddress().offset))
+                    if isinstance(obj, FunctionSymbol):
+                        header = FunctionHeader(name=newValue, addr=int(obj.getAddress().offset))
                         self._interface.function_header_changed(header)
-                elif self._interface.ghidra.isinstance(obj, VariableDB):
+                elif isinstance(obj, VariableDB):
                     parent_namespace = obj.getParentNamespace()
                     storage = obj.getVariableStorage()
                     if (
@@ -163,7 +169,7 @@ class DataMonitor:
                                 int(obj.parentNamespace.entryPoint.offset)
                             )
                         )
-                elif self._interface.ghidra.isinstance(obj, FunctionDB):
+                elif isinstance(obj, FunctionDB):
                     # TODO: Fix argument name support
                     # changed_arg = FunctionArgument(None, newValue, None, None)
                     # header = FunctionHeader(None, None, args={None: changed_arg})

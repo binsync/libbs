@@ -49,10 +49,17 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._last_base_addr_access = time.time()
 
         self._headless_analyze = analyze
-        self._pyhidra_ctx = None
-
         self._data_monitor = None
-        super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
+        self._project = None
+        self._program = None
+
+        super().__init__(
+            name="ghidra",
+            artifact_lifter=GhidraArtifactLifter(self),
+            supports_undo=True,
+            thread_artifact_callbacks=True, #not kwargs.get("headless", False),
+            **kwargs
+        )
 
     def __del__(self):
         self.shutdown()
@@ -70,7 +77,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
 
             self._data_monitor = create_data_monitor(self)
-            get_current_program().addListener(self._data_monitor)
+            self.currentProgram.addListener(self._data_monitor)
             # TODO: generalize superclass method?
             super().start_artifact_watchers()
 
@@ -80,28 +87,31 @@ class GhidraDecompilerInterface(DecompilerInterface):
             # TODO: generalize superclass method?
             super().stop_artifact_watchers()
 
-    def _shutdown_pyhidra_ctx(self):
-        if self._pyhidra_ctx is not None:
-            self._pyhidra_ctx.__exit__(None, None, None)
-            self._pyhidra_ctx = None
+    def _shutdown_pyhidra(self):
+        if self._program is not None and self._project is not None:
+            from .compat.headless import close_program
+            close_program(self._program, self._project)
 
     def _init_headless_components(self, *args, **kwargs):
         if not self._binary_path.exists():
             raise FileNotFoundError(f"Binary path does not exist: {self._binary_path}")
 
-        self._pyhidra_ctx = pyhidra.open_program(self._binary_path, analyze=self._headless_analyze)
-        self.flat_api = self._pyhidra_ctx.__enter__()
-        if self.flat_api is None:
-            self._shutdown_pyhidra_ctx()
+        from .compat.headless import open_program
+        flat_api, project, program = open_program(self._binary_path, analyze=self._headless_analyze)
+        if flat_api is None:
             raise RuntimeError("Failed to open program with Pyhidra")
+
+        self.flat_api = flat_api
+        self._program = program
+        self._project = project
 
         if self._start_headless_watchers:
             self.start_artifact_watchers()
 
     def shutdown(self):
         super().shutdown()
-        if self.headless and self._pyhidra_ctx is not None:
-            self._shutdown_pyhidra_ctx()
+        if self.headless and self._project is not None:
+            self._shutdown_pyhidra()
 
     #
     # GUI
@@ -349,7 +359,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         # func name
         if fheader.name and fheader.name != ghidra_func.getName():
-            with Transaction(msg="BS::set_function_header::set_name"):
+            with Transaction(self.flat_api, msg="BS::set_function_header::set_name"):
                 ghidra_func.setName(fheader.name, SourceType.USER_DEFINED)
             changes = True
 
@@ -358,7 +368,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             parsed_type = self.typestr_to_gtype(fheader.type)
             if parsed_type is not None and \
                     parsed_type != str(decompilation.highFunction.getFunctionPrototype().getReturnType()):
-                with Transaction(msg="BS::set_function_header::set_rettype"):
+                with Transaction(self.flat_api, msg="BS::set_function_header::set_rettype"):
                     ghidra_func.setReturnType(parsed_type, SourceType.USER_DEFINED)
                 changes = True
 
@@ -367,10 +377,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if fheader.args and decompilation is not None:
             params = ghidra_func.getParameters()
             if len(params) == 0:
-                with Transaction(msg="BS::set_function_header::update_params"):
+                with Transaction(self.flat_api, msg="BS::set_function_header::update_params"):
                     HighFunctionDBUtil.commitParamsToDatabase(decompilation.highFunction, True, SourceType.USER_DEFINED)
 
-            with Transaction(msg="BS::set_function_header::set_arguments"):
+            with Transaction(self.flat_api, msg="BS::set_function_header::set_arguments"):
                 for offset, param in zip(fheader.args, params):
                     arg = fheader.args[offset]
                     gtype = self.typestr_to_gtype(arg.type)
@@ -422,7 +432,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         structs = {}
         for struct in self.currentProgram.getDataTypeManager().getAllStructures():
             name = struct.getPathName()[1:]
-            structs[name] = Struct(name=name, size=struct.getLength(), mambers=self._struct_members_from_gstruct(name))
+            structs[name] = Struct(name=name, size=struct.getLength(), members=self._struct_members_from_gstruct(name))
 
         return structs
 
@@ -447,23 +457,24 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return None
 
     def _comments(self) -> Dict[int, Comment]:
-
-
         comments = {}
         for func in self.currentProgram.getFunctionManager().getFunctions(True):
             addr_set = func.getBody()
             for codeUnit in self.currentProgram.getListing().getCodeUnits(addr_set, True):
                 # TODO: this could be bad if we have multiple comments at the same address (pre and eol)
                 # eol comment
-                addr = int(codeUnit.address)
-                if codeUnit.getComment(0):
+                eol_cmt = codeUnit.getComment(0)
+                if eol_cmt:
+                    addr = int(codeUnit.getAddress().getOffset())
                     comments[addr] = Comment(
-                        addr=addr, comment=str(codeUnit.getComment(0))
+                        addr=addr, comment=str(eol_cmt)
                     )
                 # pre comment
-                if codeUnit.getComment(1):
+                pre_cmt = codeUnit.getComment(1)
+                if pre_cmt:
+                    addr = int(codeUnit.getAddress().getOffset())
                     comments[addr] = Comment(
-                        addr=addr, comment=str(codeUnit.getComment(1)), decompiled=True
+                        addr=addr, comment=str(pre_cmt), decompiled=True
                     )
 
         return comments
@@ -588,41 +599,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return gvars
 
-    #
-    # Specialized print handlers
-    #
-
     def print(self, msg, print_local=True, **kwargs):
         # TODO: this may all be removable now
         print(msg)
-
-    def info(self, msg: str, **kwargs):
-        _l.info(msg)
-        self.print(self._fmt_log_msg(msg, "INFO"), print_local=False)
-
-    def debug(self, msg: str, **kwargs):
-        _l.debug(msg)
-        if _l.level >= logging.DEBUG:
-            self.print(self._fmt_log_msg(msg, "DEBUG"), print_local=False)
-
-    def warning(self, msg: str, **kwargs):
-        _l.warning(msg)
-        self.print(self._fmt_log_msg(msg, "WARNING"), print_local=False)
-
-    def error(self, msg: str, **kwargs):
-        _l.error(msg)
-        self.print(self._fmt_log_msg(msg, "ERROR"), print_local=False)
-
-    @staticmethod
-    def _fmt_log_msg(msg: str, level: str):
-        full_filepath = Path(__file__)
-        log_path = str(full_filepath.with_suffix("").name)
-        for part in full_filepath.parts[:-1][::-1]:
-            log_path = f"{part}." + log_path
-            if part == "ghidra":
-                break
-
-        return f"[{level}] | {log_path} | {msg}"
 
     #
     # Ghidra Specific API
@@ -671,27 +650,27 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if ghidra_struct is None:
             return {}
 
-        members: Optional[List[Tuple[str, int, str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(m.getFieldName(), m.getOffset(), m.getDataType().getName(), m.getLength()) if m.getFieldName() else "
-            "('field_'+hex(m.getOffset())[2:], m.getOffset(), m.getDataType().getName(), m.getLength()) "
-            "for m in ghidra_struct.getComponents()]",
-            ghidra_struct=ghidra_struct
-        )
-        return {
-            offset: StructMember(name, offset, typestr, size) for name, offset, typestr, size in members
-        } if members else {}
+        members = {}
+        for m in ghidra_struct.getComponents():
+            offset = int(m.getOffset())
+            field_name = m.getFieldName()
+            name = str(field_name) if field_name else f'field_{hex(offset)[2:]}'
+            members[offset] = StructMember(
+                name=name, offset=offset, type_=str(m.getDataType().getName()), size=int(m.getLength())
+            )
 
-    def _get_enum_members(self, name: str) -> Optional[Dict[str, int]]:
+        return members
+
+    def _get_enum_members(self, name: str) -> Dict[str, int]:
         ghidra_enum = self._get_ghidra_enum(name)
         if ghidra_enum is None:
             return {}
 
-        name_vals: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(name, ghidra_enum.getValue(name))"
-            "for name in ghidra_enum.getNames()]",
-            ghidra_enum=ghidra_enum
-        )
-        return {name: value for name, value in name_vals} if name_vals else {}
+        members = {}
+        for name in ghidra_enum.getNames():
+            members[name] = ghidra_enum.getValue(name)
+
+        return members
 
     def _get_nearest_function(self, addr: int) -> "GhidraFunction":
         func_manager = self.currentProgram.getFunctionManager()
@@ -796,15 +775,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         program = self.currentProgram
         return CParserUtils.parseSignature(program, progotype_str)
 
-    def _run_until_server_closed(self, sleep_interval=30):
-        while True:
-            if not self.ghidra.ping():
-                break
-
-            time.sleep(sleep_interval)
-
     def _get_ghidra_enum(self, enum_name: str) -> Optional["EnumDB"]:
         from .compat.imports import EnumDB
 
         ghidra_enum = self.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
-        return ghidra_enum if self.ghidra.isinstance(ghidra_enum, EnumDB) else None
+        return ghidra_enum if isinstance(ghidra_enum, EnumDB) else None

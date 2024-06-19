@@ -20,8 +20,19 @@ from ghidra.util.data import DataTypeParser
 from ghidra.util.exception import CancelledException
 from docking.action import MenuData
 
-# TODO: XXX: these are broken still (because private):
-# from ghidra.program.database.data import EnumDB, StructureDB
+from java.lang import ClassLoader
+from jpype import JClass
+
+
+def get_private_class(path: str):
+    gcl = ClassLoader.getSystemClassLoader()
+    return JClass(path, loader=gcl)
+
+
+# private imports
+EnumDB = get_private_class("ghidra.program.database.data.EnumDB")
+StructureDB = get_private_class("ghidra.program.database.data.StructureDB")
+
 
 __all__ = [
     # forcefully imported objects
@@ -53,4 +64,6 @@ __all__ = [
     "DataTypeParser",
     "CParserUtils",
     "CancelledException"
+    "EnumDB",
+    "StructureDB",
 ]

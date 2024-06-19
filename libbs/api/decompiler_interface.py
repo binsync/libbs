@@ -2,6 +2,7 @@ import inspect
 import logging
 import re
 import threading
+import time
 from collections import defaultdict
 from functools import wraps
 from typing import Dict, Optional, Tuple, List, Callable, Type, Union
@@ -57,6 +58,7 @@ class DecompilerInterface:
         gui_init_kwargs: Optional[Dict] = None,
         # [artifact_class] = list(callback_func)
         artifact_write_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
+        thread_artifact_callbacks: bool = True,
     ):
         self.name = name
         self.art_lifter = artifact_lifter
@@ -83,6 +85,7 @@ class DecompilerInterface:
 
         # callback functions, keyed by Artifact class
         self.artifact_write_callbacks = artifact_write_callbacks or defaultdict(list)
+        self._thread_artifact_callbacks = thread_artifact_callbacks
 
         # artifact dict aliases:
         # these are the public API for artifacts that are used by the decompiler interface
@@ -466,14 +469,22 @@ class DecompilerInterface:
     def function_header_changed(self, fheader: FunctionHeader, **kwargs) -> FunctionHeader:
         lifted_fheader = self.art_lifter.lift(fheader)
         for callback_func in self.artifact_write_callbacks[FunctionHeader]:
-            threading.Thread(target=callback_func, args=(lifted_fheader,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_fheader,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_fheader
 
     def stack_variable_changed(self, svar: StackVariable, **kwargs) -> StackVariable:
         lifted_svar = self.art_lifter.lift(svar)
         for callback_func in self.artifact_write_callbacks[StackVariable]:
-            threading.Thread(target=callback_func, args=(lifted_svar,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_svar,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_svar
 
@@ -481,7 +492,11 @@ class DecompilerInterface:
         kwargs["deleted"] = deleted
         lifted_cmt = self.art_lifter.lift(comment)
         for callback_func in self.artifact_write_callbacks[Comment]:
-            threading.Thread(target=callback_func, args=(lifted_cmt,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_cmt,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_cmt
 
@@ -489,7 +504,11 @@ class DecompilerInterface:
         kwargs["deleted"] = deleted
         lifted_struct = self.art_lifter.lift(struct)
         for callback_func in self.artifact_write_callbacks[Struct]:
-            threading.Thread(target=callback_func, args=(lifted_struct,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_struct,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_struct
 
@@ -497,14 +516,22 @@ class DecompilerInterface:
         kwargs["deleted"] = deleted
         lifted_enum = self.art_lifter.lift(enum)
         for callback_func in self.artifact_write_callbacks[Enum]:
-            threading.Thread(target=callback_func, args=(lifted_enum,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_enum,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_enum
 
     def global_variable_changed(self, gvar: GlobalVariable, **kwargs) -> GlobalVariable:
         lifted_gvar = self.art_lifter.lift(gvar)
         for callback_func in self.artifact_write_callbacks[GlobalVariable]:
-            threading.Thread(target=callback_func, args=(lifted_gvar,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_gvar,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_gvar
 

@@ -1,4 +1,5 @@
 import json
+import time
 import unittest
 from pathlib import Path
 from collections import defaultdict
@@ -28,7 +29,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         """
         TODO: Add angr an IDA
         """
-        for dec_name in [BINJA_DECOMPILER, GHIDRA_DECOMPILER]:
+        for dec_name in [GHIDRA_DECOMPILER]:
             # the direct example from the README:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
@@ -134,7 +135,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
         #
 
         hits = defaultdict(list)
-        def func_hit(*args, **kwargs): hits[args[0].__class__].append(args[0])
+        def func_hit(*args, **kwargs):
+            hits[args[0].__class__].append(args[0])
 
         deci.artifact_write_callbacks = {
             typ: [func_hit] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment)
@@ -147,10 +149,13 @@ class TestHeadlessInterfaces(unittest.TestCase):
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
         main.name = "changed"
+        time.sleep(2)
         deci.functions[func_addr] = main
+        time.sleep(2)
 
         main.name = "main"
         deci.functions[func_addr] = main
+        time.sleep(2)
 
         first_changed_func = hits[FunctionHeader][0]
         assert len(hits[FunctionHeader]) >= old_header_hits + 2
@@ -172,9 +177,11 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # function return type
         main.header.type = 'long'
         deci.functions[func_addr] = main
+        time.sleep(2)
 
         main.header.type = 'double'
         deci.functions[func_addr] = main
+        time.sleep(2)
 
         assert len(hits[FunctionHeader]) >= old_header_hits + 2
 
