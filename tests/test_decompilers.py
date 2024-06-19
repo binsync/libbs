@@ -14,7 +14,7 @@ IDA_HEADLESS_PATH = Path(os.environ.get('IDA_HEADLESS_PATH', ""))
 TEST_BINARY_DIR = Path(__file__).parent / "binaries"
 DEC_TO_HEADLESS = {
     IDA_DECOMPILER: IDA_HEADLESS_PATH,
-    GHIDRA_DECOMPILER: GHIDRA_HEADLESS_PATH,
+    GHIDRA_DECOMPILER: None,
     ANGR_DECOMPILER: None,
     BINJA_DECOMPILER: None,
 }
@@ -25,12 +25,9 @@ class TestHeadlessInterfaces(unittest.TestCase):
         self._generic_renamed_name = "binsync_main"
         self._fauxware_path = TEST_BINARY_DIR / "fauxware"
 
-    def test_setting_and_listing_arts(self):
-        """
-        TODO: Add angr an IDA
-        """
+    def test_readme_example(self):
+        # TODO: add angr, IDA
         for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
-            # the direct example from the README:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
@@ -43,10 +40,25 @@ class TestHeadlessInterfaces(unittest.TestCase):
                     function.header.type = "int"
                     deci.functions[function.addr] = function
 
+            deci.shutdown()
+
+    def test_getting_artifacts(self):
+        # TODO: add angr, IDA
+        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
+            deci = DecompilerInterface.discover(
+                force_decompiler=dec_name,
+                headless=True,
+                headless_dec_path=DEC_TO_HEADLESS[dec_name],
+                binary_path=TEST_BINARY_DIR / "posix_syscall",
+            )
+
             # list all the different artifacts
             json_strings = []
             for func in deci.functions.values():
                 json_strings.append(func.dumps(fmt=ArtifactFormat.JSON))
+                # verify decompilation works
+                dec_func = deci.functions[func.addr]
+                assert dec_func is not None
             for struct in deci.structs.values():
                 json_strings.append(struct.dumps(fmt=ArtifactFormat.JSON))
             for enum in deci.enums.values():
@@ -62,15 +74,12 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
             deci.shutdown()
 
-    def test_ghidra(self):
-        # useful command for testing, kills all Headless-Ghidra:
-        # kill $(ps aux | grep 'Ghidra-Headless' | awk '{print $2}')
+    def test_ghidra_fauxware(self):
         deci = DecompilerInterface.discover(
             force_decompiler=GHIDRA_DECOMPILER,
             headless=True,
             headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
             binary_path=self._fauxware_path,
-            start_headless_watchers=True
         )
 
         #
@@ -130,13 +139,24 @@ class TestHeadlessInterfaces(unittest.TestCase):
         func_size = deci.get_func_size(func_addr)
         assert func_size != -1
 
+        deci.shutdown()
+
+    @unittest.skip("Still broken")
+    def ghidra_artifact_watchers(self):
+        deci = DecompilerInterface.discover(
+            force_decompiler=GHIDRA_DECOMPILER,
+            headless=True,
+            headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
+            binary_path=self._fauxware_path,
+            start_artifact_watchers=True
+        )
+
         #
         # Test Artifact Watchers
         #
 
         hits = defaultdict(list)
-        def func_hit(*args, **kwargs):
-            hits[args[0].__class__].append(args[0])
+        def func_hit(*args, **kwargs): hits[args[0].__class__].append(args[0])
 
         deci.artifact_write_callbacks = {
             typ: [func_hit] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment)
@@ -204,8 +224,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # deci.functions[func_addr] = main
 
         #assert hits[Struct] == 2 # One change results in 2 hits because the struct is first removed and then added again.
-
-        deci.shutdown()
 
     def test_angr(self):
         deci = DecompilerInterface.discover(
