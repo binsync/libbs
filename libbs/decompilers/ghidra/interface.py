@@ -1,10 +1,6 @@
-import os
 import time
-from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import logging
-import subprocess
-import tempfile
 from functools import wraps
 
 from libbs.api import DecompilerInterface
@@ -12,10 +8,6 @@ from libbs.api.decompiler_interface import requires_decompilation
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
 )
-from libbs.plugin_installer import PluginInstaller
-
-import psutil
-import pyhidra
 
 from .artifact_lifter import GhidraArtifactLifter
 
@@ -57,7 +49,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             name="ghidra",
             artifact_lifter=GhidraArtifactLifter(self),
             supports_undo=True,
-            thread_artifact_callbacks=True, #not kwargs.get("headless", False),
+            thread_artifact_callbacks=not kwargs.get("headless", False),
             **kwargs
         )
 
@@ -91,6 +83,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if self._program is not None and self._project is not None:
             from .compat.headless import close_program
             close_program(self._program, self._project)
+            self._project = None
+            self._program = None
 
     def _init_headless_components(self, *args, **kwargs):
         if not self._binary_path.exists():
@@ -120,6 +114,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @property
     def gui_plugin(self):
         """
+        TODO: fixme
         A special property to never exit this function if the remote server is running.
         This is used to standardize plugin access across all decompilers.
 

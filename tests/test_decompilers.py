@@ -1,4 +1,6 @@
 import json
+import logging
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -12,6 +14,7 @@ from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER,
 GHIDRA_HEADLESS_PATH = Path(os.environ.get('GHIDRA_HEADLESS_PATH', ""))
 IDA_HEADLESS_PATH = Path(os.environ.get('IDA_HEADLESS_PATH', ""))
 TEST_BINARY_DIR = Path(__file__).parent / "binaries"
+TEST_SCRIPTS_DIR = Path(__file__).parent / "scripts"
 DEC_TO_HEADLESS = {
     IDA_DECOMPILER: IDA_HEADLESS_PATH,
     GHIDRA_DECOMPILER: None,
@@ -19,11 +22,19 @@ DEC_TO_HEADLESS = {
     BINJA_DECOMPILER: None,
 }
 
+_l = logging.getLogger(__name__)
+
 
 class TestHeadlessInterfaces(unittest.TestCase):
+    FAUXWARE_PATH = TEST_BINARY_DIR / "fauxware"
+    RENAMED_NAME = "binsync_main"
+
     def setUp(self):
-        self._generic_renamed_name = "binsync_main"
-        self._fauxware_path = TEST_BINARY_DIR / "fauxware"
+        self.deci = None
+
+    def tearDown(self):
+        if self.deci is not None:
+            self.deci.shutdown()
 
     def test_readme_example(self):
         # TODO: add angr, IDA
@@ -34,6 +45,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
                 headless_dec_path=DEC_TO_HEADLESS[dec_name],
                 binary_path=TEST_BINARY_DIR / "posix_syscall",
             )
+            self.deci = deci
             for addr in deci.functions:
                 function = deci.functions[addr]
                 if function.header.type == "void":
@@ -51,6 +63,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
                 headless_dec_path=DEC_TO_HEADLESS[dec_name],
                 binary_path=TEST_BINARY_DIR / "posix_syscall",
             )
+            self.deci = deci
 
             # list all the different artifacts
             json_strings = []
@@ -79,18 +92,15 @@ class TestHeadlessInterfaces(unittest.TestCase):
             force_decompiler=GHIDRA_DECOMPILER,
             headless=True,
             headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
-            binary_path=self._fauxware_path,
+            binary_path=self.FAUXWARE_PATH,
         )
-
-        #
-        # Test Artifact Reading & Writing
-        #
+        self.deci = deci
 
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
-        main.name = self._generic_renamed_name
+        main.name = self.RENAMED_NAME
         deci.functions[func_addr] = main
-        assert deci.functions[func_addr].name == self._generic_renamed_name
+        assert deci.functions[func_addr].name == self.RENAMED_NAME
 
         func_args = main.header.args
         func_args[0].name = "new_name_1"
@@ -141,15 +151,15 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         deci.shutdown()
 
-    @unittest.skip("Still broken")
-    def ghidra_artifact_watchers(self):
+    def test_ghidra_artifact_watchers(self):
         deci = DecompilerInterface.discover(
             force_decompiler=GHIDRA_DECOMPILER,
             headless=True,
             headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
-            binary_path=self._fauxware_path,
-            start_artifact_watchers=True
+            binary_path=self.FAUXWARE_PATH,
         )
+        self.deci = deci
+        deci.start_artifact_watchers()
 
         #
         # Test Artifact Watchers
@@ -169,20 +179,31 @@ class TestHeadlessInterfaces(unittest.TestCase):
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
         main.name = "changed"
-        time.sleep(2)
         deci.functions[func_addr] = main
-        time.sleep(2)
+        time.sleep(1)
+        if len(hits[FunctionHeader]) == old_header_hits:
+            _l.info("No hits detected, restarting watchers once")
+            deci.stop_artifact_watchers()
+            deci.start_artifact_watchers()
 
         main.name = "main"
         deci.functions[func_addr] = main
-        time.sleep(2)
 
-        first_changed_func = hits[FunctionHeader][0]
+        time.sleep(1)
         assert len(hits[FunctionHeader]) >= old_header_hits + 2
         old_header_hits = len(hits[FunctionHeader])
 
+        # function return type
+        main.header.type = 'long'
+        deci.functions[func_addr] = main
+
+        main.header.type = 'double'
+        deci.functions[func_addr] = main
+
+        time.sleep(1)
+        assert len(hits[FunctionHeader]) >= old_header_hits + 2
+
         # global var names
-        # TODO: The gvar test cant function until gvar setting is fixed
         old_global_hits = len(hits[GlobalVariable])
         g1_addr = deci.art_lifter.lift_addr(0x4008e0)
         g2_addr = deci.art_lifter.lift_addr(0x601048)
@@ -192,23 +213,13 @@ class TestHeadlessInterfaces(unittest.TestCase):
         g2.name = "gvar2"
         deci.global_vars[g1_addr] = g1
         deci.global_vars[g2_addr] = g2
-        # assert len(hits[GlobalVariable]) == old_global_hits + 2
+        # TODO: re-enable this once we have a better way to track global variable changes
+        #assert len(hits[GlobalVariable]) == old_global_hits + 2
 
-        # function return type
-        main.header.type = 'long'
-        deci.functions[func_addr] = main
-        time.sleep(2)
-
-        main.header.type = 'double'
-        deci.functions[func_addr] = main
-        time.sleep(2)
-
-        assert len(hits[FunctionHeader]) >= old_header_hits + 2
-
-        # TODO: Fix CI for below
         main.stack_vars[-24].name = "named_char_array"
         main.stack_vars[-12].name = "named_int"
         deci.functions[func_addr] = main
+        # TODO: fixme: stack variable changes are not being tracked
         # first_changed_sv = hits[StackVariable][0]
         # assert first_changed_sv.name == main.stack_vars[-24].name
         # assert len(hits[StackVariable]) == 2
@@ -223,32 +234,35 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # func_args[1].name = "changed_name2"
         # deci.functions[func_addr] = main
 
-        #assert hits[Struct] == 2 # One change results in 2 hits because the struct is first removed and then added again.
+        # assert hits[Struct] == 2 # One change results in 2 hits because the struct is first removed and then added again.
+
+        deci.shutdown()
 
     def test_angr(self):
         deci = DecompilerInterface.discover(
             force_decompiler=ANGR_DECOMPILER,
             headless=True,
-            binary_path=self._fauxware_path
+            binary_path=self.FAUXWARE_PATH
         )
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
-        main.name = self._generic_renamed_name
+        main.name = self.RENAMED_NAME
         deci.functions[func_addr] = main
-        assert deci.functions[func_addr].name == self._generic_renamed_name
-        assert self._generic_renamed_name in deci.main_instance.project.kb.functions
+        assert deci.functions[func_addr].name == self.RENAMED_NAME
+        assert self.RENAMED_NAME in deci.main_instance.project.kb.functions
 
     def test_binja(self):
         deci = DecompilerInterface.discover(
             force_decompiler=BINJA_DECOMPILER,
             headless=True,
-            binary_path=self._fauxware_path
+            binary_path=self.FAUXWARE_PATH
         )
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
-        main.name = self._generic_renamed_name
+        main.name = self.RENAMED_NAME
         deci.functions[func_addr] = main
-        assert deci.functions[func_addr].name == self._generic_renamed_name
+        assert deci.functions[func_addr].name == self.RENAMED_NAME
+
 
 if __name__ == "__main__":
     unittest.main()

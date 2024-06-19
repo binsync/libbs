@@ -12,13 +12,22 @@ def _get_python_plugin(flat_api=None):
         gvs = dict(globals())
         state = gvs.get("getState", None) or gvs.get("__this__", None).getState
 
-    for plugin in state.getTool().getManagedPlugins():
-        if plugin.name == "PythonPlugin":
-            break
+    tool = state.getTool()
+    api = None
+    if tool is not None:
+        for plugin in state.getTool().getManagedPlugins():
+            if plugin.name == "PythonPlugin":
+                api = plugin
+                break
+        else:
+            raise RuntimeError("PythonPlugin not found")
     else:
-        raise RuntimeError("PythonPlugin not found")
+        # This is s special case: semi-headless
+        # we started ghidra with something like pyhidra.run_script, which causes us to run the current instance
+        # as if it were a script, not a single service inside ghidra
+        api = state
 
-    return plugin
+    return api
 
 
 def _in_headless_mode(flat_api):

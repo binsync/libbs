@@ -49,7 +49,12 @@ class DataMonitor:
 
     @JOverride
     def domainObjectChanged(self, ev):
-        _l.debug("Event seen: %s", ev)
+        try:
+            self.do_change_handler(ev)
+        except Exception as e:
+            _l.exception("Error in domainObjectChanged: %s", e)
+
+    def do_change_handler(self, ev):
         for record in ev:
             if not isinstance(record, ProgramChangeRecord):
                 continue
