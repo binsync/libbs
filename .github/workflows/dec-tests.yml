@@ -47,4 +47,4 @@ jobs:
     - name: Pytest
       run: |
         export GHIDRA_HEADLESS_PATH="$GHIDRA_INSTALL_DIR/support/analyzeHeadless"
-        pytest -n auto ./tests/test_decompilers.py
+        pytest ./tests/test_decompilers.py
