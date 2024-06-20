@@ -53,6 +53,7 @@ class DecompilerInterface:
         binary_path: Optional[Union[Path, str]] = None,
         init_plugin: bool = False,
         plugin_name: str = f"generic_libbs_plugin",
+        config: Optional[LibbsConfig] = None,
         # [category/name] = (action_string, callback_func)
         gui_ctx_menu_actions: Optional[dict] = None,
         gui_init_args: Optional[Tuple] = None,
@@ -99,7 +100,8 @@ class DecompilerInterface:
 
         self._decompiler_available = decompiler_available
 
-        self._init_config()
+        if not self.config:
+            self._create_or_load_config()
 
         if not self.headless:
             args = gui_init_args or []
@@ -108,10 +110,14 @@ class DecompilerInterface:
         else:
             self._init_headless_components()
 
+        self.config.save()
 
 
-   # Checks for config file and creates/loads from it
-    def _init_config(self):
+
+    def _create_or_load_config(self):
+        """
+        Checks for config file and creates/loads from it
+        """
         config = LibbsConfig.update_or_make()
         self.config = config
 
@@ -152,7 +158,6 @@ class DecompilerInterface:
 
     def shutdown(self):
         self.config.save()
-        _l.info(f"Saved config to {self.config.save_location}")
         if self._artifact_watchers_started:
             self.stop_artifact_watchers()
 

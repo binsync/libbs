@@ -44,6 +44,9 @@ class BSConfig:
             with open(self.save_location, "w") as fp:
                 toml.dump(dump_dict, fp)
 
+        _l.info(f"Saved config to {self.config.save_location}")
+        return True
+
     def load(self):
         self.save_location = _create_path(self.save_location)
         if not self.save_location.exists():
