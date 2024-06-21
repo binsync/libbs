@@ -214,10 +214,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
             main = deci.functions[func_addr]
             main.name = "changed"
             deci.functions[func_addr] = main
-            if len(hits[FunctionHeader]) == old_header_hits:
-                _l.info("No hits detected, restarting watchers once")
-                deci.stop_artifact_watchers()
-                deci.start_artifact_watchers()
 
             main.name = "main"
             deci.functions[func_addr] = main

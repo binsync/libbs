@@ -128,8 +128,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if self.flat_api is None:
                 raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
 
-            self._data_monitor = create_data_monitor(self)
-            self.currentProgram.addListener(self._data_monitor)
+            print("FLAT API===============+>", self.flat_api)
+
+            #self._data_monitor = create_data_monitor(self)
+            #self.currentProgram.addListener(self._data_monitor)
             # TODO: generalize superclass method?
             super().start_artifact_watchers()
 
