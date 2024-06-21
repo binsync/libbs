@@ -111,7 +111,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
             self._shutdown_headless()
 
         if not self.headless and self._bridge is not None:
-            shutdown_bridge(self._bridge)
+            try:
+                shutdown_bridge(self._bridge)
+            except Exception:
+                pass
             self._bridge = None
 
     #
