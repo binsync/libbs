@@ -104,8 +104,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not self._binary_path.exists():
             raise FileNotFoundError(f"Binary path does not exist: {self._binary_path}")
 
-        if os.getenv("GHIDRA_HEADLESS_PATH", None) is None:
-            raise RuntimeError("GHIDRA_HEADLESS_PATH must be set in the environment to use Ghidra headless.")
+        if os.getenv("GHIDRA_INSTALL_DIR", None) is None:
+            raise RuntimeError("GHIDRA_INSTALL_DIR must be set in the environment to use Ghidra headless.")
 
         from .compat.headless import open_program
         flat_api, project, program = open_program(
