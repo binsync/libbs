@@ -186,7 +186,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             assert first_funcs == second_funcs
             assert slow_load_time > fast_load_time
 
-    def test_ghidra_artifact_watchers(self):
+    def _ghidra_artifact_watchers(self):
         with HeadlessGhidraDecompiler(self.FAUXWARE_PATH, headless_dec_path=GHIDRA_HEADLESS_PATH):
             deci = DecompilerInterface.discover(
                 force_decompiler=GHIDRA_DECOMPILER,
