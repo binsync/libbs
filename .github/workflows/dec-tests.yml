@@ -46,5 +46,4 @@ jobs:
         version: "10.4"
     - name: Pytest
       run: |
-        export GHIDRA_HEADLESS_PATH="$GHIDRA_INSTALL_DIR/support/analyzeHeadless"
-        pytest ./tests/test_decompilers.py
+        pytest ./tests/test_decompilers.py ./tests/test_remote_ghidra.py
