@@ -72,6 +72,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
             raise RuntimeError("Failed to connect to Ghidra UI bridge.")
 
         self.flat_api = FlatAPIWrapper()
+        # XXX: yeah, this is bad naming!
+        if self._start_headless_watchers:
+            self.start_artifact_watchers()
         super()._init_gui_components(*args, **kwargs)
 
     def _shutdown_headless(self):
@@ -101,9 +104,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.flat_api = flat_api
         self._program = program
         self._project = project
-
-        if self._start_headless_watchers:
-            self.start_artifact_watchers()
 
     def shutdown(self):
         super().shutdown()
