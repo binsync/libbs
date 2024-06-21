@@ -47,10 +47,10 @@ class HeadlessGhidraDecompiler:
             "-postScript",
             str(self._headless_script_path.name),
         ])
-
-        time.sleep(5)
+        time.sleep(3)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        time.sleep(2)
         # Wait until headless binary gets shutdown
         try:
             self._proc.kill()

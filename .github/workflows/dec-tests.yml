@@ -46,4 +46,5 @@ jobs:
         version: "10.4"
     - name: Pytest
       run: |
-        pytest ./tests/test_decompilers.py ./tests/test_remote_ghidra.py
+        # these two test must be run in separate python environments, due to the way ghidra bridge works
+        pytest ./tests/test_decompilers.py && pytest ./tests/test_remote_ghidra.py
