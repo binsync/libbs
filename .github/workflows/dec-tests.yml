@@ -47,4 +47,5 @@ jobs:
     - name: Pytest
       run: |
         # these two test must be run in separate python environments, due to the way ghidra bridge works
-        pytest ./tests/test_decompilers.py && pytest ./tests/test_remote_ghidra.py
+        # you also must run these tests in the exact order shown here
+        pytest ./tests/test_remote_ghidra.py && pytest ./tests/test_decompilers.py
