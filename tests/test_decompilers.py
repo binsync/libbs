@@ -18,7 +18,7 @@ TEST_BINARY_DIR = Path(__file__).parent / "binaries"
 TEST_SCRIPTS_DIR = Path(__file__).parent / "scripts"
 DEC_TO_HEADLESS = {
     IDA_DECOMPILER: IDA_HEADLESS_PATH,
-    GHIDRA_DECOMPILER: GHIDRA_HEADLESS_PATH,
+    GHIDRA_DECOMPILER: None,
     ANGR_DECOMPILER: None,
     BINJA_DECOMPILER: None,
 }
