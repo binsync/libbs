@@ -119,9 +119,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     def start_artifact_watchers(self):
-        # TODO: fixme!
-        from .hooks import create_data_monitor
+        if self.headless:
+            _l.warning("Artifact watching is not supported in headless mode.")
+            return
 
+        from .hooks import create_data_monitor
         if not self._artifact_watchers_started:
             if self.flat_api is None:
                 raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
