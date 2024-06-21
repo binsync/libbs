@@ -1,5 +1,7 @@
+import os
 import time
-from typing import Optional, Dict, List, Tuple
+from pathlib import Path
+from typing import Optional, Dict, List, Tuple, Union
 import logging
 from functools import wraps
 
@@ -29,7 +31,16 @@ def ghidra_transaction(f):
 class GhidraDecompilerInterface(DecompilerInterface):
     CACHE_TIMEOUT = 5
 
-    def __init__(self, flat_api=None, loop_on_plugin=True, start_headless_watchers=False, analyze=True, **kwargs):
+    def __init__(
+        self,
+        flat_api=None,
+        loop_on_plugin=True,
+        start_headless_watchers=False,
+        analyze=True,
+        project_location: Optional[Union[str, Path]] = None,
+        project_name: Optional[str] = None,
+        **kwargs
+    ):
         self.loop_on_plugin = loop_on_plugin
         self.flat_api = flat_api
 
@@ -41,6 +52,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._last_base_addr_access = time.time()
 
         self._headless_analyze = analyze
+        self._headless_project_location = project_location
+        self._headless_project_name = project_name
+
         self._data_monitor = None
         self._project = None
         self._program = None
@@ -90,8 +104,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if not self._binary_path.exists():
             raise FileNotFoundError(f"Binary path does not exist: {self._binary_path}")
 
+        if os.getenv("GHIDRA_HEADLESS_PATH", None) is None:
+            raise RuntimeError("GHIDRA_HEADLESS_PATH must be set in the environment to use Ghidra headless.")
+
         from .compat.headless import open_program
-        flat_api, project, program = open_program(self._binary_path, analyze=self._headless_analyze)
+        flat_api, project, program = open_program(
+            self._binary_path,
+            analyze=self._headless_analyze,
+            project_location=self._headless_project_location,
+            project_name=self._headless_project_name,
+        )
         if flat_api is None:
             raise RuntimeError("Failed to open program with Pyhidra")
 

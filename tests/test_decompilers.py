@@ -151,6 +151,40 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         deci.shutdown()
 
+    def test_ghidra_project_loading(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            proj_name = "posix_syscall_ghidra"
+            binary_path = TEST_BINARY_DIR / "posix_syscall"
+
+            start_load = time.time()
+            deci = DecompilerInterface.discover(
+                force_decompiler=GHIDRA_DECOMPILER,
+                headless=True,
+                binary_path=binary_path,
+                project_location=tmpdir,
+                project_name=proj_name,
+            )
+            slow_load_time = time.time() - start_load
+            first_funcs = list(deci.functions.values())
+            deci.shutdown()
+
+            start_load = time.time()
+            # load it by just reading the project
+            deci = DecompilerInterface.discover(
+                force_decompiler=GHIDRA_DECOMPILER,
+                headless=True,
+                binary_path=binary_path,
+                project_location=tmpdir,
+                project_name=proj_name,
+                analyze=False,
+            )
+            fast_load_time = time.time() - start_load
+            self.deci = deci
+            second_funcs = list(deci.functions.values())
+
+            assert first_funcs == second_funcs
+            assert slow_load_time > fast_load_time
+
     def test_ghidra_artifact_watchers(self):
         deci = DecompilerInterface.discover(
             force_decompiler=GHIDRA_DECOMPILER,
