@@ -1,9 +1,14 @@
 import os
 import time
+import re
+import inspect
+import importlib
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Union
 import logging
 from functools import wraps
+
+from jfx_bridge.bridge import BridgedObject
 
 from libbs.api import DecompilerInterface
 from libbs.api.decompiler_interface import requires_decompilation
@@ -12,20 +17,10 @@ from libbs.artifacts import (
 )
 
 from .artifact_lifter import GhidraArtifactLifter
+from .compat.bridge import FlatAPIWrapper, connect_to_bridge, shutdown_bridge, run_until_bridge_closed, ui_remote_eval
+from .compat.transaction import ghidra_transaction
 
 _l = logging.getLogger(__name__)
-
-
-def ghidra_transaction(f):
-    @wraps(f)
-    def _ghidra_transaction(self: "GhidraDecompilerInterface", *args, **kwargs):
-        from .compat.transaction import Transaction
-        with Transaction(flat_api=self.flat_api, msg=f"BS::{f.__name__}(args={args})"):
-            ret_val = f(self, *args, **kwargs)
-
-        return ret_val
-
-    return _ghidra_transaction
 
 
 class GhidraDecompilerInterface(DecompilerInterface):
@@ -44,26 +39,27 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.loop_on_plugin = loop_on_plugin
         self.flat_api = flat_api
 
-        self._start_headless_watchers = start_headless_watchers
-
         self._last_addr = None
         self._last_func = None
         self._binary_base_addr = None
         self._last_base_addr_access = time.time()
 
+        # headless-only attributes
+        self._start_headless_watchers = start_headless_watchers
         self._headless_analyze = analyze
         self._headless_project_location = project_location
         self._headless_project_name = project_name
-
-        self._data_monitor = None
         self._project = None
         self._program = None
+
+        # ui-only attributes
+        self._data_monitor = None
+        self._bridge = None
 
         super().__init__(
             name="ghidra",
             artifact_lifter=GhidraArtifactLifter(self),
             supports_undo=True,
-            thread_artifact_callbacks=not kwargs.get("headless", False),
             **kwargs
         )
 
@@ -71,29 +67,14 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.shutdown()
 
     def _init_gui_components(self, *args, **kwargs):
+        self._bridge = connect_to_bridge()
+        if self._bridge is None:
+            raise RuntimeError("Failed to connect to Ghidra UI bridge.")
+
+        self.flat_api = FlatAPIWrapper()
         super()._init_gui_components(*args, **kwargs)
 
-    def start_artifact_watchers(self):
-        # TODO: fixme!
-        from .hooks import create_data_monitor
-        from .compat.state import get_current_program
-
-        if not self._artifact_watchers_started:
-            if self.flat_api is None:
-                raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
-
-            self._data_monitor = create_data_monitor(self)
-            self.currentProgram.addListener(self._data_monitor)
-            # TODO: generalize superclass method?
-            super().start_artifact_watchers()
-
-    def stop_artifact_watchers(self):
-        if self._artifact_watchers_started:
-            self._data_monitor = None
-            # TODO: generalize superclass method?
-            super().stop_artifact_watchers()
-
-    def _shutdown_pyhidra(self):
+    def _shutdown_headless(self):
         if self._program is not None and self._project is not None:
             from .compat.headless import close_program
             close_program(self._program, self._project)
@@ -127,11 +108,34 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def shutdown(self):
         super().shutdown()
         if self.headless and self._project is not None:
-            self._shutdown_pyhidra()
+            self._shutdown_headless()
+
+        if not self.headless and self._bridge is not None:
+            shutdown_bridge(self._bridge)
+            self._bridge = None
 
     #
     # GUI
     #
+
+    def start_artifact_watchers(self):
+        # TODO: fixme!
+        from .hooks import create_data_monitor
+
+        if not self._artifact_watchers_started:
+            if self.flat_api is None:
+                raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
+
+            self._data_monitor = create_data_monitor(self)
+            self.currentProgram.addListener(self._data_monitor)
+            # TODO: generalize superclass method?
+            super().start_artifact_watchers()
+
+    def stop_artifact_watchers(self):
+        if self._artifact_watchers_started:
+            self._data_monitor = None
+            # TODO: generalize superclass method?
+            super().stop_artifact_watchers()
 
     @property
     def gui_plugin(self):
@@ -174,8 +178,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return answer if answer is not None else ""
 
     def gui_active_context(self):
-        from .compat.state import get_current_address
-        active_addr = get_current_address(flat_api=self.flat_api)
+        active_addr = self.flat_api.currentLocation.getAddress().getOffset()
         if active_addr is None:
             return Function(0, 0)
 
@@ -537,7 +540,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         enums = {}
         for dType in self.currentProgram.getDataTypeManager().getAllDataTypes():
-            if not isinstance(dType, EnumDB):
+            if not self.isinstance(dType, EnumDB):
                 continue
 
             enum_name = dType.getPathName()[1:]
@@ -626,8 +629,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @property
     def currentProgram(self):
-        from .compat.state import get_current_program
-        return get_current_program(flat_api=self.flat_api)
+        return self.flat_api.currentProgram
 
     @ghidra_transaction
     def _update_local_variable_symbols(
@@ -660,7 +662,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         from .compat.imports import StructureDB
 
         struct = self.currentProgram.getDataTypeManager().getDataType("/" + name)
-        return struct if isinstance(struct, StructureDB) else None
+        return struct if self.isinstance(struct, StructureDB) else None
 
     def _struct_members_from_gstruct(self, name: str) -> Dict[int, StructMember]:
         ghidra_struct = self._get_struct_by_name(name)
@@ -796,4 +798,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
         from .compat.imports import EnumDB
 
         ghidra_enum = self.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
-        return ghidra_enum if isinstance(ghidra_enum, EnumDB) else None
+        return ghidra_enum if self.isinstance(ghidra_enum, EnumDB) else None
+
+    @staticmethod
+    def isinstance(obj, cls):
+        """
+        A proxy self.isinstance function that can handle BridgedObjects. This is necessary because the `self.isinstance` function
+        in the remote namespace will not recognize BridgedObjects as instances of classes in the local namespace.
+        """
+        return obj._bridge_isinstance(cls) if isinstance(obj, BridgedObject) else isinstance(obj, cls)

@@ -1,3 +1,4 @@
+import logging
 
 from ghidra.framework.model import DomainObjectListener
 from ghidra.program.model.symbol import SourceType, SymbolType
@@ -20,18 +21,23 @@ from ghidra.util.data import DataTypeParser
 from ghidra.util.exception import CancelledException
 from docking.action import MenuData
 
-from java.lang import ClassLoader
-from jpype import JClass
-
+_l = logging.getLogger(__name__)
 
 def get_private_class(path: str):
+    from java.lang import ClassLoader
+    from jpype import JClass
+
     gcl = ClassLoader.getSystemClassLoader()
     return JClass(path, loader=gcl)
 
 
 # private imports
-EnumDB = get_private_class("ghidra.program.database.data.EnumDB")
-StructureDB = get_private_class("ghidra.program.database.data.StructureDB")
+try:
+    from ghidra.program.database.data import EnumDB, StructureDB
+except Exception as e:
+    _l.warning("Failed to import some classes, we are likely in a headless environment.")
+    EnumDB = get_private_class("ghidra.program.database.data.EnumDB")
+    StructureDB = get_private_class("ghidra.program.database.data.StructureDB")
 
 
 __all__ = [
