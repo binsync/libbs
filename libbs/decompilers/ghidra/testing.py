@@ -47,7 +47,7 @@ class HeadlessGhidraDecompiler:
             "-postScript",
             str(self._headless_script_path.name),
         ])
-        time.sleep(3)
+        time.sleep(1)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         time.sleep(2)

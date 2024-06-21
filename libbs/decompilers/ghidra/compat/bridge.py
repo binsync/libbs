@@ -26,6 +26,7 @@ def connect_to_bridge(connection_timeout=10) -> Optional[ghidra_bridge.GhidraBri
         if bridge is not None:
             break
 
+    time.sleep(1)
     return bridge
 
 
