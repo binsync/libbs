@@ -650,7 +650,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     def print(self, msg, print_local=True, **kwargs):
-        self.ghidra.print(msg, print_local=print_local)
+        if print_local:
+            print(msg)
+
+        if self._bridge:
+            self._bridge.remote_exec(f'print("{msg}")')
 
     def info(self, msg: str, **kwargs):
         _l.info(msg)
