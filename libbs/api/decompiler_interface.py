@@ -340,8 +340,7 @@ class DecompilerInterface:
             update |= self._set_function_header(header, **kwargs)
 
         if func.stack_vars:
-            for variable in func.stack_vars.values():
-                update |= self._set_stack_variable(variable, **kwargs)
+            update |= self._set_stack_variables(list(func.stack_vars.values()), **kwargs)
 
         return update
 
@@ -359,6 +358,13 @@ class DecompilerInterface:
         return {}
 
     # stack vars
+    def _set_stack_variables(self, svars: List[StackVariable], **kwargs) -> bool:
+        update = False
+        for svar in svars:
+            update |= self._set_stack_variable(svar, **kwargs)
+
+        return update
+
     def _set_stack_variable(self, svar: StackVariable, **kwargs) -> bool:
         return False
 

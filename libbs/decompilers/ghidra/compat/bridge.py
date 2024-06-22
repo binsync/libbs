@@ -70,7 +70,7 @@ class FlatAPIWrapper:
 
 
 def ui_remote_eval(f):
-    @wraps
+    @wraps(f)
     def _ui_remote_eval(self: "GhidraDecompilerInterface", *args, **kwargs):
         # exit early, no analysis needed
         if self.headless:
@@ -104,11 +104,17 @@ def ui_remote_eval(f):
 
         # extract the remote code
         remote_codes = re.findall(r"return (\[.*])", f_code.replace("\n", " "))
-        if not len(remote_codes) != 1:
+        if len(remote_codes) != 1:
             raise ValueError(f"Failed to extract remote code from function {f}! This must be a bug in writing.")
 
         remote_code = remote_codes[0]
-        return self._bridge.remote_eval(remote_code, **namespace)
+        try:
+            val = self._bridge.remote_eval(remote_code, **namespace)
+        except Exception as e:
+            self.error(f"Failed to evaluate remote code: {remote_code}")
+            val = []
+
+        return val
 
     return _ui_remote_eval
 

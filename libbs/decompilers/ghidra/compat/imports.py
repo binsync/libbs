@@ -4,6 +4,7 @@ from typing import Tuple, Iterable
 _l = logging.getLogger(__name__)
 
 from ..interface import bridge
+bridge = bridge or globals().get("binsync_ghidra_bridge", None)
 HEADLESS = bridge is None
 
 
