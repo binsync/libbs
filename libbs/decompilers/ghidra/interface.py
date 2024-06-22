@@ -156,7 +156,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         cause this to loop forever.
         """
         if self.loop_on_plugin and self._init_plugin:
-            self._run_until_server_closed()
+            run_until_bridge_closed(self._bridge)
         return None
 
     @gui_plugin.setter
