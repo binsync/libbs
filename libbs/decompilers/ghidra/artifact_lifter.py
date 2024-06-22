@@ -11,6 +11,7 @@ class GhidraArtifactLifter(ArtifactLifter):
         "undefined32": "int",
         "undefined16": "short",
         "undefined8": "char",
+        "undefined": "char",
     }
 
     def lift_type(self, type_str: str) -> str:

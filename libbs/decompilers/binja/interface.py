@@ -426,7 +426,7 @@ class BinjaInterface(DecompilerInterface):
             size=bn_gvar.type.width
         )
 
-    def _global_vars(self) -> Dict[int, GlobalVariable]:
+    def _global_vars(self, **kwargs) -> Dict[int, GlobalVariable]:
         return {
             addr: GlobalVariable(addr, var.name or f"data_{addr:x}")
             for addr, var in self.bv.data_vars.items()

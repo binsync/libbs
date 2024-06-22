@@ -301,6 +301,14 @@ class DecompilerInterface:
     # These are API that provide extra introspection for plugins that may rely on LibBS Interface
     #
 
+    @property
+    def default_pointer_size(self) -> int:
+        """
+        Returns the default pointer size of the binary. This is useful for calculating offsets
+        in the binary.
+        """
+        raise NotImplementedError
+
     def undo(self):
         """
         Undoes the last change made to the decompiler.
@@ -391,7 +399,7 @@ class DecompilerInterface:
     def _get_global_var(self, addr) -> Optional[GlobalVariable]:
         return None
 
-    def _global_vars(self) -> Dict[int, GlobalVariable]:
+    def _global_vars(self, **kwargs) -> Dict[int, GlobalVariable]:
         """
         Returns a dict of libbs.GlobalVariable that contain the addr and size of each global var.
         Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact

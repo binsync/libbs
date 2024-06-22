@@ -38,11 +38,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.loop_on_plugin = loop_on_plugin
         self.flat_api = flat_api
 
-        self._last_addr = None
-        self._last_func = None
-        self._binary_base_addr = None
-        self._last_base_addr_access = time.time()
-
         # headless-only attributes
         self._start_headless_watchers = start_headless_watchers
         self._headless_analyze = analyze
@@ -54,6 +49,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         # ui-only attributes
         self._data_monitor = None
         self._bridge = None
+
+        # cachable attributes
+        self._last_addr = None
+        self._last_func = None
+        self._binary_base_addr = None
+        self._last_base_addr_access = time.time()
+        self._default_pointer_size = None
 
         super().__init__(
             name="ghidra",
@@ -172,7 +174,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             except Exception as e:
                 self.warning(f"Exception in ctx menu callback {name}: {e}")
                 raise
-        ctx_menu_action = create_context_action(self.ghidra, name, action_string, callback_func_wrap, category or "LibBS")
+        ctx_menu_action = create_context_action(name, action_string, callback_func_wrap, category or "LibBS")
         self.flat_api.getState().getTool().addAction(ctx_menu_action)
         return True
 
@@ -180,7 +182,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
         from .compat.imports import CancelledException
         try:
             answer = self.flat_api.askString(title, question)
-        except CancelledException:
+        except Exception as e:
+            if isinstance(e, CancelledException):
+                _l.info("User cancelled string input.")
             answer = None
 
         return answer if answer is not None else ""
@@ -250,6 +254,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # Extra API
     #
 
+    @property
+    def default_pointer_size(self) -> int:
+        if self._default_pointer_size is None:
+            self._default_pointer_size = int(self.currentProgram.getDefaultPointerSize())
+
+        return self._default_pointer_size
+
     def undo(self):
         self.currentProgram.undo()
 
@@ -309,13 +320,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
             _l.warning(f"Failed to get any functions from Ghidra. Did something break?")
 
         return funcs
-
-    @ui_remote_eval
-    def __functions(self):
-        return [
-            (int(func.getEntryPoint().getOffset()), str(func.getName()), int(func.getBody().getNumAddresses()))
-            for func in self.currentProgram.getFunctionManager().getFunctions(True)
-        ]
 
     def _function_args(self, func_addr: int, decompilation=None) -> Dict[int, FunctionArgument]:
         decompilation = decompilation or self._ghidra_decompile(self._get_nearest_function(func_addr))
@@ -483,17 +487,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return structs
 
-    @ui_remote_eval
-    def __gstructs(self):
-        return [
-            (struct.getPathName()[1:], struct)
-            for struct in self.currentProgram.getDataTypeManager().getAllStructures()
-        ]
-
     @ghidra_transaction
     def _set_comment(self, comment: Comment, **kwargs) -> bool:
         from .compat.imports import CodeUnit, SetCommentCmd
-
 
         cmt_type = CodeUnit.PRE_COMMENT if comment.decompiled else CodeUnit.EOL_COMMENT
         if comment.addr == comment.func_addr:
@@ -507,26 +503,27 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return True
 
     def _get_comment(self, addr) -> Optional[Comment]:
-        # TODO: implement me!
-        return None
+        # TODO: speedup needed here, see global vars for example
+        comments = self._comments()
+        return comments.get(addr, None)
 
     def _comments(self) -> Dict[int, Comment]:
         comments = {}
-        for func in self.currentProgram.getFunctionManager().getFunctions(True):
-            addr_set = func.getBody()
-            for codeUnit in self.currentProgram.getListing().getCodeUnits(addr_set, True):
+        funcs_code_units = self.__function_code_units()
+        for code_units in funcs_code_units:
+            for code_unit in code_units:
                 # TODO: this could be bad if we have multiple comments at the same address (pre and eol)
                 # eol comment
-                eol_cmt = codeUnit.getComment(0)
+                eol_cmt = code_unit.getComment(0)
                 if eol_cmt:
-                    addr = int(codeUnit.getAddress().getOffset())
+                    addr = int(code_unit.getAddress().getOffset())
                     comments[addr] = Comment(
                         addr=addr, comment=str(eol_cmt)
                     )
                 # pre comment
-                pre_cmt = codeUnit.getComment(1)
+                pre_cmt = code_unit.getComment(1)
                 if pre_cmt:
-                    addr = int(codeUnit.getAddress().getOffset())
+                    addr = int(code_unit.getAddress().getOffset())
                     comments[addr] = Comment(
                         addr=addr, comment=str(pre_cmt), decompiled=True
                     )
@@ -578,70 +575,45 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return enums
 
     @ghidra_transaction
-    def _set_global_variable(self, var_addr, user=None, artifact=None, **kwargs):
-        """
-        TODO: remove me and implement me properly as setters and getters
-        """
+    def _set_global_variable(self, gvar: GlobalVariable, **kwargs):
         from .compat.imports import RenameLabelCmd, SourceType
 
-
         changes = False
-        global_var: GlobalVariable = artifact
-        all_global_vars = self._global_vars()
-
-        for offset, gvar in all_global_vars.items():
-            if offset != var_addr:
+        g_gvars_info = self.__g_global_variables()
+        for addr, name, sym_data, sym in g_gvars_info:
+            if addr != gvar.addr:
                 continue
 
-            if global_var.name and global_var.name != gvar.name:
-                sym = self.flat_api.getSymbolAt(self.flat_api.toAddr(var_addr))
-                cmd = RenameLabelCmd(sym, global_var.name, SourceType.USER_DEFINED)
+            # we've found the global variable
+            if gvar.name and gvar.name != name:
+                cmd = RenameLabelCmd(sym, gvar.name, SourceType.USER_DEFINED)
                 cmd.applyTo(self.currentProgram)
                 changes = True
 
-            if global_var.type:
+            type_str = str(sym_data.getDataType())
+            if gvar.type and gvar.type != type_str:
                 # TODO: set type
                 pass
-
-            break
 
         return changes
 
     def _get_global_var(self, addr) -> Optional[GlobalVariable]:
-        """
-        TODO: remove me and implement me properly as setters and getters
-        """
-        light_global_vars = self._global_vars()
-        for offset, global_var in light_global_vars.items():
-            if offset == addr:
-                lst = self.currentProgram.getListing()
-                g_addr = self.flat_api.toAddr(addr)
-                data = lst.getDataAt(g_addr)
-                if not data or data.isStructure():
-                    return None
-                if str(data.getDataType()) == "undefined":
-                    size = self.currentProgram.getDefaultPointerSize()
-                else:
-                    size = data.getLength()
+        gvars = self._global_vars(match_single_offset=addr)
+        return gvars.get(addr, None)
 
-                global_var.size = size
-                return global_var
-
-    def _global_vars(self) -> Dict[int, GlobalVariable]:
-        """
-        TODO: remove me and implement me properly as setters and getters
-        """
-        from .compat.imports import SymbolType
-
-
-        symbol_table = self.currentProgram.getSymbolTable()
+    def _global_vars(self, match_single_offset=None, **kwargs) -> Dict[int, GlobalVariable]:
+        g_gvars_info = self.__g_global_variables()
         gvars = {}
-        for sym in symbol_table.getAllSymbols(True):
-            if sym.getSymbolType() != SymbolType.LABEL:
+        for addr, name, sym_data, sym in g_gvars_info:
+            # speed optimization for single offset lookups
+            if match_single_offset is not None and match_single_offset != addr:
                 continue
 
-            addr = int(sym.getAddress().getOffset())
-            gvars[addr] = GlobalVariable(addr=addr, name=str(sym.getName()))
+            type_str = str(sym_data.getDataType())
+            size = int(self.currentProgram.getListing().getDataAt(sym.getAddress()).getLength()) \
+                if type_str != "undefined" else self.default_pointer_size
+
+            gvars[addr] = GlobalVariable(addr=addr, name=name, type_=type_str, size=size)
 
         return gvars
 
@@ -716,19 +688,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
             members[offset] = StructMember(name=name, offset=offset, type_=type_, size=size)
 
         return members
-
-    @ui_remote_eval
-    def __gstruct_members(self, gstruct: "StructureDB") -> List[Tuple[int, str, str, int]]:
-        return [
-            (int(m.getOffset()), str(m.getFieldName()), str(m.getDataType().getName()), int(m.getLength()))
-            for m in gstruct.getComponents()
-        ]
-
-    @ui_remote_eval
-    def __get_enum_members(self, g_enum: "EnumDB") -> List[Tuple[str, int]]:
-        return [
-            (name, g_enum.getValue(name)) for name in g_enum.getNames()
-        ]
 
     def _get_nearest_function(self, addr: int) -> "GhidraFunction":
         func_manager = self.currentProgram.getFunctionManager()
@@ -850,6 +809,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     @ui_remote_eval
+    def __functions(self) -> List[Tuple[int, str, int]]:
+        return [
+            (int(func.getEntryPoint().getOffset()), str(func.getName()), int(func.getBody().getNumAddresses()))
+            for func in self.currentProgram.getFunctionManager().getFunctions(True)
+        ]
+
+    @ui_remote_eval
     def __update_local_variable_symbols(self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]) -> List:
         from .compat.imports import HighFunctionDBUtil, SourceType
 
@@ -897,5 +863,48 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def __set_sym_types(self, sym_pairs, source_type):
         return [
             sym.setDataType(new_type, False, True, source_type) for sym, new_type in sym_pairs
+        ]
+
+    @ui_remote_eval
+    def __gstruct_members(self, gstruct: "StructureDB") -> List[Tuple[int, str, str, int]]:
+        return [
+            (int(m.getOffset()), str(m.getFieldName()), str(m.getDataType().getName()), int(m.getLength()))
+            for m in gstruct.getComponents()
+        ]
+
+    @ui_remote_eval
+    def __get_enum_members(self, g_enum: "EnumDB") -> List[Tuple[str, int]]:
+        return [
+            (name, g_enum.getValue(name)) for name in g_enum.getNames()
+        ]
+
+    @ui_remote_eval
+    def __g_global_variables(self):
+        # TODO: this could be optimized more both in use and in implementation
+        from .compat.imports import SymbolType
+
+        return [
+            (int(sym.getAddress().getOffset()), str(sym.getName()), self.currentProgram.getListing().getDataAt(sym.getAddress()), sym)
+            for sym in self.currentProgram.getSymbolTable().getAllSymbols(True)
+            if sym.getSymbolType() == SymbolType.LABEL and
+            self.currentProgram.getListing().getDataAt(sym.getAddress()) and
+            not self.currentProgram.getListing().getDataAt(sym.getAddress()).isStructure()
+        ]
+
+    @ui_remote_eval
+    def __gstructs(self):
+        return [
+            (struct.getPathName()[1:], struct)
+            for struct in self.currentProgram.getDataTypeManager().getAllStructures()
+        ]
+
+    @ui_remote_eval
+    def __function_code_units(self):
+        """
+        Returns a list of code units for each function in the program.
+        """
+        return [
+            [code_unit for code_unit in self.currentProgram.getListing().getCodeUnits(func.getBody(), True)]
+            for func in self.currentProgram.getFunctionManager().getFunctions(True)
         ]
 
