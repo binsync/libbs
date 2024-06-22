@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import logging
 import re
 import time
 from functools import wraps
@@ -11,22 +12,24 @@ import ghidra_bridge
 if typing.TYPE_CHECKING:
     from ..interface import GhidraDecompilerInterface
 
+_l = logging.getLogger(name=__name__)
 
-def connect_to_bridge(connection_timeout=10) -> Optional[ghidra_bridge.GhidraBridge]:
+
+def connect_to_bridge(connection_timeout=20) -> Optional[ghidra_bridge.GhidraBridge]:
     start_time = time.time()
     bridge = None
     while time.time() - start_time < connection_timeout:
         try:
             bridge = ghidra_bridge.GhidraBridge(
-                namespace=globals(), interactive_mode=True, hook_import=True
+                namespace=globals(), interactive_mode=True
             )
-        except ConnectionError:
+        except ConnectionError as e:
+            _l.info(f"Failed to connect to GhidraBridge: {e}")
             time.sleep(1)
 
         if bridge is not None:
             break
 
-    time.sleep(1)
     return bridge
 
 

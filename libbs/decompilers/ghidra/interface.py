@@ -1,14 +1,12 @@
 import os
+import sys
 import time
-import re
-import inspect
-import importlib
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Union
 import logging
-from functools import wraps
 
 from jfx_bridge.bridge import BridgedObject
+from ghidra_bridge import GhidraBridge
 
 from libbs.api import DecompilerInterface
 from libbs.api.decompiler_interface import requires_decompilation
@@ -21,6 +19,7 @@ from .compat.bridge import FlatAPIWrapper, connect_to_bridge, shutdown_bridge, r
 from .compat.transaction import ghidra_transaction
 
 _l = logging.getLogger(__name__)
+bridge: Optional[GhidraBridge] = None
 
 
 class GhidraDecompilerInterface(DecompilerInterface):
@@ -67,9 +66,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.shutdown()
 
     def _init_gui_components(self, *args, **kwargs):
+        global bridge
         self._bridge = connect_to_bridge()
         if self._bridge is None:
             raise RuntimeError("Failed to connect to Ghidra UI bridge.")
+
+        # used for importing elsewhere
+        bridge = self._bridge
 
         self.flat_api = FlatAPIWrapper()
         # XXX: yeah, this is bad naming!
