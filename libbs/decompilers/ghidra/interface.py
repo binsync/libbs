@@ -1,68 +1,144 @@
 import os
+import sys
 import time
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Union
 import logging
-import subprocess
-import tempfile
-from functools import wraps
+
+from jfx_bridge.bridge import BridgedObject
+from ghidra_bridge import GhidraBridge
 
 from libbs.api import DecompilerInterface
 from libbs.api.decompiler_interface import requires_decompilation
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
 )
-from libbs.plugin_installer import PluginInstaller
-import psutil
 
 from .artifact_lifter import GhidraArtifactLifter
-from .compat import GhidraAPIWrapper, Transaction
-from .hooks import create_context_action, create_data_monitor
+from .compat.bridge import FlatAPIWrapper, connect_to_bridge, shutdown_bridge, run_until_bridge_closed, ui_remote_eval
+from .compat.transaction import ghidra_transaction
 
 _l = logging.getLogger(__name__)
-
-
-def ghidra_transaction(f):
-    @wraps(f)
-    def _ghidra_transaction(self: "GhidraDecompilerInterface", *args, **kwargs):
-        with Transaction(self.ghidra, msg=f"BS::{f.__name__}(args={args})"):
-            ret_val = f(self, *args, **kwargs)
-
-        return ret_val
-
-    return _ghidra_transaction
+bridge: Optional[GhidraBridge] = None
 
 
 class GhidraDecompilerInterface(DecompilerInterface):
-    def __init__(self, loop_on_plugin=True, start_headless_watchers=False, **kwargs):
-        self.loop_on_plugin = loop_on_plugin
-        self._start_headless_watchers = start_headless_watchers
+    CACHE_TIMEOUT = 5
 
+    def __init__(
+        self,
+        flat_api=None,
+        loop_on_plugin=True,
+        start_headless_watchers=False,
+        analyze=True,
+        project_location: Optional[Union[str, Path]] = None,
+        project_name: Optional[str] = None,
+        **kwargs
+    ):
+        self.loop_on_plugin = loop_on_plugin
+        self.flat_api = flat_api
+
+        # headless-only attributes
+        self._start_headless_watchers = start_headless_watchers
+        self._headless_analyze = analyze
+        self._headless_project_location = project_location
+        self._headless_project_name = project_name
+        self._project = None
+        self._program = None
+
+        # ui-only attributes
+        self._data_monitor = None
+        self._bridge = None
+
+        # cachable attributes
         self._last_addr = None
         self._last_func = None
-        self.base_addr = None
+        self._binary_base_addr = None
+        self._last_base_addr_access = time.time()
+        self._default_pointer_size = None
 
-        self._headless_g_project = None
-        self._headless_script_name = "ghidra_libbs_mainthread_server.py"
+        super().__init__(
+            name="ghidra",
+            artifact_lifter=GhidraArtifactLifter(self),
+            supports_undo=True,
+            **kwargs
+        )
 
-        self._data_monitor = None
-
-        self.ghidra: Optional[GhidraAPIWrapper] = None
-        super().__init__(name="ghidra", artifact_lifter=GhidraArtifactLifter(self), supports_undo=True, **kwargs)
+    def __del__(self):
+        self.shutdown()
 
     def _init_gui_components(self, *args, **kwargs):
-        if not self.connect_ghidra_bridge():
-            raise Exception("Failed to connect to the Ghidra Bridge. Check the Ghidra GUI for failures!")
+        global bridge
+        self._bridge = connect_to_bridge()
+        if self._bridge is None:
+            raise RuntimeError("Failed to connect to Ghidra UI bridge.")
+
+        # used for importing elsewhere
+        bridge = self._bridge
+        globals()["binsync_ghidra_bridge"] = self._bridge
+
+        self.flat_api = FlatAPIWrapper()
+        # XXX: yeah, this is bad naming!
+        if self._start_headless_watchers:
+            self.start_artifact_watchers()
         super()._init_gui_components(*args, **kwargs)
 
+    def _shutdown_headless(self):
+        if self._program is not None and self._project is not None:
+            from .compat.headless import close_program
+            close_program(self._program, self._project)
+            self._project = None
+            self._program = None
+
+    def _init_headless_components(self, *args, **kwargs):
+        if not self._binary_path.exists():
+            raise FileNotFoundError(f"Binary path does not exist: {self._binary_path}")
+
+        if os.getenv("GHIDRA_INSTALL_DIR", None) is None:
+            raise RuntimeError("GHIDRA_INSTALL_DIR must be set in the environment to use Ghidra headless.")
+
+        from .compat.headless import open_program
+        flat_api, project, program = open_program(
+            self._binary_path,
+            analyze=self._headless_analyze,
+            project_location=self._headless_project_location,
+            project_name=self._headless_project_name,
+        )
+        if flat_api is None:
+            raise RuntimeError("Failed to open program with Pyhidra")
+
+        self.flat_api = flat_api
+        self._program = program
+        self._project = project
+
+    def shutdown(self):
+        super().shutdown()
+        if self.headless and self._project is not None:
+            self._shutdown_headless()
+
+        if not self.headless and self._bridge is not None:
+            try:
+                shutdown_bridge(self._bridge)
+            except Exception:
+                pass
+            self._bridge = None
+
+    #
+    # GUI
+    #
+
     def start_artifact_watchers(self):
+        if self.headless:
+            _l.warning("Artifact watching is not supported in headless mode.")
+            return
+
+        from .hooks import create_data_monitor
         if not self._artifact_watchers_started:
-            if self.ghidra is None:
+            if self.flat_api is None:
                 raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
 
-            self._data_monitor = create_data_monitor(self.ghidra, self)
-            self.ghidra.currentProgram.addListener(self._data_monitor)
-            # TODO: generalize superclass method?
+            self._data_monitor = create_data_monitor(self)
+            self.currentProgram.addListener(self._data_monitor)
             super().start_artifact_watchers()
 
     def stop_artifact_watchers(self):
@@ -71,70 +147,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
             # TODO: generalize superclass method?
             super().stop_artifact_watchers()
 
-    def _init_headless_components(self, *args, **kwargs):
-        if self._headless_dec_path is None:
-            # attempt to grab it from the env vars
-            path = os.environ.get("GHIDRA_HEADLESS_PATH", None)
-            if path:
-                self._headless_dec_path = Path(path).absolute()
-
-        super()._init_headless_components(*args, **kwargs)
-        script_dir_path = PluginInstaller.find_pkg_files("libbs") / "decompiler_stubs" / "ghidra_libbs"
-        if not script_dir_path.joinpath(self._headless_script_name).exists():
-            raise SystemError("Failed to find the internal ghidra scripts for BinSync. Is your install corrupted?")
-
-        self._headless_g_project = tempfile.TemporaryDirectory()
-        subprocess.Popen([
-            str(self._headless_dec_path),
-            self._headless_g_project.name,
-            "headless",
-            "-import",
-            str(self._binary_path),
-            "-scriptPath",
-            str(script_dir_path),
-            "-postScript",
-            self._headless_script_name
-        ])
-
-        time.sleep(1)
-        if not self.connect_ghidra_bridge():
-            raise Exception(f"Failed to connect to the Ghidra Bridge. Check if the {self._headless_dec_path} binary was ever started.")
-
-        if self._start_headless_watchers:
-            self.start_artifact_watchers()
-
-    def _find_headless_proc(self):
-        for proc in psutil.process_iter():
-            try:
-                cmd = " ".join(proc.cmdline())
-            except Exception as e:
-                continue
-
-            if "headless" in cmd and \
-                    "-import" in cmd and \
-                    "-postScript" in cmd and \
-                    self._headless_script_name in cmd:
-                break
-        else:
-            proc = None
-
-        return proc
-
-    def shutdown(self):
-        super().shutdown()
-        self.ghidra.bridge.remote_shutdown()
-        # Wait until headless binary gets shutdown
-        while self._find_headless_proc():
-            time.sleep(1)
-        self._headless_g_project.cleanup()
-
-    #
-    # GUI
-    #
-
     @property
     def gui_plugin(self):
         """
+        TODO: fixme
         A special property to never exit this function if the remote server is running.
         This is used to standardize plugin access across all decompilers.
 
@@ -142,7 +158,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         cause this to loop forever.
         """
         if self.loop_on_plugin and self._init_plugin:
-            self._run_until_server_closed()
+            run_until_bridge_closed(self._bridge)
         return None
 
     @gui_plugin.setter
@@ -150,24 +166,31 @@ class GhidraDecompilerInterface(DecompilerInterface):
         pass
 
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
+        from .hooks import create_context_action
+
         def callback_func_wrap(*args, **kwargs):
             try:
                 callback_func(*args, **kwargs)
             except Exception as e:
                 self.warning(f"Exception in ctx menu callback {name}: {e}")
                 raise
-        ctx_menu_action = create_context_action(self.ghidra, name, action_string, callback_func_wrap, category or "LibBS")
-        self.ghidra.getState().getTool().addAction(ctx_menu_action)
+        ctx_menu_action = create_context_action(name, action_string, callback_func_wrap, category or "LibBS")
+        self.flat_api.getState().getTool().addAction(ctx_menu_action)
         return True
 
     def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        answer = self.ghidra.bridge.remote_eval(
-            "askString(title, question)", title=title, question=question, timeout_override=-1
-        )
-        return answer if answer else ""
+        from .compat.imports import CancelledException
+        try:
+            answer = self.flat_api.askString(title, question)
+        except Exception as e:
+            if isinstance(e, CancelledException):
+                _l.info("User cancelled string input.")
+            answer = None
+
+        return answer if answer is not None else ""
 
     def gui_active_context(self):
-        active_addr = self.ghidra.currentLocation.getAddress().getOffset()
+        active_addr = self.flat_api.currentLocation.getAddress().getOffset()
         if active_addr is None:
             return Function(0, 0)
 
@@ -180,7 +203,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def gui_goto(self, func_addr) -> None:
         func_addr = self.art_lifter.lower_addr(func_addr)
-        self.ghidra.goTo(self.ghidra.toAddr(func_addr))
+        self.flat_api.goTo(self.flat_api.toAddr(func_addr))
 
     #
     # Mandatory API
@@ -188,15 +211,20 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
-        return self.ghidra.currentProgram.getImageBase().getOffset()
+        # TODO: this is a hack for a dumb cache, and can cause bugs, but good enough for now:
+        if (time.time() - self._last_base_addr_access > self.CACHE_TIMEOUT) or self._binary_base_addr is None:
+            self._binary_base_addr = int(self.currentProgram.getImageBase().getOffset())
+            self._last_base_addr_access = time.time()
+
+        return self._binary_base_addr
 
     @property
     def binary_hash(self) -> str:
-        return self.ghidra.currentProgram.executableMD5
+        return self.currentProgram.executableMD5
 
     @property
     def binary_path(self) -> Optional[str]:
-        return self.ghidra.currentProgram.executablePath
+        return self.currentProgram.executablePath
 
     def get_func_size(self, func_addr) -> int:
         func_addr = self.art_lifter.lower_addr(func_addr)
@@ -206,10 +234,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return -1
 
         return int(gfunc.getBody().getNumAddresses())
-
-    def connect_ghidra_bridge(self):
-        self.ghidra = GhidraAPIWrapper(self, connection_timeout=25)
-        return self.ghidra.connected
 
     def _decompile(self, function: Function) -> Optional[str]:
         dec_obj = self.get_decompilation_object(function, do_lower=False)
@@ -230,15 +254,24 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # Extra API
     #
 
-    def undo(self):
-        self.ghidra.currentProgram.undo()
+    @property
+    def default_pointer_size(self) -> int:
+        if self._default_pointer_size is None:
+            self._default_pointer_size = int(self.currentProgram.getDefaultPointerSize())
 
+        return self._default_pointer_size
+
+    def undo(self):
+        self.currentProgram.undo()
+
+    @requires_decompilation
     def local_variable_names(self, func: Function) -> List[str]:
         symbols_by_name = self._get_local_variable_symbols(func)
-        return list(symbols_by_name.keys())
+        return list(name for name, _ in symbols_by_name)
 
+    @requires_decompilation
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str], **kwargs) -> bool:
-        symbols_by_name = self._get_local_variable_symbols(func)
+        symbols_by_name = {name: sym for name, sym in self._get_local_variable_symbols(func)}
         symbols_to_update = {}
         for name, new_name in name_map.items():
             if name not in symbols_by_name or symbols_by_name[name].name == new_name or new_name in symbols_by_name:
@@ -264,86 +297,87 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return None
 
         dec = self._ghidra_decompile(func)
-        # optimize on remote
-        stack_variable_info: Optional[List[Tuple[int, str, str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(sym.getStorage().getStackOffset(), sym.getName(), str(sym.getDataType()), sym.getSize()) "
-            "for sym in dec.getHighFunction().getLocalSymbolMap().getSymbols() "
-            "if sym.getStorage().isStackStorage()]",
-            dec=dec
-        )
-        stack_variables = {}
-        if stack_variable_info:
-            stack_variables = {
-                offset: StackVariable(offset, name, typestr, size, addr) for offset, name, typestr, size in
-                stack_variable_info
-            }
-
-        arg_variable_info: Optional[List[Tuple[str, str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(sym.getName(), str(sym.getDataType()), sym.getSize()) "
-            "for sym in dec.getHighFunction().getLocalSymbolMap().getSymbols() "
-            "if sym.isParameter()]",
-            dec=dec
-        )
-        args = {}
-        if arg_variable_info:
-            args = {
-                i: FunctionArgument(offset=i, name=info[0], type_=info[1], size=info[2]) for i, info in enumerate(arg_variable_info)
-            }
-
-        # grab the return type of the function from ghidra
-        type_ = self.ghidra.bridge.remote_eval(
-            "dec.getHighFunction().getFunctionPrototype().getReturnType().getName()",
-            dec=dec
-        )
-
-        bs_func = Function(
-            func.getEntryPoint().getOffset(), func.getBody().getNumAddresses(),
-            header=FunctionHeader(func.getName(), func.getEntryPoint().getOffset(), args=args, type_=type_),
+        stack_variables = self._stack_variables(addr, decompilation=dec)
+        args = self._function_args(addr, decompilation=dec)
+        type_ = self._function_type(addr, decompilation=dec)
+        func_addr = int(func.getEntryPoint().getOffset())
+        return Function(
+            addr=func_addr,
+            size=int(func.getBody().getNumAddresses()),
+            header=FunctionHeader(name=func.getName(), addr=func_addr, args=args, type_=type_),
             stack_vars=stack_variables, dec_obj=dec
         )
-        return bs_func
 
     def _functions(self) -> Dict[int, Function]:
-        # optimization to speed up remote evaluation
-        func_info: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(f.getName(), f.getEntryPoint().getOffset(), f.getBody().getNumAddresses()) "
-            "for f in currentProgram.getFunctionManager().getFunctions(True)]"
-        )
-        if func_info is None:
-            _l.warning(f"Failed to get any functions from Ghidra. Did something break?")
-            return {}
+        funcs = {}
+        func_info = self.__functions()
+        for addr, name, size in func_info:
+            funcs[addr] = Function(
+                addr=addr, size=size, header=FunctionHeader(name=name, addr=addr)
+            )
 
-        funcs = {
-            addr: Function(addr, size, header=FunctionHeader(name, addr)) for name, addr, size in func_info
-        }
+        if not funcs:
+            _l.warning(f"Failed to get any functions from Ghidra. Did something break?")
+
         return funcs
 
+    def _function_args(self, func_addr: int, decompilation=None) -> Dict[int, FunctionArgument]:
+        decompilation = decompilation or self._ghidra_decompile(self._get_nearest_function(func_addr))
+        args = {}
+        arg_offset = 0
+        for sym in decompilation.getHighFunction().getLocalSymbolMap().getSymbols():
+            if not sym.isParameter():
+                continue
+
+            args[arg_offset] = FunctionArgument(
+                offset=arg_offset, name=str(sym.getName()), type_=str(sym.getDataType()), size=int(sym.getSize())
+            )
+            arg_offset += 1
+
+        return args
+
+    def _function_type(self, addr: int, decompilation=None) -> Optional[str]:
+        decompilation = decompilation or self._ghidra_decompile(self._get_nearest_function(addr))
+        return str(decompilation.getHighFunction().getFunctionPrototype().getReturnType().getName())
+
     @ghidra_transaction
-    def _set_stack_variable(self, svar: StackVariable, **kwargs) -> bool:
+    def _set_stack_variables(self, svars: List[StackVariable], **kwargs) -> bool:
+        from .compat.imports import SourceType
         changes = False
-        if not svar:
+        if not svars:
             return changes
 
-        decompilation = kwargs.get('decompilation', None) or self._ghidra_decompile(self._get_function(svar.addr))
-        ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(svar.addr)
-        gstack_var = self._get_gstack_var(ghidra_func, svar.offset)
-        if not gstack_var:
+        first_svar = svars[0]
+        func_addr = first_svar.addr
+        decompilation = kwargs.get('decompilation', None) or self._ghidra_decompile(self._get_function(func_addr))
+        ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(func_addr)
+        gstack_vars = self.__get_gstack_vars(ghidra_func)
+        if not gstack_vars:
             return changes
 
-        src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
+        var_pairs = []
+        for svar in svars:
+            for gstack_var in gstack_vars:
+                if svar.offset == gstack_var.getStackOffset():
+                    var_pairs.append((svar, gstack_var))
+                    break
 
-        # name
-        if svar.name and svar.name != gstack_var.getName():
-            gstack_var.setName(svar.name, src_type.USER_DEFINED)
-            changes = True
+        rename_pairs = []
+        retype_pairs = []
+        changes = False
+        for svar, gstack_var in var_pairs:
+            if svar.name and svar.name != gstack_var.getName():
+                changes |= True
+                rename_pairs.append((gstack_var, svar.name))
 
-        # type
-        if svar.type:
-            parsed_type = self.typestr_to_gtype(svar.type)
-            if parsed_type is not None and parsed_type != str(gstack_var.getDataType()):
-                gstack_var.setDataType(parsed_type, False, True, src_type.USER_DEFINED)
-                changes = True
+            if svar.type:
+                parsed_type = self.typestr_to_gtype(svar.type)
+                if parsed_type is not None and parsed_type != str(gstack_var.getDataType()):
+                    changes |= True
+                    retype_pairs.append((gstack_var, parsed_type))
 
+        self.__set_sym_names(rename_pairs, SourceType.USER_DEFINED)
+        self.__set_sym_types(retype_pairs, SourceType.USER_DEFINED)
         return changes
 
     def _get_stack_variable(self, addr: int, offset: int, **kwargs) -> Optional[StackVariable]:
@@ -353,17 +387,29 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return self._gstack_var_to_bsvar(gstack_var)
 
+    def _stack_variables(self, func_addr: int, decompilation=None) -> Dict[int, StackVariable]:
+        decompilation = decompilation or self._ghidra_decompile(self._get_nearest_function(func_addr))
+        sv_info = self.__stack_variables(decompilation)
+        stack_variables = {}
+        for offset, name, type_, size in sv_info:
+            stack_variables[offset] = StackVariable(
+                stack_offset=offset, name=name, type_=type_, size=size, addr=func_addr
+            )
+
+        return stack_variables
+
     def _set_function_header(self, fheader: FunctionHeader, decompilation=None, **kwargs) -> bool:
+        from .compat.transaction import Transaction
+        from .compat.imports import SourceType, HighFunctionDBUtil
+
         changes = False
         func_addr = fheader.addr
         ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(func_addr)
-        src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
 
         # func name
-        self.info(f"Setting function header: {fheader}")
         if fheader.name and fheader.name != ghidra_func.getName():
-            with Transaction(self.ghidra, msg="BS::set_function_header::set_name"):
-                ghidra_func.setName(fheader.name, src_type.USER_DEFINED)
+            with Transaction(self.flat_api, msg="BS::set_function_header::set_name"):
+                ghidra_func.setName(fheader.name, SourceType.USER_DEFINED)
             changes = True
 
         # return type
@@ -371,41 +417,39 @@ class GhidraDecompilerInterface(DecompilerInterface):
             parsed_type = self.typestr_to_gtype(fheader.type)
             if parsed_type is not None and \
                     parsed_type != str(decompilation.highFunction.getFunctionPrototype().getReturnType()):
-                with Transaction(self.ghidra, msg="BS::set_function_header::set_rettype"):
-                    ghidra_func.setReturnType(parsed_type, src_type.USER_DEFINED)
+                with Transaction(self.flat_api, msg="BS::set_function_header::set_rettype"):
+                    ghidra_func.setReturnType(parsed_type, SourceType.USER_DEFINED)
                 changes = True
 
         # args
         # TODO: Only works for function arguments passed by register
         if fheader.args and decompilation is not None:
-            high_func_util = self.ghidra.import_module_object("ghidra.program.model.pcode", "HighFunctionDBUtil")
             params = ghidra_func.getParameters()
             if len(params) == 0:
-                with Transaction(self.ghidra, msg="BS::set_function_header::update_params"):
-                    high_func_util.commitParamsToDatabase(decompilation.highFunction, True, src_type.USER_DEFINED)
+                with Transaction(self.flat_api, msg="BS::set_function_header::update_params"):
+                    HighFunctionDBUtil.commitParamsToDatabase(decompilation.highFunction, True, SourceType.USER_DEFINED)
 
-            with Transaction(self.ghidra, msg="BS::set_function_header::set_arguments"):
+            with Transaction(self.flat_api, msg="BS::set_function_header::set_arguments"):
                 for offset, param in zip(fheader.args, params):
                     arg = fheader.args[offset]
                     gtype = self.typestr_to_gtype(arg.type)
-                    param.setName(arg.name, src_type.USER_DEFINED)
-                    param.setDataType(gtype, src_type.USER_DEFINED)
+                    param.setName(arg.name, SourceType.USER_DEFINED)
+                    param.setDataType(gtype, SourceType.USER_DEFINED)
             changes = True
 
         return changes
 
     @ghidra_transaction
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
+        from .compat.imports import DataTypeConflictHandler, StructureDataType, ByteDataType
+
         struct: Struct = struct
         old_ghidra_struct = self._get_struct_by_name(struct.name)
-        data_manager = self.ghidra.currentProgram.getDataTypeManager()
-        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
-        structType = self.ghidra.import_module_object("ghidra.program.model.data", "StructureDataType")
-        byteType = self.ghidra.import_module_object("ghidra.program.model.data", "ByteDataType")
-        ghidra_struct = structType(struct.name, 0)
+        data_manager = self.currentProgram.getDataTypeManager()
+        ghidra_struct = StructureDataType(struct.name, 0)
         for offset in struct.members:
             member = struct.members[offset]
-            ghidra_struct.add(byteType.dataType, 1, member.name, "")
+            ghidra_struct.add(ByteDataType.dataType, 1, member.name, "")
             ghidra_struct.growStructure(member.size - 1)
             for dtc in ghidra_struct.getComponents():
                 if dtc.getFieldName() == member.name:
@@ -418,7 +462,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if old_ghidra_struct is not None:
                 data_manager.replaceDataType(old_ghidra_struct, ghidra_struct, True)
             else:
-                data_manager.addDataType(ghidra_struct, handler.DEFAULT_HANDLER)
+                data_manager.addDataType(ghidra_struct, DataTypeConflictHandler.DEFAULT_HANDLER)
             return True
         except Exception as ex:
             print(f'Error filling struct {struct.name}: {ex}')
@@ -429,21 +473,24 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if ghidra_struct is None:
             return None
 
-        return Struct(ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(name))
+        return Struct(
+            ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(ghidra_struct)
+        )
 
     def _structs(self) -> Dict[str, Struct]:
-        name_sizes: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(s.getPathName(), s.getLength())"
-            "for s in currentProgram.getDataTypeManager().getAllStructures()]"
-        )
-        return {
-            name[1:]: Struct(name[1:], size, members=self._struct_members_from_gstruct(name[1:])) for name, size in name_sizes
-        } if name_sizes else {}
+        structs = {}
+        gstructs = self.__gstructs()
+        for name, gstruct in gstructs:
+            structs[name] = Struct(
+                name=name, size=gstruct.getLength(), members=self._struct_members_from_gstruct(gstruct)
+            )
+
+        return structs
 
     @ghidra_transaction
     def _set_comment(self, comment: Comment, **kwargs) -> bool:
-        CodeUnit = self.ghidra.import_module_object("ghidra.program.model.listing", "CodeUnit")
-        SetCommentCmd = self.ghidra.import_module_object("ghidra.app.cmd.comments", "SetCommentCmd")
+        from .compat.imports import CodeUnit, SetCommentCmd
+
         cmt_type = CodeUnit.PRE_COMMENT if comment.decompiled else CodeUnit.EOL_COMMENT
         if comment.addr == comment.func_addr:
             cmt_type = CodeUnit.PLATE_COMMENT
@@ -451,50 +498,51 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if comment.comment:
             # TODO: check if comment already exists, and append?
             return SetCommentCmd(
-                self.ghidra.toAddr(comment.addr), cmt_type, comment.comment
-            ).applyTo(self.ghidra.currentProgram)
+                self.flat_api.toAddr(comment.addr), cmt_type, comment.comment
+            ).applyTo(self.currentProgram)
         return True
 
     def _get_comment(self, addr) -> Optional[Comment]:
-        return None
+        # TODO: speedup needed here, see global vars for example
+        comments = self._comments()
+        return comments.get(addr, None)
 
     def _comments(self) -> Dict[int, Comment]:
         comments = {}
-        for func in self.ghidra.currentProgram.getFunctionManager().getFunctions(True):
-            addrSet = func.getBody()
-            eol_text_addrs: List[Tuple[str, int]] = self.ghidra.bridge.remote_exec(
-                "[(codeUnit.getComment(0), codeUnit.address)"
-                "for codeUnit in currentProgram.getListing().getCodeUnits(addrSet, True)"
-                "if codeUnit.getComment(0)]",
-                addrSet=addrSet
-            ) or []
-            pre_text_addrs: List[Tuple[str, int]] = self.ghidra.bridge.remote_exec(
-                "[(codeUnit.getComment(1), codeUnit.address)"
-                "for codeUnit in currentProgram.getListing().getCodeUnits(addrSet, True)"
-                "if codeUnit.getComment(1)]",
-                addrSet=addrSet
-            ) or []
-            # TODO: this could be bad if we have multiple comments at the same address (pre and eol)
-            comments.update({addr: Comment(addr=addr, comment=str(text)) for text, addr in eol_text_addrs})
-            comments.update(
-                {addr: Comment(addr=addr, comment=str(text), decompiled=True) for text, addr in pre_text_addrs}
-            )
+        funcs_code_units = self.__function_code_units()
+        for code_units in funcs_code_units:
+            for code_unit in code_units:
+                # TODO: this could be bad if we have multiple comments at the same address (pre and eol)
+                # eol comment
+                eol_cmt = code_unit.getComment(0)
+                if eol_cmt:
+                    addr = int(code_unit.getAddress().getOffset())
+                    comments[addr] = Comment(
+                        addr=addr, comment=str(eol_cmt)
+                    )
+                # pre comment
+                pre_cmt = code_unit.getComment(1)
+                if pre_cmt:
+                    addr = int(code_unit.getAddress().getOffset())
+                    comments[addr] = Comment(
+                        addr=addr, comment=str(pre_cmt), decompiled=True
+                    )
+
         return comments
 
     @ghidra_transaction
     def _set_enum(self, enum: Enum, **kwargs) -> bool:
+        from .compat.imports import EnumDataType, CategoryPath, DataTypeConflictHandler
+
         corrected_enum_name = "/" + enum.name
-        old_ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
-        data_manager = self.ghidra.currentProgram.getDataTypeManager()
-        handler = self.ghidra.import_module_object("ghidra.program.model.data", "DataTypeConflictHandler")
-        enumType = self.ghidra.import_module_object("ghidra.program.model.data", "EnumDataType")
-        categoryPath = self.ghidra.import_module_object("ghidra.program.model.data", "CategoryPath")
+        old_ghidra_enum = self.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
+        data_manager = self.currentProgram.getDataTypeManager()
 
         # Parse the libbs Enum name into category path and raw enum name for proper Enum creation
         split = corrected_enum_name.split('/')
         unpathed_name = split[-1]
         category_path = '/'.join(split[:-1])
-        ghidra_enum = enumType(categoryPath(category_path), unpathed_name, 4)
+        ghidra_enum = EnumDataType(CategoryPath(category_path), unpathed_name, 4)
         for m_name, m_val in enum.members.items():
             ghidra_enum.add(m_name, m_val)
 
@@ -502,105 +550,71 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if old_ghidra_enum:
                 data_manager.replaceDataType(old_ghidra_enum, ghidra_enum, True)
             else:
-                data_manager.addDataType(ghidra_enum, handler.DEFAULT_HANDLER)
+                data_manager.addDataType(ghidra_enum, DataTypeConflictHandler.DEFAULT_HANDLER)
             return True
         except Exception as ex:
             print(f'Error adding enum {enum.name}: {ex}')
             return False
 
     def _get_enum(self, name) -> Optional[Enum]:
-        is_valid_enum = self._get_ghidra_enum(name)
-        if is_valid_enum is None:
+        g_enum = self._get_ghidra_enum(name)
+        if g_enum is None:
             return None
 
-        members = self._get_enum_members(name)
+        members = {name: val for name, val in self.__get_enum_members(g_enum)}
         return Enum(name, members) if members else None
 
     def _enums(self) -> Dict[str, Enum]:
-        names: Optional[List[str]] = self.ghidra.bridge.remote_eval(
-            "[dType.getPathName() "
-            "for dType in currentProgram.getDataTypeManager().getAllDataTypes()"
-            "if ghidra.isinstance(dType, EnumDBType)]",
-        ghidra=self.ghidra,
-        EnumDBType=self.ghidra.import_module_object("ghidra.program.database.data", "EnumDB")
-        )
         enums = {}
-        for name in names:
-            enum_name = name[1:]
-            is_valid_enum = self._get_ghidra_enum(enum_name)
-            if is_valid_enum is None:
-                continue
-
-            enums[enum_name] = Enum(enum_name, self._get_enum_members(enum_name))
+        enums_by_name = self.__enum_names()
+        for enum_name, g_enum in enums_by_name:
+            members = {name: val for name, val in self.__get_enum_members(g_enum)}
+            if members:
+                enums[enum_name] = Enum(name=enum_name, members=members)
 
         return enums
 
     @ghidra_transaction
-    def _set_global_variable(self, var_addr, user=None, artifact=None, **kwargs):
-        """
-        TODO: remove me and implement me properly as setters and getters
-        """
+    def _set_global_variable(self, gvar: GlobalVariable, **kwargs):
+        from .compat.imports import RenameLabelCmd, SourceType
 
         changes = False
-        global_var: GlobalVariable = artifact
-        all_global_vars = self._global_vars()
-
-        rename_label_cmd_cls = self.ghidra.import_module_object("ghidra.app.cmd.label", "RenameLabelCmd")
-        src_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
-        for offset, gvar in all_global_vars.items():
-            if offset != var_addr:
+        g_gvars_info = self.__g_global_variables()
+        for addr, name, sym_data, sym in g_gvars_info:
+            if addr != gvar.addr:
                 continue
 
-            if global_var.name and global_var.name != gvar.name:
-                sym = self.ghidra.getSymbolAt(self.ghidra.toAddr(var_addr))
-                cmd = rename_label_cmd_cls(sym, global_var.name, src_type.USER_DEFINED)
-                cmd.applyTo(self.ghidra.currentProgram)
+            # we've found the global variable
+            if gvar.name and gvar.name != name:
+                cmd = RenameLabelCmd(sym, gvar.name, SourceType.USER_DEFINED)
+                cmd.applyTo(self.currentProgram)
                 changes = True
 
-            if global_var.type:
+            type_str = str(sym_data.getDataType())
+            if gvar.type and gvar.type != type_str:
                 # TODO: set type
                 pass
-
-            break
 
         return changes
 
     def _get_global_var(self, addr) -> Optional[GlobalVariable]:
-        """
-        TODO: remove me and implement me properly as setters and getters
-        """
-        light_global_vars = self._global_vars()
-        for offset, global_var in light_global_vars.items():
-            if offset == addr:
-                lst = self.ghidra.currentProgram.getListing()
-                g_addr = self.ghidra.toAddr(addr)
-                data = lst.getDataAt(g_addr)
-                if not data or data.isStructure():
-                    return None
-                if str(data.getDataType()) == "undefined":
-                    size = self.ghidra.currentProgram.getDefaultPointerSize()
-                else:
-                    size = data.getLength()
+        gvars = self._global_vars(match_single_offset=addr)
+        return gvars.get(addr, None)
 
-                global_var.size = size
-                return global_var
+    def _global_vars(self, match_single_offset=None, **kwargs) -> Dict[int, GlobalVariable]:
+        g_gvars_info = self.__g_global_variables()
+        gvars = {}
+        for addr, name, sym_data, sym in g_gvars_info:
+            # speed optimization for single offset lookups
+            if match_single_offset is not None and match_single_offset != addr:
+                continue
 
-    def _global_vars(self) -> Dict[int, GlobalVariable]:
-        """
-        TODO: remove me and implement me properly as setters and getters
-        """
-        symbol_type = self.ghidra.import_module_object("ghidra.program.model.symbol", "SymbolType")
-        symbol_table = self.ghidra.currentProgram.getSymbolTable()
-        # optimize by grabbing all symbols at once
-        gvar_addr_and_name: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(sym.getName(), sym.getAddress().getOffset()) "
-            "for sym in symbol_table.getAllSymbols(True) "
-            "if sym.getSymbolType() == symbol_type.LABEL]",
-            symbol_type=symbol_type, symbol_table=symbol_table
-        )
-        gvars = {
-            addr: GlobalVariable(addr, name) for name, addr in gvar_addr_and_name
-        }
+            type_str = str(sym_data.getDataType())
+            size = int(self.currentProgram.getListing().getDataAt(sym.getAddress()).getLength()) \
+                if type_str != "undefined" else self.default_pointer_size
+
+            gvars[addr] = GlobalVariable(addr=addr, name=name, type_=type_str, size=size)
+
         return gvars
 
     #
@@ -608,7 +622,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
 
     def print(self, msg, print_local=True, **kwargs):
-        self.ghidra.print(msg, print_local=print_local)
+        if print_local:
+            print(msg)
+
+        if self._bridge:
+            self._bridge.remote_exec(f'print("{msg}")')
 
     def info(self, msg: str, **kwargs):
         _l.info(msg)
@@ -638,73 +656,42 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return f"[{level}] | {log_path} | {msg}"
 
+
     #
     # Ghidra Specific API
     #
 
-    @ghidra_transaction
-    def _update_local_variable_symbols(
-            self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]
-    ) -> bool:
-        """
-        @param decompilation:
-        @param symbols: of form [Symbol] = (new_name, new_type)
-        """
-        HighFunctionDBUtil = self.ghidra.import_module_object("ghidra.program.model.pcode", "HighFunctionDBUtil")
-        SourceType = self.ghidra.import_module_object("ghidra.program.model.symbol", "SourceType")
-        update_list = self.ghidra.bridge.remote_eval(
-            "[HighFunctionDBUtil.updateDBVariable(sym, updates[0], updates[1], SourceType.ANALYSIS) "
-            "for sym, updates in symbols.items()]",
-            HighFunctionDBUtil=HighFunctionDBUtil, SourceType=SourceType, symbols=symbols
-        )
-        return any([u is not None for u in update_list])
+    @property
+    def currentProgram(self):
+        return self.flat_api.currentProgram
 
-    @requires_decompilation
-    def _get_local_variable_symbols(self, func: Function) -> Dict[str, "HighSymbol"]:
-        high_func = func.dec_obj.getHighFunction()
-        return self.ghidra.bridge.remote_eval(
-            "{sym.name: sym for sym in high_func.getLocalSymbolMap().getSymbols() if sym.name}",
-            high_func=high_func
-        )
+    @ghidra_transaction
+    def _update_local_variable_symbols(self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]) -> bool:
+        return any([
+            r is not None for r in self.__update_local_variable_symbols(symbols)
+        ])
 
     def _get_struct_by_name(self, name: str) -> Optional["StructureDB"]:
         """
         Returns None if the struct does not exist or is not a struct.
         """
-        StructureDBType = self.ghidra.import_module_object("ghidra.program.database.data", "StructureDB")
-        struct = self.ghidra.currentProgram.getDataTypeManager().getDataType("/" + name)
-        return struct if self.ghidra.isinstance(struct, StructureDBType) else None
+        from .compat.imports import StructureDB
 
-    def _struct_members_from_gstruct(self, name: str) -> Dict[int, StructMember]:
-        ghidra_struct = self._get_struct_by_name(name)
-        if ghidra_struct is None:
-            return {}
+        struct = self.currentProgram.getDataTypeManager().getDataType("/" + name)
+        return struct if self.isinstance(struct, StructureDB) else None
 
-        members: Optional[List[Tuple[str, int, str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(m.getFieldName(), m.getOffset(), m.getDataType().getName(), m.getLength()) if m.getFieldName() else "
-            "('field_'+hex(m.getOffset())[2:], m.getOffset(), m.getDataType().getName(), m.getLength()) "
-            "for m in ghidra_struct.getComponents()]",
-            ghidra_struct=ghidra_struct
-        )
-        return {
-            offset: StructMember(name, offset, typestr, size) for name, offset, typestr, size in members
-        } if members else {}
+    def _struct_members_from_gstruct(self, gstruct: "StructDB") -> Dict[int, StructMember]:
+        gmemb_info = self.__gstruct_members(gstruct)
+        members = {}
+        for offset, field_name, type_, size in gmemb_info:
+            name = field_name if field_name else f'field_{hex(offset)[2:]}'
+            members[offset] = StructMember(name=name, offset=offset, type_=type_, size=size)
 
-    def _get_enum_members(self, name: str) -> Optional[Dict[str, int]]:
-        ghidra_enum = self._get_ghidra_enum(name)
-        if ghidra_enum is None:
-            return {}
-
-        name_vals: Optional[List[Tuple[str, int]]] = self.ghidra.bridge.remote_eval(
-            "[(name, ghidra_enum.getValue(name))"
-            "for name in ghidra_enum.getNames()]",
-            ghidra_enum=ghidra_enum
-        )
-        return {name: value for name, value in name_vals} if name_vals else {}
+        return members
 
     def _get_nearest_function(self, addr: int) -> "GhidraFunction":
-        func_manager = self.ghidra.currentProgram.getFunctionManager()
-        return func_manager.getFunctionContaining(self.ghidra.toAddr(addr))
+        func_manager = self.currentProgram.getFunctionManager()
+        return func_manager.getFunctionContaining(self.flat_api.toAddr(addr))
 
     def _gstack_var_to_bsvar(self, gstack_var: "LocalVariableDB"):
         if gstack_var is None:
@@ -729,18 +716,28 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
         return bs_func
 
+    def _ghidra_decompile_nearest(self, addr: int) -> Optional["DecompileResult"]:
+        func = self._get_nearest_function(addr)
+        if func is None:
+            raise RuntimeError(f"Failed to get nearest function for decompilation at {hex(addr)}")
+
+        dec = self._ghidra_decompile(func)
+        if dec is None:
+            raise RuntimeError(f"Failed to decompile function at {hex(addr)}")
+
+        return dec
+
     def _ghidra_decompile(self, func: "GhidraFunction") -> "DecompileResult":
         """
         TODO: this needs to be cached!
         @param func:
         @return:
         """
-        dec_interface_cls = self.ghidra.import_module_object("ghidra.app.decompiler", "DecompInterface")
-        consle_monitor_cls = self.ghidra.import_module_object("ghidra.util.task", "ConsoleTaskMonitor")
+        from .compat.imports import DecompInterface, ConsoleTaskMonitor
 
-        dec_interface = dec_interface_cls()
-        dec_interface.openProgram(self.ghidra.currentProgram)
-        dec_results = dec_interface.decompileFunction(func, 0, consle_monitor_cls())
+        dec_interface = DecompInterface()
+        dec_interface.openProgram(self.currentProgram)
+        dec_results = dec_interface.decompileFunction(func, 0, ConsoleTaskMonitor())
         return dec_results
 
     def _get_gstack_var(self, func: "GhidraFunction", offset: int) -> Optional["LocalVariableDB"]:
@@ -749,10 +746,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         @param offset:
         @return:
         """
-        for var in func.getAllVariables():
-            if not var.isStackVariable():
-                continue
-
+        gstack_vars = self.__get_gstack_vars(func)
+        for var in gstack_vars:
             if var.getStackOffset() == offset:
                 return var
 
@@ -766,14 +761,14 @@ class GhidraDecompilerInterface(DecompilerInterface):
         @param typestr:
         @return:
         """
+        from .compat.imports import DataTypeParser, AutoAnalysisManager
+
         if not typestr:
             return None
 
-        dtp_class = self.ghidra.import_module_object("ghidra.util.data", "DataTypeParser")
-        aam_class = self.ghidra.import_module_object("ghidra.app.plugin.core.analysis", "AutoAnalysisManager")
-        aam = aam_class.getAnalysisManager(self.ghidra.currentProgram)
+        aam = AutoAnalysisManager.getAnalysisManager(self.currentProgram)
         dt_service = aam.getDataTypeManagerService()
-        dt_parser = dtp_class(dt_service, dtp_class.AllowedDataTypes.ALL)
+        dt_parser = DataTypeParser(dt_service, DataTypeParser.AllowedDataTypes.ALL)
         try:
             parsed_type = dt_parser.parse(typestr)
         except Exception as e:
@@ -787,21 +782,129 @@ class GhidraDecompilerInterface(DecompilerInterface):
         Strings must look like:
         'void functions1(int p1, int p2)'
         """
+        from .compat.imports import CParserUtils
+
         if not progotype_str:
             return None
 
-        c_parser_utils_cls = self.ghidra.import_module_object("ghidra.app.util.cparser.C", "CParserUtils")
-        program = self.ghidra.currentProgram
-        return c_parser_utils_cls.parseSignature(program, progotype_str)
-
-    def _run_until_server_closed(self, sleep_interval=30):
-        while True:
-            if not self.ghidra.ping():
-                break
-
-            time.sleep(sleep_interval)
+        program = self.currentProgram
+        return CParserUtils.parseSignature(program, progotype_str)
 
     def _get_ghidra_enum(self, enum_name: str) -> Optional["EnumDB"]:
-        ghidra_enum = self.ghidra.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
-        EnumDBType = self.ghidra.import_module_object("ghidra.program.database.data", "EnumDB")
-        return ghidra_enum if self.ghidra.isinstance(ghidra_enum, EnumDBType) else None
+        from .compat.imports import EnumDB
+
+        ghidra_enum = self.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
+        return ghidra_enum if self.isinstance(ghidra_enum, EnumDB) else None
+
+    @staticmethod
+    def isinstance(obj, cls):
+        """
+        A proxy self.isinstance function that can handle BridgedObjects. This is necessary because the `self.isinstance` function
+        in the remote namespace will not recognize BridgedObjects as instances of classes in the local namespace.
+        """
+        return obj._bridge_isinstance(cls) if isinstance(obj, BridgedObject) else isinstance(obj, cls)
+
+    #
+    # Internal functions that are very dangerous
+    #
+
+    @ui_remote_eval
+    def __functions(self) -> List[Tuple[int, str, int]]:
+        return [
+            (int(func.getEntryPoint().getOffset()), str(func.getName()), int(func.getBody().getNumAddresses()))
+            for func in self.currentProgram.getFunctionManager().getFunctions(True)
+        ]
+
+    @ui_remote_eval
+    def __update_local_variable_symbols(self, symbols: Dict["HighSymbol", Tuple[str, Optional["DataType"]]]) -> List:
+        from .compat.imports import HighFunctionDBUtil, SourceType
+
+        return [
+            HighFunctionDBUtil.updateDBVariable(sym, updates[0], updates[1], SourceType.ANALYSIS)
+            for sym, updates in symbols.items()
+        ]
+
+    @ui_remote_eval
+    def _get_local_variable_symbols(self, func: Function) -> List[Tuple[str, "HighSymbol"]]:
+        return [
+            (sym.name, sym)
+            for sym in func.dec_obj.getHighFunction().getLocalSymbolMap().getSymbols() if sym.name
+        ]
+
+    @ui_remote_eval
+    def __get_gstack_vars(self, func: "GhidraFunction") -> List["LocalVariableDB"]:
+        return [var for var in func.getAllVariables() if var.isStackVariable()]
+
+    @ui_remote_eval
+    def __enum_names(self) -> List[Tuple[str, "EnumDB"]]:
+        from .compat.imports import EnumDB
+
+        return [
+            (dType.getPathName()[1:], dType)
+            for dType in self.currentProgram.getDataTypeManager().getAllDataTypes()
+            if isinstance(dType, EnumDB)
+        ]
+
+    @ui_remote_eval
+    def __stack_variables(self, decompilation) -> List[Tuple[int, str, str, int]]:
+        return [
+            (int(sym.getStorage().getStackOffset()), str(sym.getName()), str(sym.getDataType()), int(sym.getSize()))
+            for sym in decompilation.getHighFunction().getLocalSymbolMap().getSymbols()
+            if sym.getStorage().isStackStorage()
+        ]
+
+    @ui_remote_eval
+    def __set_sym_names(self, sym_pairs, source_type):
+        return [
+            sym.setName(new_name, source_type) for sym, new_name in sym_pairs
+        ]
+
+    @ui_remote_eval
+    def __set_sym_types(self, sym_pairs, source_type):
+        return [
+            sym.setDataType(new_type, False, True, source_type) for sym, new_type in sym_pairs
+        ]
+
+    @ui_remote_eval
+    def __gstruct_members(self, gstruct: "StructureDB") -> List[Tuple[int, str, str, int]]:
+        return [
+            (int(m.getOffset()), str(m.getFieldName()), str(m.getDataType().getName()), int(m.getLength()))
+            for m in gstruct.getComponents()
+        ]
+
+    @ui_remote_eval
+    def __get_enum_members(self, g_enum: "EnumDB") -> List[Tuple[str, int]]:
+        return [
+            (name, g_enum.getValue(name)) for name in g_enum.getNames()
+        ]
+
+    @ui_remote_eval
+    def __g_global_variables(self):
+        # TODO: this could be optimized more both in use and in implementation
+        from .compat.imports import SymbolType
+
+        return [
+            (int(sym.getAddress().getOffset()), str(sym.getName()), self.currentProgram.getListing().getDataAt(sym.getAddress()), sym)
+            for sym in self.currentProgram.getSymbolTable().getAllSymbols(True)
+            if sym.getSymbolType() == SymbolType.LABEL and
+            self.currentProgram.getListing().getDataAt(sym.getAddress()) and
+            not self.currentProgram.getListing().getDataAt(sym.getAddress()).isStructure()
+        ]
+
+    @ui_remote_eval
+    def __gstructs(self):
+        return [
+            (struct.getPathName()[1:], struct)
+            for struct in self.currentProgram.getDataTypeManager().getAllStructures()
+        ]
+
+    @ui_remote_eval
+    def __function_code_units(self):
+        """
+        Returns a list of code units for each function in the program.
+        """
+        return [
+            [code_unit for code_unit in self.currentProgram.getListing().getCodeUnits(func.getBody(), True)]
+            for func in self.currentProgram.getFunctionManager().getFunctions(True)
+        ]
+

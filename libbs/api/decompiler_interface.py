@@ -2,6 +2,7 @@ import inspect
 import logging
 import re
 import threading
+import time
 from collections import defaultdict
 from functools import wraps
 from typing import Dict, Optional, Tuple, List, Callable, Type, Union
@@ -57,6 +58,7 @@ class DecompilerInterface:
         gui_init_kwargs: Optional[Dict] = None,
         # [artifact_class] = list(callback_func)
         artifact_write_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
+        thread_artifact_callbacks: bool = True,
     ):
         self.name = name
         self.art_lifter = artifact_lifter
@@ -83,6 +85,7 @@ class DecompilerInterface:
 
         # callback functions, keyed by Artifact class
         self.artifact_write_callbacks = artifact_write_callbacks or defaultdict(list)
+        self._thread_artifact_callbacks = thread_artifact_callbacks
 
         # artifact dict aliases:
         # these are the public API for artifacts that are used by the decompiler interface
@@ -298,6 +301,14 @@ class DecompilerInterface:
     # These are API that provide extra introspection for plugins that may rely on LibBS Interface
     #
 
+    @property
+    def default_pointer_size(self) -> int:
+        """
+        Returns the default pointer size of the binary. This is useful for calculating offsets
+        in the binary.
+        """
+        raise NotImplementedError
+
     def undo(self):
         """
         Undoes the last change made to the decompiler.
@@ -337,8 +348,7 @@ class DecompilerInterface:
             update |= self._set_function_header(header, **kwargs)
 
         if func.stack_vars:
-            for variable in func.stack_vars.values():
-                update |= self._set_stack_variable(variable, **kwargs)
+            update |= self._set_stack_variables(list(func.stack_vars.values()), **kwargs)
 
         return update
 
@@ -356,6 +366,13 @@ class DecompilerInterface:
         return {}
 
     # stack vars
+    def _set_stack_variables(self, svars: List[StackVariable], **kwargs) -> bool:
+        update = False
+        for svar in svars:
+            update |= self._set_stack_variable(svar, **kwargs)
+
+        return update
+
     def _set_stack_variable(self, svar: StackVariable, **kwargs) -> bool:
         return False
 
@@ -382,7 +399,7 @@ class DecompilerInterface:
     def _get_global_var(self, addr) -> Optional[GlobalVariable]:
         return None
 
-    def _global_vars(self) -> Dict[int, GlobalVariable]:
+    def _global_vars(self, **kwargs) -> Dict[int, GlobalVariable]:
         """
         Returns a dict of libbs.GlobalVariable that contain the addr and size of each global var.
         Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
@@ -466,14 +483,22 @@ class DecompilerInterface:
     def function_header_changed(self, fheader: FunctionHeader, **kwargs) -> FunctionHeader:
         lifted_fheader = self.art_lifter.lift(fheader)
         for callback_func in self.artifact_write_callbacks[FunctionHeader]:
-            threading.Thread(target=callback_func, args=(lifted_fheader,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_fheader,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_fheader
 
     def stack_variable_changed(self, svar: StackVariable, **kwargs) -> StackVariable:
         lifted_svar = self.art_lifter.lift(svar)
         for callback_func in self.artifact_write_callbacks[StackVariable]:
-            threading.Thread(target=callback_func, args=(lifted_svar,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_svar,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_svar
 
@@ -481,7 +506,11 @@ class DecompilerInterface:
         kwargs["deleted"] = deleted
         lifted_cmt = self.art_lifter.lift(comment)
         for callback_func in self.artifact_write_callbacks[Comment]:
-            threading.Thread(target=callback_func, args=(lifted_cmt,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_cmt,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_cmt
 
@@ -489,7 +518,11 @@ class DecompilerInterface:
         kwargs["deleted"] = deleted
         lifted_struct = self.art_lifter.lift(struct)
         for callback_func in self.artifact_write_callbacks[Struct]:
-            threading.Thread(target=callback_func, args=(lifted_struct,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_struct,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_struct
 
@@ -497,14 +530,22 @@ class DecompilerInterface:
         kwargs["deleted"] = deleted
         lifted_enum = self.art_lifter.lift(enum)
         for callback_func in self.artifact_write_callbacks[Enum]:
-            threading.Thread(target=callback_func, args=(lifted_enum,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_enum,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_enum
 
     def global_variable_changed(self, gvar: GlobalVariable, **kwargs) -> GlobalVariable:
         lifted_gvar = self.art_lifter.lift(gvar)
         for callback_func in self.artifact_write_callbacks[GlobalVariable]:
-            threading.Thread(target=callback_func, args=(lifted_gvar,), kwargs=kwargs, daemon=True).start()
+            args = (lifted_gvar,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
         return lifted_gvar
 
@@ -634,18 +675,24 @@ class DecompilerInterface:
         except ImportError:
             pass
 
-        # Ghidra: which is all done over a remote connection check
+        # Ghidra
+        # It is always available, and we don't have an import check, because when started in headless mode we create
+        # the interface by which ghidra can now be imported.
+        available.add(GHIDRA_DECOMPILER)
         import socket
         from libbs.decompiler_stubs.ghidra_libbs.libbs_vendored.ghidra_bridge_port import DEFAULT_SERVER_PORT
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)  # 2 Second Timeout
-        available.add(GHIDRA_DECOMPILER)
         try:
             if sock.connect_ex(('127.0.0.1', DEFAULT_SERVER_PORT)) == 0:
                 if not force:
                     return GHIDRA_DECOMPILER
         except ConnectionError:
             pass
+        this_obj = DecompilerInterface._find_global_in_call_frames("__this__")
+        if (this_obj is not None) and (hasattr(this_obj, "currentProgram")):
+            if not force:
+                return GHIDRA_DECOMPILER
 
         # Binary Ninja
         # this check needs to be done last since there is no way to traverse the stack frame to find the correct
@@ -707,7 +754,7 @@ class DecompilerInterface:
         elif current_decompiler == GHIDRA_DECOMPILER:
             from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
             deci_class = GhidraDecompilerInterface
-            extra_kwargs = {}
+            extra_kwargs = {"flat_api": DecompilerInterface._find_global_in_call_frames('__this__')}
         else:
             raise ValueError("Please use LibBS with our supported decompiler set!")
 

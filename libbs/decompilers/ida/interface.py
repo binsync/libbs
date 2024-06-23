@@ -230,7 +230,7 @@ class IDAInterface(DecompilerInterface):
     def _get_global_var(self, addr) -> Optional[GlobalVariable]:
         return compat.global_var(addr)
 
-    def _global_vars(self) -> Dict[int, GlobalVariable]:
+    def _global_vars(self, **kwargs) -> Dict[int, GlobalVariable]:
         """
         Returns a dict of libbs.GlobalVariable that contain the addr and size of each global var.
         Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
