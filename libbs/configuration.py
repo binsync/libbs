@@ -1,3 +1,5 @@
+from typing import Optional, Dict
+
 from libbs.decompilers import SUPPORTED_DECOMPILERS, GHIDRA_DECOMPILER, IDA_DECOMPILER, ANGR_DECOMPILER, \
     BINJA_DECOMPILER
 from platformdirs import user_config_dir
@@ -16,7 +18,7 @@ class BSConfig:
         "_config_lock",
     )
 
-    def __init__(self, save_location=None):
+    def __init__(self, save_location: Optional[str] = None):
         if not save_location:
             save_location = user_config_dir("libbs")
         self.save_location = _create_path(save_location)
@@ -96,7 +98,12 @@ class LibbsConfig(BSConfig):
         "gdbinit_path",
     )
 
-    def __init__(self, save_location=None, plugins_paths={}, headless_binary_paths={}, gdbinit_path=None):
+    def __init__(self,
+                 save_location: Optional[str] = None,
+                 plugins_paths: Optional[Dict] = {},
+                 headless_binary_paths: Optional[Dict] = {},
+                 gdbinit_path: Optional[str] = None
+                 ):
         super().__init__(save_location)
         self.save_location = self.save_location / f"{__class__.__name__}.toml"
         self.gdbinit_path = gdbinit_path
