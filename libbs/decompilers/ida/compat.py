@@ -16,7 +16,7 @@ import typing
 import logging
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
-    ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum
+    ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum, ida_kernwin
 
 import libbs
 from libbs.artifacts import (
@@ -1072,4 +1072,27 @@ class GenericAction(idaapi.action_handler_t):
     # This action is always available.
     def update(self, ctx):
         return idaapi.AST_ENABLE_ALWAYS
+
+
+def ask_choice(question, choices, title="Choose an option"):
+    class MyForm(idaapi.Form):
+        def __init__(self, options):
+            self.dropdown = idaapi.Form.DropdownListControl(items=options)
+            form_string = ("STARTITEM 0\n"
+                           f"{title}\n\n"
+                           f"{question}:\n"
+                           "<Options:{dropdown}>")
+            idaapi.Form.__init__(self, form_string, {'dropdown': self.dropdown})
+
+    # Instantiate and display the form
+    form = MyForm(choices)
+    form.Compile()
+    ok = form.Execute()
+    if ok == 1:
+        selected_index = form.dropdown.value
+        selected_item = choices[selected_index]
+    else:
+        selected_item = ""
+    form.Free()
+    return selected_item
 

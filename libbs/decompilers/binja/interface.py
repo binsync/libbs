@@ -133,6 +133,10 @@ class BinjaInterface(DecompilerInterface):
         resp = binaryninja.get_text_line_input(question, title)
         return resp.decode() if resp else ""
 
+    def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
+        choice_idx = binaryninja.get_choice_input(question, title, choices)
+        return choices[choice_idx] if choice_idx is not None else ""
+
     #
     # Public API
     #
