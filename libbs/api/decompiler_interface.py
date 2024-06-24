@@ -69,6 +69,7 @@ class DecompilerInterface:
         self.supports_undo = supports_undo
         self.qt_version = qt_version
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
+        self.config = config
 
         self.headless = headless
         self._headless_dec_path = Path(headless_dec_path) if headless_dec_path else None
