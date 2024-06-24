@@ -47,6 +47,7 @@ if ui_version == "PySide6":
         QIntValidator,
         QAction,
         QImage,
+        QFontMetrics
     )
 else:
     from PyQt5.QtCore import (
@@ -96,5 +97,6 @@ else:
         QKeyEvent,
         QFocusEvent,
         QIntValidator,
-        QImage
+        QImage,
+        QFontMetrics
     )

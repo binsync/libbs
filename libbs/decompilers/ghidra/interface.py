@@ -179,15 +179,17 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return True
 
     def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        from .compat.imports import CancelledException
-        try:
-            answer = self.flat_api.askString(title, question)
-        except Exception as e:
-            if isinstance(e, CancelledException):
-                _l.info("User cancelled string input.")
-            answer = None
+        answer = self._bridge.remote_eval(
+            "askString(title, question)", title=title, question=question, timeout_override=-1
+        )
+        return answer if answer else ""
 
-        return answer if answer is not None else ""
+    def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
+        answer = self._bridge.remote_eval(
+            "askChoice(title, question, choices, choices[0])", title=title, question=question, choices=choices,
+            timeout_override=-1
+        )
+        return answer if answer else ""
 
     def gui_active_context(self):
         active_addr = self.flat_api.currentLocation.getAddress().getOffset()

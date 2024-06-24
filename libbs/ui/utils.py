@@ -1,7 +1,8 @@
 import sys
 
 from .qt_objects import (
-    QDialog, QVBoxLayout, QProgressBar, QLabel, QPushButton, Qt, QThread, QApplication, Signal, QLineEdit
+    QDialog, QVBoxLayout, QProgressBar, QLabel, QPushButton, Qt, QThread, QApplication, Signal, QLineEdit,
+    QComboBox, QFontMetrics
 )
 
 
@@ -31,6 +32,28 @@ def gui_ask_for_string(question, title="Plugin Question") -> str:
         return text_input.text()
     else:
         return ""
+
+
+def gui_ask_for_choice(question: str, choices: list, title="Plugin Question") -> str:
+    dialog = QDialog()
+    dialog.setWindowTitle(title)
+
+    layout = QVBoxLayout()
+    label = QLabel(question)
+    layout.addWidget(label)
+
+    combo_box = QComboBox()
+    combo_box.addItems(choices)
+    layout.addWidget(combo_box)
+
+    button = QPushButton('Confirm')
+    button.clicked.connect(dialog.accept)
+    layout.addWidget(button)
+
+    dialog.setLayout(layout)
+    dialog.exec()
+
+    return combo_box.currentText()
 
 
 class QProgressBarDialog(QDialog):

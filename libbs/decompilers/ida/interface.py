@@ -65,6 +65,9 @@ class IDAInterface(DecompilerInterface):
         resp = idaapi.ask_str("", 0, question)
         return resp if resp else ""
 
+    def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
+        return compat.ask_choice(question, choices, title=title)
+
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         # Function explaining action
         explain_action = idaapi.action_desc_t(
