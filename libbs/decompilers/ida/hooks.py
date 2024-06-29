@@ -20,7 +20,7 @@
 # allowing us to send the new comment to be queued in the Controller actions.
 #
 # ----------------------------------------------------------------------------
-
+import functools
 import logging
 from typing import TYPE_CHECKING
 
@@ -55,6 +55,17 @@ IDA_CMT_CMT = "cmt"
 IDA_RANGE_CMT = "range"
 IDA_EXTRA_CMT = "extra"
 IDA_CMT_TYPES = {IDA_CMT_CMT, IDA_EXTRA_CMT, IDA_RANGE_CMT}
+
+
+def while_should_watch(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if self.interface.should_watch_artifacts():
+            return func(self, *args, **kwargs)
+        else:
+            return 0
+
+    return wrapper
 
 
 #
@@ -125,9 +136,11 @@ class IDBHooks(ida_idp.IDB_Hooks):
         self.interface: "IDAInterface" = interface
         self._seen_function_prototypes = {}
 
+    @while_should_watch
     def local_types_changed(self):
         return 0
 
+    @while_should_watch
     def ti_changed(self, ea, type_, fields):
         pfn = ida_funcs.get_func(ea)
         # only record return type changes
@@ -149,6 +162,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     # Enum Hooks
     #
 
+    @while_should_watch
     def ida_enum_changed(self, enum_id, new_name=None, deleted=False):
         name = ida_enum.get_enum_name(enum_id)
         _enum = compat.enum(name) if not deleted else Enum(name, {})
@@ -157,16 +171,19 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         self.interface.enum_changed(_enum, deleted=deleted)
 
+    @while_should_watch
     def enum_created(self, enum):
         self.ida_enum_changed(enum)
         return 0
 
     # XXX - use enum_deleted(self, id) instead?
+    @while_should_watch
     def deleting_enum(self, id):
         self.ida_enum_changed(id, deleted=True)
         return 0
 
     # XXX - use enum_renamed(self, id) instead?
+    @while_should_watch
     def renaming_enum(self, id, is_enum, newname):
         enum_id = id
         if not is_enum:
@@ -178,17 +195,21 @@ class IDBHooks(ida_idp.IDB_Hooks):
         self.ida_enum_changed(enum_id, new_name=newname)
         return 0
 
+    @while_should_watch
     def enum_bf_changed(self, id):
         return 0
 
+    @while_should_watch
     def enum_cmt_changed(self, tid, repeatable_cmt):
         return 0
 
+    @while_should_watch
     def enum_member_created(self, id, cid):
         self.ida_enum_changed(id)
         return 0
 
     # XXX - use enum_member_deleted(self, id, cid) instead?
+    @while_should_watch
     def deleting_enum_member(self, id, cid):
         self.ida_enum_changed(id)
         return 0
@@ -200,7 +221,8 @@ class IDBHooks(ida_idp.IDB_Hooks):
     def ida_struct_changed(self, sid: int, new_name=None, deleted=False):
         # parse the info of the current struct
         struct_name = new_name if new_name else ida_struct.get_struc_name(sid)
-        if struct_name.startswith(IDA_STACK_VAR_PREFIX):
+        if struct_name.startswith(IDA_STACK_VAR_PREFIX) or struct_name.startswith("__"):
+            _l.info(f"Not recording change to {struct_name} since its likely an internal IDA struct.")
             return 0
 
         if deleted:
@@ -245,6 +267,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
             StackVariable(bs_offset, new_name, type_str, size, func_addr)
         )
 
+    @while_should_watch
     def struc_created(self, tid):
         sptr = ida_struct.get_struc(tid)
         if not sptr.is_frame():
@@ -253,12 +276,14 @@ class IDBHooks(ida_idp.IDB_Hooks):
         return 0
 
     # XXX - use struc_deleted(self, struc_id) instead?
+    @while_should_watch
     def deleting_struc(self, sptr):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id, deleted=True)
 
         return 0
 
+    @while_should_watch
     def struc_align_changed(self, sptr):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id)
@@ -266,6 +291,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
         return 0
 
     # XXX - use struc_renamed(self, sptr) instead?
+    @while_should_watch
     def renaming_struc(self, id, oldname, newname):
         sptr = ida_struct.get_struc(id)
         if not sptr.is_frame():
@@ -275,24 +301,28 @@ class IDBHooks(ida_idp.IDB_Hooks):
             self.ida_struct_changed(id, new_name=newname)
         return 0
 
+    @while_should_watch
     def struc_expanded(self, sptr):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id)
 
         return 0
 
+    @while_should_watch
     def struc_member_created(self, sptr, mptr):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id)
 
         return 0
 
+    @while_should_watch
     def struc_member_deleted(self, sptr, off1, off2):
         if not sptr.is_frame():
             self.ida_struct_changed(sptr.id)
 
         return 0
 
+    @while_should_watch
     def struc_member_renamed(self, sptr, mptr):
         if sptr.is_frame():
             self.ida_stack_var_changed(sptr, mptr)
@@ -301,6 +331,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
+    @while_should_watch
     def struc_member_changed(self, sptr, mptr):
         if sptr.is_frame():
             self.ida_stack_var_changed(sptr, mptr)
@@ -309,6 +340,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
+    @while_should_watch
     def renamed(self, ea, new_name, local_name):
         # ignore any changes landing here for structs and stack vars
         if ida_struct.is_member_id(ea) or ida_struct.get_struc(ea) or ida_enum.get_enum_name(ea):
@@ -348,6 +380,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
+    @while_should_watch
     def cmt_changed(self, ea, repeatable_cmt):
         if repeatable_cmt:
             cmt = ida_bytes.get_cmt(ea, repeatable_cmt)
@@ -355,12 +388,14 @@ class IDBHooks(ida_idp.IDB_Hooks):
                 self.ida_comment_changed(cmt, ea, IDA_CMT_CMT)
         return 0
 
+    @while_should_watch
     def range_cmt_changed(self, kind, a, cmt, repeatable):
         cmt = idc.get_func_cmt(a.start_ea, repeatable)
         if cmt:
             self.ida_comment_changed(cmt, a.start_ea, IDA_RANGE_CMT)
         return 0
 
+    @while_should_watch
     def extra_cmt_changed(self, ea, line_idx, cmt):
         cmt = ida_bytes.get_cmt(ea, 0)
         if cmt:
@@ -371,6 +406,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     # Unused handlers, to be implemented eventually
     #
 
+    @while_should_watch
     def struc_cmt_changed(self, id, repeatable_cmt):
         """
         fullname = ida_struct.get_struc_name(id)
@@ -383,9 +419,11 @@ class IDBHooks(ida_idp.IDB_Hooks):
         """
         return 0
 
+    @while_should_watch
     def sgr_changed(self, start_ea, end_ea, regnum, value, old_value, tag):
         return 0
 
+    @while_should_watch
     def byte_patched(self, ea, old_value):
         return 0
 
@@ -429,14 +467,17 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
         self.interface: "IDAInterface" = interface
         ida_hexrays.Hexrays_Hooks.__init__(self)
 
+    @while_should_watch
     def lvar_name_changed(self, vdui, lvar, new_name, *args):
         self.func_arg_changed(vdui, lvar, reset_type=True, var_name=new_name)
         return 0
 
+    @while_should_watch
     def lvar_type_changed(self, vdui, lvar, *args):
         self.func_arg_changed(vdui, lvar, reset_name=True)
         return 0
 
+    @while_should_watch
     def cmt_changed(self, cfunc, treeloc, cmt_str, *args):
         self.interface.comment_changed(
             Comment(treeloc.ea, cmt_str, func_addr=cfunc.entry_ea, decompiled=True), deleted=not cmt_str
