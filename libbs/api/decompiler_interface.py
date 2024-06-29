@@ -304,6 +304,9 @@ class DecompilerInterface:
     def get_decompilation_object(self, function: Function, **kwargs) -> Optional[object]:
         raise NotImplementedError
 
+    def should_watch_artifacts(self) -> bool:
+        return True
+
     #
     # Override Optional API:
     # These are API that provide extra introspection for plugins that may rely on LibBS Interface

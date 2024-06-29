@@ -28,7 +28,7 @@ from PyQt5.Qt import QObject
 if typing.TYPE_CHECKING:
     from .interface import IDAInterface
 
-l = logging.getLogger(__name__)
+_l = logging.getLogger(__name__)
 
 #
 # Wrappers for IDA Main thread r/w operations
@@ -97,6 +97,35 @@ def requires_decompilation(f):
     return _requires_decompilation
 
 
+def set_func_ret_type(ea, return_type_str):
+    tinfo = ida_typeinf.tinfo_t()
+    if not idaapi.get_tinfo(tinfo, ea):
+        _l.warning(f"Failed to get tinfo for function at {hex(ea)}")
+        return False
+
+    new_type = convert_type_str_to_ida_type(return_type_str)
+    if new_type is None:
+        _l.warning(f"Failed to convert type string {return_type_str} to ida type.")
+        return False
+
+    func_type_data = ida_typeinf.func_type_data_t()
+    if not tinfo.get_func_details(func_type_data):
+        _l.warning(f"Failed to get function details for function at {hex(ea)}")
+        return False
+
+    func_type_data.rettype = new_type
+    new_func_type = ida_typeinf.tinfo_t()
+    if not new_func_type.create_func(func_type_data):
+        _l.warning(f"Failed to create new function type for function at {hex(ea)}")
+        return False
+
+    # Apply the new function type to the function
+    if not idaapi.apply_tinfo(ea, new_func_type, idaapi.TINFO_DEFINITE):
+        _l.warning(f"Failed to apply new function type for function at {hex(ea)}")
+        return False
+
+    return True
+
 #
 #   Data Type Converters
 #
@@ -106,9 +135,12 @@ def convert_type_str_to_ida_type(type_str) -> typing.Optional['ida_typeinf']:
     if type_str is None or not isinstance(type_str, str):
         return None
 
-    ida_type_str = type_str + ";"
     tif = ida_typeinf.tinfo_t()
-    valid_parse = ida_typeinf.parse_decl(tif, None, ida_type_str, 1)
+    if type_str.strip() == "void":
+        valid_parse = tif.create_simple_type(ida_typeinf.BT_VOID)
+    else:
+        ida_type_str = type_str + ";"
+        valid_parse = ida_typeinf.parse_decl(tif, None, ida_type_str, 1)
 
     return tif if valid_parse is not None else None
 
@@ -212,7 +244,7 @@ def functions():
 def function(addr, decompiler_available=True, ida_code_view=None, **kwargs):
     ida_func = ida_funcs.get_func(addr)
     if ida_func is None:
-        l.warning(f"IDA function does not exist for {hex(addr)}.")
+        _l.warning(f"IDA function does not exist for {hex(addr)}.")
         return None
 
     func_addr = ida_func.start_ea
@@ -225,7 +257,7 @@ def function(addr, decompiler_available=True, ida_code_view=None, **kwargs):
 
     def _get_func_info(code_view):
         if code_view is None:
-            l.warning(f"IDA function {hex(func_addr)} is not decompilable")
+            _l.warning(f"IDA function {hex(func_addr)} is not decompilable")
             return func
 
         func_header: FunctionHeader = function_header(code_view)
@@ -246,23 +278,35 @@ def function(addr, decompiler_available=True, ida_code_view=None, **kwargs):
 
     return func
 
+
 @execute_write
-@requires_decompilation
 def set_function(func: Function, decompiler_available=True, **kwargs):
-    ida_code_view = kwargs.get('ida_code_view', None)
     changes = False
 
+    # acquire decompilation if it is needed
+    ida_code_view = kwargs.get('ida_code_view', None)
+    headless = kwargs.get('headless', False)
+    # these changes require a decompiler
+    needs_decompilation = bool(func.stack_vars) or bool(func.header.args)
+    if needs_decompilation and ida_code_view is None and decompiler_available:
+        ida_code_view = acquire_pseudocode_vdui(func.addr) if not headless else DummyIDACodeView(func.addr)
+
     # function header, may be only name if no decompiler
-    if decompiler_available and ida_code_view is not None and func.header:
-        changes |= set_function_header(func.header, ida_code_view)
-    elif func.header and func.name:
-        set_ida_func_name(func.addr, func.name)
-        changes |= True
+    if func.header and needs_decompilation and ida_code_view is not None:
+        changes |= set_function_header(func.header, ida_code_view=ida_code_view)
+    elif func.header:
+        if func.name:
+            set_ida_func_name(func.addr, func.name)
+            changes |= True
+        if func.type:
+            changes |= set_func_ret_type(func.addr, func.type)
 
     # stack vars
-    if decompiler_available and func.stack_vars:
+    if func.stack_vars and ida_code_view is not None:
         for svar in func.stack_vars.values():
-            changes |= set_stack_variable(svar, decompiler_available=decompiler_available, **kwargs)
+            changes |= set_stack_variable(
+                svar, decompiler_available=decompiler_available, ida_code_view=ida_code_view, **kwargs
+            )
 
     if changes and ida_code_view is not None:
         ida_code_view.refresh_view(changes)
@@ -409,7 +453,7 @@ def bs_header_from_tif(tif, name=None, addr=None):
     proto_str_regex += "\\)"
     matches = re.findall(proto_str_regex, str(tif))
     if not matches:
-        l.warning(f"Failed to parse a function header with header: {str(tif)}")
+        _l.warning(f"Failed to parse a function header with header: {str(tif)}")
         return bs_header
 
     match = matches[0]
@@ -475,13 +519,13 @@ def set_stack_variable(svar: StackVariable, decompiler_available=True, **kwargs)
     frame = idaapi.get_frame(svar.addr)
     changes = False
     if frame is None or frame.memqty <= 0:
-        l.warning(f"Function {svar.addr:x} does not have an associated function frame. Stopping sync here!")
+        _l.warning(f"Function {svar.addr:x} does not have an associated function frame. Stopping sync here!")
         return False
 
     if svar.type:
         ida_type = convert_type_str_to_ida_type(svar.type)
         if ida_type is None:
-            l.warning(f"IDA Failed to parse type for stack var {svar}")
+            _l.warning(f"IDA Failed to parse type for stack var {svar}")
             return changes
 
         changes |= set_stack_vars_types({svar.offset: ida_type}, ida_code_view)
@@ -502,7 +546,7 @@ def set_stack_variable(svar: StackVariable, decompiler_available=True, **kwargs)
 def set_ida_comment(addr, cmt, decompiled=False):
     func = ida_funcs.get_func(addr)
     if not func:
-        l.info(f"No function found at {addr}")
+        _l.info(f"No function found at {addr}")
         return False
 
     rpt = 1
@@ -576,11 +620,11 @@ def get_func_stack_var_info(func_addr) -> typing.Dict[int, StackVariable]:
     try:
         decompilation = ida_hexrays.decompile(func_addr)
     except ida_hexrays.DecompilationFailure:
-        l.debug("Decompiling too many functions too fast! Slow down and try that operation again.")
+        _l.debug("Decompiling too many functions too fast! Slow down and try that operation again.")
         return {}
 
     if decompilation is None:
-        l.warning("Decompiled something that gave no decompilation")
+        _l.warning("Decompiled something that gave no decompilation")
         return {}
 
     stack_var_info = {}
@@ -858,7 +902,7 @@ def set_enum(bs_enum: Enum):
     enum_id = ida_enum.add_enum(ida_enum.get_enum_qty(), bs_enum.name, 0)
 
     if enum_id is None:
-        l.warning(f"IDA failed to create a new enum with {bs_enum.name}")
+        _l.warning(f"IDA failed to create a new enum with {bs_enum.name}")
         return False
 
     for member_name, value in bs_enum.members.items():
