@@ -12,6 +12,7 @@ import libbs
 from libbs.api.artifact_lifter import ArtifactLifter
 from libbs.api.artifact_dict import ArtifactDict
 from libbs.api.type_parser import CTypeParser, CType
+from libbs.configuration import LibbsConfig
 from libbs.artifacts import (
     Artifact,
     Function, FunctionHeader, StackVariable,
@@ -52,6 +53,7 @@ class DecompilerInterface:
         binary_path: Optional[Union[Path, str]] = None,
         init_plugin: bool = False,
         plugin_name: str = f"generic_libbs_plugin",
+        config: Optional[LibbsConfig] = None,
         # [category/name] = (action_string, callback_func)
         gui_ctx_menu_actions: Optional[dict] = None,
         gui_init_args: Optional[Tuple] = None,
@@ -66,6 +68,7 @@ class DecompilerInterface:
         self.supports_undo = supports_undo
         self.qt_version = qt_version
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
+        self.config = config
 
         # GUI things
         self.headless = headless
@@ -97,12 +100,27 @@ class DecompilerInterface:
         self.global_vars = ArtifactDict(GlobalVariable, self, error_on_duplicate=error_on_artifact_duplicates)
 
         self._decompiler_available = decompiler_available
+
+        if not self.config:
+            self._create_or_load_config()
+
         if not self.headless:
             args = gui_init_args or []
             kwargs = gui_init_kwargs or {}
             self._init_gui_components(*args, **kwargs)
         else:
             self._init_headless_components()
+
+        self.config.save()
+
+
+
+    def _create_or_load_config(self):
+        """
+        Checks for config file and creates/loads from it
+        """
+        config = LibbsConfig.update_or_make()
+        self.config = config
 
     def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
         if check_dec_path and not self._headless_dec_path.exists():
@@ -140,6 +158,7 @@ class DecompilerInterface:
         return None
 
     def shutdown(self):
+        self.config.save()
         if self._artifact_watchers_started:
             self.stop_artifact_watchers()
 

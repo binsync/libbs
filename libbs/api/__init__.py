@@ -11,4 +11,3 @@ from .artifact_lifter import (
 from .type_parser import (
     CTypeParser, CType
 )
-
