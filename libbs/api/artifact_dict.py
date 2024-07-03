@@ -113,7 +113,6 @@ class ArtifactDict(dict):
 
         art = self._artifact_getter(key)
         if isinstance(art, Struct):
-            print(f"calling struct changed for struct: {art}")
             self._artifact_remover(key)
             self._deci.struct_changed(art, deleted=True)
 
