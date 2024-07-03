@@ -163,6 +163,14 @@ class BinjaInterface(DecompilerInterface):
         except Exception:
             return None
 
+    def fast_get_function(self, func_addr) -> Optional[Function]:
+        func_addr = self.art_lifter.lower_addr(func_addr)
+        func = self.bv.get_function_at(func_addr)
+        if not func:
+            return None
+
+        return self.bn_func_to_bs(func)
+
     def get_func_size(self, func_addr) -> int:
         func_addr = self.art_lifter.lower_addr(func_addr)
         func = self.bv.get_function_at(func_addr)

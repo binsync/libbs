@@ -1,7 +1,6 @@
 from typing import Optional
 
 from .artifact import Artifact
-from .func import Function
 
 
 class Context(Artifact):
@@ -11,14 +10,14 @@ class Context(Artifact):
         "screen_name"
     )
 
-    def __init__(self, addr: int = None, func: Optional[Function] = None, screen_name: str = None, **kwargs):
+    def __init__(self, addr: int = None, func_addr: Optional[int] = None, screen_name: str = None, **kwargs):
+        self.addr: Optional[int] = addr
+        self.func_addr: Optional[int] = func_addr
+        self.screen_name: str = screen_name
         super().__init__(**kwargs)
-        self.addr = addr
-        self.func_addr = func
-        self.screen_name = screen_name
 
     def __str__(self):
-        post_text = f" name={self.screen_name}" if self.screen_name else ""
+        post_text = f" screen={self.screen_name}" if self.screen_name else ""
         if self.func_addr is not None:
             post_text = f"@{hex(self.func_addr)}" + post_text
             if self.addr is not None:

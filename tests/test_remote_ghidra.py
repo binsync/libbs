@@ -44,7 +44,7 @@ class TestRemoteGhidra(unittest.TestCase):
             hits = defaultdict(list)
             def func_hit(*args, **kwargs): hits[args[0].__class__].append(args[0])
 
-            deci.artifact_write_callbacks = {
+            deci.artifact_change_callbacks = {
                 typ: [func_hit] for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment)
             }
 

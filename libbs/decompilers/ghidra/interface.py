@@ -212,6 +212,17 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # Mandatory API
     #
 
+    def fast_get_function(self, func_addr) -> Optional[Function]:
+        lowered_addr = self.art_lifter.lower_addr(func_addr)
+        gfuncs = self.__fast_function(lowered_addr)
+        gfunc = gfuncs[0] if gfuncs else None
+        if gfunc is None:
+            _l.error(f"Func does not exist at {lowered_addr}")
+
+        bs_func = self._gfunc_to_bsfunc(gfunc)
+        lifted_func = self.art_lifter.lift(bs_func)
+        return lifted_func
+
     @property
     def binary_base_addr(self) -> int:
         if self._binary_base_addr is None:
@@ -848,6 +859,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
     #
     # Internal functions that are very dangerous
     #
+
+    @ui_remote_eval
+    def __fast_function(self, lowered_addr: int) -> List["GhidraFunction"]:
+        return [
+            self.currentProgram.getFunctionManager().getFunctionContaining(self.flat_api.toAddr(lowered_addr))
+        ]
 
     @ui_remote_eval
     def __functions(self) -> List[Tuple[int, str, int]]:

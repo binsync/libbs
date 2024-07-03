@@ -97,6 +97,12 @@ def requires_decompilation(f):
     return _requires_decompilation
 
 
+def get_func_ret_type(ea):
+    tinfo = ida_typeinf.tinfo_t()
+    got_info = idaapi.get_tinfo(tinfo, ea)
+    return tinfo.get_rettype() if got_info else None
+
+
 def set_func_ret_type(ea, return_type_str):
     tinfo = ida_typeinf.tinfo_t()
     if not idaapi.get_tinfo(tinfo, ea):

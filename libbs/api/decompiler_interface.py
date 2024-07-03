@@ -17,7 +17,7 @@ from libbs.artifacts import (
     Artifact,
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch,
-    Enum, Struct, FunctionArgument, Decompilation
+    Enum, Struct, FunctionArgument, Context, Decompilation
 )
 from libbs.decompilers import SUPPORTED_DECOMPILERS, ANGR_DECOMPILER, \
     BINJA_DECOMPILER, IDA_DECOMPILER, GHIDRA_DECOMPILER
@@ -59,7 +59,7 @@ class DecompilerInterface:
         gui_init_args: Optional[Tuple] = None,
         gui_init_kwargs: Optional[Dict] = None,
         # [artifact_class] = list(callback_func)
-        artifact_write_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
+        artifact_change_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
         thread_artifact_callbacks: bool = True,
     ):
         self.name = name
@@ -69,11 +69,9 @@ class DecompilerInterface:
         self.qt_version = qt_version
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
 
-        # GUI things
         self.headless = headless
         self._headless_dec_path = Path(headless_dec_path) if headless_dec_path else None
         self._binary_path = Path(binary_path) if binary_path else None
-
         self._init_plugin = init_plugin
         self._unparsed_gui_ctx_actions = gui_ctx_menu_actions or {}
         # (category, name, action_string, callback_func)
@@ -86,7 +84,7 @@ class DecompilerInterface:
         self.artifact_write_lock = threading.Lock()
 
         # callback functions, keyed by Artifact class
-        self.artifact_write_callbacks = artifact_write_callbacks or defaultdict(list)
+        self.artifact_change_callbacks = artifact_change_callbacks or defaultdict(list)
         self._thread_artifact_callbacks = thread_artifact_callbacks
 
         # artifact dict aliases:
@@ -165,11 +163,11 @@ class DecompilerInterface:
     # GUI API
     #
 
-    def gui_active_context(self) -> libbs.artifacts.Function:
+    def gui_active_context(self) -> Optional[libbs.artifacts.Context]:
         """
-        Returns a libbs Function. Currently only functions are supported as current contexts.
-        This function will be called very frequently, so its important that its implementation is fast
-        and can be done many times in the decompiler.
+        Returns the active location that the user is currently _clicked_ on in the decompiler.
+        This is returned as a Context object, which can address and screen naming information dependent
+        on the decompilers exposed data.
         """
         raise NotImplementedError
 
@@ -254,6 +252,18 @@ class DecompilerInterface:
         @rtype: path-like string (/path/to/binary)
         """
         return self._binary_path
+
+    def fast_get_function(self, func_addr) -> Optional[Function]:
+        """
+        Attempts to get a light version of the Function at func_addr.
+        This function implements special logic to be faster than grabbing all light-functions, or grabbing
+        a decompiled function. Use this API in the case where you may need to get a single functions info
+        many times in a loop.
+
+        @param func_addr:
+        @return:
+        """
+        raise NotImplementedError
 
     def get_func_size(self, func_addr) -> int:
         """
@@ -529,20 +539,20 @@ class DecompilerInterface:
     # lift it ONCE inside this function. Each one will return the lifted form, for easier overriding.
     #
 
-    def gui_context_changed(self, view_name: str, func: Optional[Function] = None, addr: Optional[int] = None, **kwargs):
-        if not self._watchers_started:
-            return None, None, None
+    def gui_context_changed(self, ctx: Context, **kwargs) -> libbs.artifacts.Context:
+        # XXX: should this be lifted?
+        for callback_func in self.artifact_change_callbacks[Context]:
+            args = (ctx,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
 
-        lifted_func = self.art_lifter.lift(func) if func is not None else None
-        lifted_addr = self.art_lifter.lift_addr(addr) if addr is not None else None
-        for callback_func in self.gui_ctx_change_callbacks:
-            threading.Thread(target=callback_func, args=(view_name, lifted_func, lifted_addr), kwargs=kwargs, daemon=True).start()
-
-        return lifted_func, lifted_addr, view_name
+        return ctx
 
     def function_header_changed(self, fheader: FunctionHeader, **kwargs) -> FunctionHeader:
         lifted_fheader = self.art_lifter.lift(fheader)
-        for callback_func in self.artifact_write_callbacks[FunctionHeader]:
+        for callback_func in self.artifact_change_callbacks[FunctionHeader]:
             args = (lifted_fheader,)
             if self._thread_artifact_callbacks:
                 threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
@@ -553,7 +563,7 @@ class DecompilerInterface:
 
     def stack_variable_changed(self, svar: StackVariable, **kwargs) -> StackVariable:
         lifted_svar = self.art_lifter.lift(svar)
-        for callback_func in self.artifact_write_callbacks[StackVariable]:
+        for callback_func in self.artifact_change_callbacks[StackVariable]:
             args = (lifted_svar,)
             if self._thread_artifact_callbacks:
                 threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
@@ -565,7 +575,7 @@ class DecompilerInterface:
     def comment_changed(self, comment: Comment, deleted=False, **kwargs) -> Comment:
         kwargs["deleted"] = deleted
         lifted_cmt = self.art_lifter.lift(comment)
-        for callback_func in self.artifact_write_callbacks[Comment]:
+        for callback_func in self.artifact_change_callbacks[Comment]:
             args = (lifted_cmt,)
             if self._thread_artifact_callbacks:
                 threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
@@ -577,7 +587,7 @@ class DecompilerInterface:
     def struct_changed(self, struct: Struct, deleted=False, **kwargs) -> Struct:
         kwargs["deleted"] = deleted
         lifted_struct = self.art_lifter.lift(struct)
-        for callback_func in self.artifact_write_callbacks[Struct]:
+        for callback_func in self.artifact_change_callbacks[Struct]:
             args = (lifted_struct,)
             if self._thread_artifact_callbacks:
                 threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
@@ -589,7 +599,7 @@ class DecompilerInterface:
     def enum_changed(self, enum: Enum, deleted=False, **kwargs) -> Enum:
         kwargs["deleted"] = deleted
         lifted_enum = self.art_lifter.lift(enum)
-        for callback_func in self.artifact_write_callbacks[Enum]:
+        for callback_func in self.artifact_change_callbacks[Enum]:
             args = (lifted_enum,)
             if self._thread_artifact_callbacks:
                 threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
@@ -600,7 +610,7 @@ class DecompilerInterface:
 
     def global_variable_changed(self, gvar: GlobalVariable, **kwargs) -> GlobalVariable:
         lifted_gvar = self.art_lifter.lift(gvar)
-        for callback_func in self.artifact_write_callbacks[GlobalVariable]:
+        for callback_func in self.artifact_change_callbacks[GlobalVariable]:
             args = (lifted_gvar,)
             if self._thread_artifact_callbacks:
                 threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
