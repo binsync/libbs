@@ -724,6 +724,15 @@ def struct(name):
     return _struct
 
 @execute_write
+def del_ida_struct(name) -> bool:
+    sid = ida_struct.get_struc_id(name)
+    if sid == 0xffffffffffffffff:
+        return False
+
+    sptr = ida_struct.get_struc(sid)
+    return ida_struct.del_struc(sptr)
+
+@execute_write
 def set_struct_member_name(ida_struct, frame, offset, name):
     ida_struct.set_member_name(frame, offset, name)
 
@@ -760,7 +769,6 @@ def set_ida_struct(struct: Struct) -> bool:
         )
 
     return True
-
 
 @execute_write
 def set_ida_struct_member_types(struct: Struct) -> bool:
