@@ -479,6 +479,21 @@ class GhidraDecompilerInterface(DecompilerInterface):
             ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(ghidra_struct)
         )
 
+    @ghidra_transaction
+    def _del_struct(self, name) -> bool:
+        from .compat.imports import ConsoleTaskMonitor
+        data_manager = self.currentProgram.getDataTypeManager()
+        gstruct = self._get_struct_by_name(name)
+        try:
+            success = data_manager.remove(gstruct, ConsoleTaskMonitor())
+            if success:
+                return True
+            else:
+                raise Exception('DataManager failed to remove struct')
+        except Exception as ex:
+            print(f"Error removing struct {name}: {ex}")
+
+
     def _structs(self) -> Dict[str, Struct]:
         structs = {}
         gstructs = self.__gstructs()

@@ -376,6 +376,9 @@ class DecompilerInterface:
     def _get_function(self, addr, **kwargs) -> Optional[Function]:
         return None
 
+    def _del_function(self, addr, **kwargs) -> bool:
+        return False
+
     def _functions(self) -> Dict[int, Function]:
         """
         Returns a dict of libbs.Functions that contain the addr, name, and size of each function in the decompiler.
@@ -404,6 +407,9 @@ class DecompilerInterface:
 
         return func.stack_vars.get(offset, None)
 
+    def _del_stack_variable(self, addr: int, offset: int, **kwargs) -> bool:
+        return False
+
     def _stack_variables(self, **kwargs) -> Dict[int,Dict[int, StackVariable]]:
         stack_vars = defaultdict(dict)
         for addr in self._functions():
@@ -419,6 +425,9 @@ class DecompilerInterface:
 
     def _get_global_var(self, addr) -> Optional[GlobalVariable]:
         return None
+
+    def _del_global_var(self, addr) -> bool:
+        return False
 
     def _global_vars(self, **kwargs) -> Dict[int, GlobalVariable]:
         """
@@ -437,6 +446,9 @@ class DecompilerInterface:
     def _get_struct(self, name) -> Optional[Struct]:
         return None
 
+    def _del_struct(self, name) -> bool:
+        return False
+
     def _structs(self) -> Dict[str, Struct]:
         """
         Returns a dict of libbs.Structs that contain the name and size of each struct in the decompiler.
@@ -453,6 +465,9 @@ class DecompilerInterface:
 
     def _get_enum(self, name) -> Optional[Enum]:
         return None
+
+    def _del_enum(self, name) -> bool:
+        return False
 
     def _enums(self) -> Dict[str, Enum]:
         """
@@ -471,6 +486,9 @@ class DecompilerInterface:
     def _get_patch(self, addr) -> Optional[Patch]:
         return None
 
+    def _del_patch(self, addr) -> bool:
+        return False
+
     def _patches(self) -> Dict[int, Patch]:
         """
         Returns a dict of libbs.Patch that contain the addr of each Patch and the bytes.
@@ -487,6 +505,9 @@ class DecompilerInterface:
 
     def _get_comment(self, addr) -> Optional[Comment]:
         return None
+
+    def _del_comment(self, addr) -> bool:
+        return False
 
     def _comments(self) -> Dict[int, Comment]:
         return {}
