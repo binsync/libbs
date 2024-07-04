@@ -469,6 +469,9 @@ class BinjaInterface(DecompilerInterface):
 
         return self.bn_struct_to_bs(name, bn_struct)
 
+    def _del_struct(self, name) -> bool:
+        return self.bv.undefine_user_type(name)
+
     def _structs(self) -> Dict[str, Struct]:
         return {
             name: Struct(''.join(name.name), t.width, {}) for name, t in self.bv.types.items()
