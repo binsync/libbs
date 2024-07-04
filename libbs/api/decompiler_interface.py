@@ -68,7 +68,6 @@ class DecompilerInterface:
         self.supports_undo = supports_undo
         self.qt_version = qt_version
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
-        self.config = config
 
         # GUI things
         self.headless = headless
