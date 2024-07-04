@@ -192,6 +192,14 @@ class DecompilerInterface:
         from libbs.ui.utils import gui_ask_for_string
         return gui_ask_for_string(question, title=title)
 
+    def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
+        """
+        Opens a GUI dialog box that asks the user for a choice. If not overriden by the decompiler interface,
+        this will default to a Qt dialog box that is based on the decompilers Qt version.
+        """
+        from libbs.ui.utils import gui_ask_for_choice
+        return gui_ask_for_choice(question, choices, title=title)
+
     #
     # Override Mandatory API
     #
@@ -304,6 +312,9 @@ class DecompilerInterface:
 
     def get_decompilation_object(self, function: Function, **kwargs) -> Optional[object]:
         raise NotImplementedError
+
+    def should_watch_artifacts(self) -> bool:
+        return True
 
     #
     # Override Optional API:
