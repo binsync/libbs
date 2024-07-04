@@ -68,7 +68,6 @@ class DecompilerInterface:
         self.supports_undo = supports_undo
         self.qt_version = qt_version
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
-        self.config = config
 
         # GUI things
         self.headless = headless
@@ -100,9 +99,9 @@ class DecompilerInterface:
         self.global_vars = ArtifactDict(GlobalVariable, self, error_on_duplicate=error_on_artifact_duplicates)
 
         self._decompiler_available = decompiler_available
-
-        if not self.config:
-            self._create_or_load_config()
+        # override the file-saved config when one is passed in manually, otherwise
+        # either load it from the filesystem or create a new one and place it there
+        self.config = config if config is not None else LibbsConfig.update_or_make()
 
         if not self.headless:
             args = gui_init_args or []
@@ -112,15 +111,6 @@ class DecompilerInterface:
             self._init_headless_components()
 
         self.config.save()
-
-
-
-    def _create_or_load_config(self):
-        """
-        Checks for config file and creates/loads from it
-        """
-        config = LibbsConfig.update_or_make()
-        self.config = config
 
     def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
         if check_dec_path and not self._headless_dec_path.exists():
@@ -176,7 +166,7 @@ class DecompilerInterface:
 
     def gui_active_context(self) -> libbs.artifacts.Function:
         """
-        Returns an libbs Function. Currently only functions are supported as current contexts.
+        Returns a libbs Function. Currently only functions are supported as current contexts.
         This function will be called very frequently, so its important that its implementation is fast
         and can be done many times in the decompiler.
         """

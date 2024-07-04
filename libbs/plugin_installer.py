@@ -62,15 +62,6 @@ class PluginInstaller:
 
         return Path(path).absolute()
 
-    def _populate_installs_from_config(self):
-        config = GlobalConfig.update_or_make(self._home)
-        if not config:
-            return {}
-
-        return {
-            attr: getattr(config, attr) for attr in config.__slots__
-        }
-
     def install(self, interactive=True, paths_by_target=None):
         self.target_install_paths.update(paths_by_target or {})
         self.display_prologue()
