@@ -219,8 +219,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].name == self.RENAMED_NAME
 
-        struct = deci.structs['eh_frame_hdr']
-        del deci.structs['eh_frame_hdr']
+        struct = deci.structs['fde_table_entry']
+        del deci.structs['fde_table_entry']
         assert struct.name not in deci.structs.keys() and struct not in struct.values()
 
 
