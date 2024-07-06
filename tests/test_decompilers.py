@@ -305,7 +305,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = func_authenticate
         assert deci.functions[func_addr].name == self.RENAMED_NAME
 
-        # test strucr creation
+        # test structure creation
         new_struct = Struct()
         new_struct.name = "my_new_struct"
         new_struct.add_struct_member('char_member', 0, 'char', 1)
