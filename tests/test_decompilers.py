@@ -156,7 +156,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         struct = deci.structs['eh_frame_hdr']
         del deci.structs['eh_frame_hdr']
-        assert struct.name not in deci.structs.keys() and struct not in struct.values()
+        assert struct.name not in deci.structs.keys() and struct not in deci.structs.values()
 
         deci.shutdown()
 
@@ -221,7 +221,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         struct = deci.structs['eh_frame_hdr']
         del deci.structs['eh_frame_hdr']
-        assert struct.name() not in deci.structs.keys() and struct not in struct.values()
+        assert struct.name not in deci.structs.keys() and struct not in struct.values
 
 
 if __name__ == "__main__":
