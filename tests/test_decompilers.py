@@ -150,6 +150,14 @@ class TestHeadlessInterfaces(unittest.TestCase):
         func_size = deci.get_func_size(func_addr)
         assert func_size != -1
 
+        #
+        # Test Artifact Deletion
+        #
+
+        struct = deci.structs['eh_frame_hdr']
+        del deci.structs['eh_frame_hdr']
+        assert struct not in deci.structs
+
         deci.shutdown()
 
     def test_ghidra_project_loading(self):
@@ -210,6 +218,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
         main.name = self.RENAMED_NAME
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].name == self.RENAMED_NAME
+
+        struct = deci.structs['eh_frame_hdr']
+        del deci.structs['eh_frame_hdr']
+        assert struct not in deci.structs
 
 
 if __name__ == "__main__":
