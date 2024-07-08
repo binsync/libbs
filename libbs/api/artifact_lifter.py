@@ -33,10 +33,11 @@ class ArtifactLifter:
         pass
 
     def lift_addr(self, addr: int) -> int:
-        if addr < self.deci.binary_base_addr:
+        base_addr = self.deci.binary_base_addr
+        if addr < base_addr:
             self.deci.warning(f"Lifting an address that appears already lifted: {addr}...")
 
-        return addr - self.deci.binary_base_addr
+        return addr - base_addr
 
     def lift_stack_offset(self, offset: int, func_addr: int) -> int:
         pass
@@ -45,10 +46,11 @@ class ArtifactLifter:
         pass
 
     def lower_addr(self, addr: int) -> int:
-        if addr >= self.deci.binary_base_addr:
+        base_addr = self.deci.binary_base_addr
+        if addr >= base_addr != 0:
             self.deci.warning(f"Lowering an address that appears already lowered: {addr}...")
 
-        return addr + self.deci.binary_base_addr
+        return addr + base_addr
 
     def lower_stack_offset(self, offset: int, func_addr: int) -> int:
         pass

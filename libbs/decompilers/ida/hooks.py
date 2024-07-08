@@ -406,9 +406,8 @@ class IDBHooks(ida_idp.IDB_Hooks):
     # Others
     #
 
-    @while_should_watch
     def segm_moved(self, from_, to, size, changed_netmap):
-        if from_ == self.interface.binary_base_addr:
+        if self.interface is not None and from_ == self.interface.binary_base_addr:
             _l.info("Detected a change in the binary base address! Updating it to %d", to)
             self.interface._binary_base_addr = to
 
