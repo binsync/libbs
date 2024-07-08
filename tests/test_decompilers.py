@@ -154,8 +154,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # Test Artifact Deletion
         #
 
-        struct = deci.structs['eh_frame_hdr']
-        del deci.structs['eh_frame_hdr']
+        struct = deci.structs['my_struct_name']
+        del deci.structs['my_struct_name']
         assert struct.name not in deci.structs.keys() and struct not in deci.structs.values()
 
         deci.shutdown()
