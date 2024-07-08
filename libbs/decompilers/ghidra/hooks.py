@@ -60,7 +60,10 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                 newValue = record.getNewValue()
                 obj = record.getObject()
 
-                if changeType in self.funcEvents:
+                if changeType == ChangeManager.DO_OBJECT_RENAMED:
+                    # TODO: Implement this, it should indicate a base addr changed
+                    pass
+                elif changeType in self.funcEvents:
                     subType = record.getSubEventType()
                     if subType == ChangeManager.FUNCTION_CHANGED_RETURN:
                         # Function return type changed

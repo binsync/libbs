@@ -131,7 +131,7 @@ class IDAHotkeyHook(ida_kernwin.UI_Hooks):
 #
 
 class IDBHooks(ida_idp.IDB_Hooks):
-    def __init__(self, interface):
+    def __init__(self, interface=None):
         ida_idp.IDB_Hooks.__init__(self)
         self.interface: "IDAInterface" = interface
         self._seen_function_prototypes = {}
@@ -403,6 +403,16 @@ class IDBHooks(ida_idp.IDB_Hooks):
         return 0
 
     #
+    # Others
+    #
+
+    @while_should_watch
+    def segm_moved(self, from_, to, size, changed_netmap):
+        if from_ == self.interface.binary_base_addr:
+            _l.info("Detected a change in the binary base address! Updating it to %d", to)
+            self.interface._binary_base_addr = to
+
+    #
     # Unused handlers, to be implemented eventually
     #
 
@@ -433,7 +443,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
 
 class IDPHooks(ida_idp.IDP_Hooks):
-    def __init__(self, interface):
+    def __init__(self, interface=None):
         self.interface: "IDAInterface" = interface
         ida_idp.IDP_Hooks.__init__(self)
 

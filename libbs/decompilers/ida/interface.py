@@ -28,6 +28,7 @@ class IDAInterface(DecompilerInterface):
         self._ctx_menu_names = []
         self._ui_hooks = []
         self._artifact_watcher_hooks = []
+        self._binary_base_addr = None
 
         super().__init__(
             name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self),
@@ -93,7 +94,11 @@ class IDAInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
-        return compat.get_image_base()
+        if self._binary_base_addr is None:
+            self._binary_base_addr = compat.get_image_base()
+
+        # use the cache
+        return self._binary_base_addr
 
     @property
     def binary_hash(self) -> str:
@@ -156,11 +161,11 @@ class IDAInterface(DecompilerInterface):
 
     def start_artifact_watchers(self):
         self._artifact_watcher_hooks = [
-            IDBHooks(self),
+            IDBHooks(interface=self),
             # this hook is special because it relies on the decompiler being present, which can only be checked
             # after the plugin loading phase. this means the user will need to manually init this hook in the UI
             # either through scripting or a UI.
-            HexraysHooks(self),
+            HexraysHooks(interface=self),
         ]
         for hook in self._artifact_watcher_hooks:
             hook.hook()
