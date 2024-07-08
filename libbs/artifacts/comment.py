@@ -26,7 +26,8 @@ class Comment(Artifact):
         self.decompiled = decompiled
 
     def __str__(self):
-        return f"<Comment: @{hex(self.addr)} len={len(self.comment)}>"
+        cmt_len = len(self.comment) if self.comment else 0
+        return f"<Comment: @{hex(self.addr)} len={cmt_len}>"
 
     @staticmethod
     def linewrap_comment(comment: str, width=80):
