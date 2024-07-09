@@ -156,7 +156,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         struct = deci.structs['my_struct_name']
         del deci.structs['my_struct_name']
-        assert struct.name not in deci.structs.keys() and struct not in deci.structs.values()
+        struct_items = deci.structs.items()
+        struct_keys = [k for k, v in struct_items]
+        struct_values = [v for k, v in struct_items]
+        assert struct.name not in struct_keys and struct not in struct_values
 
         deci.shutdown()
 
@@ -231,7 +234,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert updated.members[1].type == 'int'
 
         del deci.structs[new_struct.name]
-        assert new_struct.name not in deci.structs.keys() and new_struct not in deci.structs.values()
+        struct_items = deci.structs.items()
+        struct_keys = [k for k, v in struct_items]
+        struct_values = [v for k, v in struct_items]
+        assert new_struct.name not in struct_keys and new_struct not in struct_values
 
 
 if __name__ == "__main__":
