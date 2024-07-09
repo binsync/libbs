@@ -219,9 +219,19 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].name == self.RENAMED_NAME
 
-        struct = deci.structs['Elf64_Header']
-        del deci.structs['Elf64_Header']
-        assert struct.name not in deci.structs.keys() and struct not in struct.values()
+        new_struct = Struct()
+        new_struct.name = "my_new_struct"
+        new_struct.add_struct_member('char_member', 0, 'char', 1)
+        new_struct.add_struct_member('int_member', 1, 'int', 4)
+        deci.structs[new_struct.name] = new_struct
+
+        updated = deci.structs[new_struct.name]
+        assert updated.name == new_struct.name
+        assert updated.members[0].type == 'char'
+        assert updated.members[1].type == 'int'
+
+        del deci.structs[new_struct.name]
+        assert new_struct.name not in deci.structs.keys() and new_struct not in deci.structs.values()
 
 
 if __name__ == "__main__":
