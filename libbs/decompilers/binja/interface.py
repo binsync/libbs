@@ -439,7 +439,7 @@ class BinjaInterface(DecompilerInterface):
     # structs
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
         if header:
-            self.bv.define_user_type(struct.name, binaryninja.Type.structure())
+            self.bv.define_user_type(struct.name, binaryninja.Type.structure(packed=True))
 
         if members:
             # this scope assumes that the type is now defined... if it's not we will error
@@ -457,7 +457,6 @@ class BinjaInterface(DecompilerInterface):
                             bn_type = binaryninja.Type.int(bs_memb.size)
 
                     members.append((bn_type, bs_memb.name))
-
                 s.members = members
 
         return True
