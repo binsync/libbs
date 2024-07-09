@@ -312,10 +312,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
         new_struct.add_struct_member('int_member', 1, 'int', 4)
         deci.structs[new_struct.name] = new_struct
 
-        # updated = deci.structs[new_struct.name]
-        # assert updated.name == new_struct.name
-        # assert updated.members[0].type == 'char'
-        # assert updated.members[1].type == 'int'
+        updated = deci.structs[new_struct.name]
+        assert updated.name == new_struct.name
+        assert updated.members[0].type == 'char'
+        assert updated.members[1].type == 'int'
 
         # test function arg change
         func_main = deci.functions[deci.art_lifter.lift_addr(0x40071d)]
