@@ -150,6 +150,17 @@ class TestHeadlessInterfaces(unittest.TestCase):
         func_size = deci.get_func_size(func_addr)
         assert func_size != -1
 
+        #
+        # Test Artifact Deletion
+        #
+
+        struct = deci.structs['my_struct_name']
+        del deci.structs['my_struct_name']
+        struct_items = deci.structs.items()
+        struct_keys = [k for k, v in struct_items]
+        struct_values = [v for k, v in struct_items]
+        assert struct.name not in struct_keys and struct not in struct_values
+
         deci.shutdown()
 
     def test_ghidra_project_loading(self):
@@ -210,6 +221,23 @@ class TestHeadlessInterfaces(unittest.TestCase):
         main.name = self.RENAMED_NAME
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].name == self.RENAMED_NAME
+
+        new_struct = Struct()
+        new_struct.name = "my_new_struct"
+        new_struct.add_struct_member('char_member', 0, 'char', 1)
+        new_struct.add_struct_member('int_member', 1, 'int', 4)
+        deci.structs[new_struct.name] = new_struct
+
+        updated = deci.structs[new_struct.name]
+        assert updated.name == new_struct.name
+        assert updated.members[0].type == 'char'
+        assert updated.members[1].type == 'int'
+
+        del deci.structs[new_struct.name]
+        struct_items = deci.structs.items()
+        struct_keys = [k for k, v in struct_items]
+        struct_values = [v for k, v in struct_items]
+        assert new_struct.name not in struct_keys and new_struct not in struct_values
 
 
 if __name__ == "__main__":

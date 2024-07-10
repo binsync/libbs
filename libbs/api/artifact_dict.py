@@ -39,13 +39,13 @@ class ArtifactDict(dict):
         self._error_on_duplicate = error_on_duplicate
         self._art_function = {
             # ArtifactType: (setter, getter, lister)
-            Function: (self._deci._set_function, self._deci._get_function, self._deci._functions),
-            StackVariable: (self._deci._set_stack_variable, self._deci._get_stack_variable, self._deci._stack_variables),
-            GlobalVariable: (self._deci._set_global_variable, self._deci._get_global_var, self._deci._global_vars),
-            Struct: (self._deci._set_struct, self._deci._get_struct, self._deci._structs),
-            Enum: (self._deci._set_enum, self._deci._get_enum, self._deci._enums),
-            Comment: (self._deci._set_comment, self._deci._get_comment, self._deci._comments),
-            Patch: (self._deci._set_patch, self._deci._get_patch, self._deci._patches)
+            Function: (self._deci._set_function, self._deci._get_function, self._deci._functions, self._deci._del_function),
+            StackVariable: (self._deci._set_stack_variable, self._deci._get_stack_variable, self._deci._stack_variables, self._deci._del_stack_variable),
+            GlobalVariable: (self._deci._set_global_variable, self._deci._get_global_var, self._deci._global_vars, self._deci._del_global_var),
+            Struct: (self._deci._set_struct, self._deci._get_struct, self._deci._structs, self._deci._del_struct),
+            Enum: (self._deci._set_enum, self._deci._get_enum, self._deci._enums, self._deci._del_enum),
+            Comment: (self._deci._set_comment, self._deci._get_comment, self._deci._comments, self._deci._del_comment),
+            Patch: (self._deci._set_patch, self._deci._get_patch, self._deci._patches, self._deci._del_patch)
         }
 
         functions = self._art_function.get(artifact_cls, None)
@@ -53,7 +53,7 @@ class ArtifactDict(dict):
             raise ValueError(f"Attempting to create a dict for a Artifact class that is not supported: {artifact_cls}")
 
         self._artifact_class = artifact_cls
-        self._artifact_setter, self._artifact_getter, self._artifact_lister = functions
+        self._artifact_setter, self._artifact_getter, self._artifact_lister, self._artifact_remover = functions
 
     def __len__(self):
         return len(self._artifact_lister())
@@ -108,8 +108,13 @@ class ArtifactDict(dict):
         return data is not None
 
     def __delitem__(self, key):
-        # TODO: implement me
-        pass
+        if isinstance(key, int):
+            key = self._deci.art_lifter.lower_addr(key)
+
+        art = self._artifact_getter(key)
+        if isinstance(art, Struct):
+            self._artifact_remover(key)
+            self._deci.struct_changed(art, deleted=True)
 
     def __iter__(self):
         return iter(self._lifted_art_lister())

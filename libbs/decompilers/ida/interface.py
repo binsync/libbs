@@ -261,6 +261,9 @@ class IDAInterface(DecompilerInterface):
     def _get_struct(self, name) -> Optional[Struct]:
         return compat.struct(name)
 
+    def _del_struct(self, name) -> bool:
+        return compat.del_ida_struct(name)
+
     def _structs(self) -> Dict[str, Struct]:
         """
         Returns a dict of libbs.Structs that contain the name and size of each struct in the decompiler.
