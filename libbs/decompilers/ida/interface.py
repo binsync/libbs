@@ -28,7 +28,6 @@ class IDAInterface(DecompilerInterface):
         self._ctx_menu_names = []
         self._ui_hooks = []
         self._artifact_watcher_hooks = []
-        self._binary_base_addr = None
 
         super().__init__(
             name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self),
@@ -41,15 +40,6 @@ class IDAInterface(DecompilerInterface):
 
         # GUI properties
         self._updated_ctx = None
-
-        # artifact watchets inited, but not always started.
-        self._artifact_watcher_hooks = [
-            # artifact watchers inited here because some are required to track screen location,
-            # however, expensive artifact callbacks are not used until the normal start_watchers is called
-            IDBHooks(interface=self),
-        ]
-        for hook in self._artifact_watcher_hooks:
-            hook.hook()
 
     def _init_gui_hooks(self):
         """
@@ -103,11 +93,7 @@ class IDAInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
-        if self._binary_base_addr is None:
-            self._binary_base_addr = compat.get_image_base()
-
-        # use the cache
-        return self._binary_base_addr
+        return compat.get_image_base()
 
     @property
     def binary_hash(self) -> str:
@@ -169,30 +155,19 @@ class IDAInterface(DecompilerInterface):
     #
 
     def start_artifact_watchers(self):
-        """
-        There are some special cases to consider about how these artifacts are being started.
-        Normally, this function would init the class that acts as the callback for all artifacts in the decompiler.
-        Because we need IDA to tell us about some changes that are not related to traditional artifacts, we need
-        to start it earlier (in init of the deci).
-
-        In this function now, we allow those earlier inited classes to start calling the callbacks here.
-        We also init some classes that can only be started after the decompiler was inited.
-        """
-        new_hooks = [
+        self._artifact_watcher_hooks = [
+            IDBHooks(self),
             # this hook is special because it relies on the decompiler being present, which can only be checked
             # after the plugin loading phase. this means the user will need to manually init this hook in the UI
             # either through scripting or a UI.
-            HexraysHooks(interface=self),
+            HexraysHooks(self),
         ]
-        for hook in new_hooks:
+        for hook in self._artifact_watcher_hooks:
             hook.hook()
-        self._artifact_watcher_hooks += new_hooks
-        super().start_artifact_watchers()
 
     def stop_artifact_watchers(self):
         for hook in self._artifact_watcher_hooks:
             hook.unhook()
-        super().stop_artifact_watchers()
 
     def gui_active_context(self):
         if not self._init_plugin:
