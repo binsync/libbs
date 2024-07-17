@@ -111,6 +111,7 @@ class TestRemoteGhidra(unittest.TestCase):
 
             original_base_addr = deci.binary_base_addr
             new_base_addr = 0x1000000
+            # NOTE: if this code is continuously flaky, we can remove it
             with Transaction(deci.flat_api, msg="BS::test_ghidra_artifact_watchers"):
                 deci.flat_api.currentProgram.setImageBase(deci.flat_api.toAddr(new_base_addr), True)
 
