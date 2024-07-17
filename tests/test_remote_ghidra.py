@@ -38,19 +38,6 @@ class TestRemoteGhidra(unittest.TestCase):
             self.deci = deci
 
             #
-            # Test Image Base Watcher
-            #
-
-            original_base_addr = deci.binary_base_addr
-            new_base_addr = 0x1000000
-            with Transaction(deci.flat_api, msg="BS::test_ghidra_artifact_watchers"):
-                deci.flat_api.currentProgram.setImageBase(deci.flat_api.toAddr(new_base_addr), True)
-
-            time.sleep(0.5)
-            assert deci.binary_base_addr != original_base_addr
-            assert deci.binary_base_addr == new_base_addr
-
-            #
             # Test Artifact Watchers
             #
 
@@ -117,6 +104,19 @@ class TestRemoteGhidra(unittest.TestCase):
             # deci.functions[func_addr] = main
 
             # assert hits[Struct] == 2 # One change results in 2 hits because the struct is first removed and then added again.
+
+            #
+            # Test Image Base Watcher
+            #
+
+            original_base_addr = deci.binary_base_addr
+            new_base_addr = 0x1000000
+            with Transaction(deci.flat_api, msg="BS::test_ghidra_artifact_watchers"):
+                deci.flat_api.currentProgram.setImageBase(deci.flat_api.toAddr(new_base_addr), True)
+
+            time.sleep(0.5)
+            assert deci.binary_base_addr != original_base_addr
+            assert deci.binary_base_addr == new_base_addr
 
             deci.shutdown()
 
