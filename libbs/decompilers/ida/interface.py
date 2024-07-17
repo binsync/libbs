@@ -184,6 +184,9 @@ class IDAInterface(DecompilerInterface):
         func_addr = self.art_lifter.lower_addr(func_addr)
         compat.jumpto(func_addr)
 
+    def should_watch_artifacts(self) -> bool:
+        return self._artifact_watchers_started
+
     #
     # Optional API
     #

@@ -1,5 +1,6 @@
 import logging
 import typing
+from typing import Tuple, Optional
 import threading
 
 from ...artifacts import FunctionHeader, Function, FunctionArgument, StackVariable, GlobalVariable, Struct, Enum
@@ -20,22 +21,24 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
         def __init__(self, deci: "GhidraDecompilerInterface"):
             self._deci = deci
             # Init event lists
-            self.funcEvents = [
+            self.funcEvents = {
                 ChangeManager.DOCR_FUNCTION_CHANGED,
                 ChangeManager.DOCR_FUNCTION_BODY_CHANGED,
                 ChangeManager.DOCR_VARIABLE_REFERENCE_ADDED,
                 ChangeManager.DOCR_VARIABLE_REFERENCE_REMOVED
-            ]
+            }
 
-            self.symDelEvents = [ChangeManager.DOCR_SYMBOL_REMOVED]
+            self.symDelEvents = {
+                ChangeManager.DOCR_SYMBOL_REMOVED
+            }
 
-            self.symChgEvents = [
+            self.symChgEvents = {
                 ChangeManager.DOCR_SYMBOL_ADDED,
                 ChangeManager.DOCR_SYMBOL_RENAMED,
                 ChangeManager.DOCR_SYMBOL_DATA_CHANGED
-            ]
+            }
 
-            self.typeEvents = [
+            self.typeEvents = {
                 ChangeManager.DOCR_SYMBOL_ADDRESS_CHANGED,
                 ChangeManager.DOCR_DATA_TYPE_CHANGED,
                 ChangeManager.DOCR_DATA_TYPE_REPLACED,
@@ -43,13 +46,22 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                 ChangeManager.DOCR_DATA_TYPE_SETTING_CHANGED,
                 ChangeManager.DOCR_DATA_TYPE_MOVED,
                 ChangeManager.DOCR_DATA_TYPE_ADDED
-            ]
+            }
+
+            self.imageBaseEvents = {
+                ChangeManager.DOCR_IMAGE_BASE_CHANGED
+            }
+
+            self.TrackedEvents = (
+                self.funcEvents | self.symDelEvents | self.symChgEvents | self.typeEvents | self.imageBaseEvents
+            )
 
         def domainObjectChanged(self, ev):
             try:
                 self.do_change_handler(ev)
             except Exception as e:
-                _l.exception("Error in domainObjectChanged: %s", e)
+                excep_str = str(e).replace('\n', ' ')
+                self._deci.error(f"Error in domainObjectChanged: {excep_str}")
 
         def do_change_handler(self, ev):
             for record in ev:
@@ -57,9 +69,12 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                     continue
 
                 changeType = record.getEventType()
-                newValue = record.getNewValue()
-                obj = record.getObject()
+                if changeType not in self.TrackedEvents:
+                    # bail out early if we don't care about this event
+                    continue
 
+                new_value = record.getNewValue()
+                obj = record.getObject()
                 if changeType in self.funcEvents:
                     subType = record.getSubEventType()
                     if subType == ChangeManager.FUNCTION_CHANGED_RETURN:
@@ -76,7 +91,7 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                             parent_namespace = obj.getParentNamespace()
                             storage = obj.getVariableStorage()
                             if (
-                                    (newValue is not None) and (storage is not None) and bool(storage.isStackStorage())
+                                    (new_value is not None) and (storage is not None) and bool(storage.isStackStorage())
                                     and (parent_namespace is not None)
                             ):
                                 sv = StackVariable(
@@ -92,7 +107,7 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
 
                     else:
                         try:
-                            struct = self._deci.structs[newValue.name]
+                            struct = self._deci.structs[new_value.name]
                             # TODO: access old name indicate deletion
                             # self._deci.struct_changed(Struct(None, None, None), deleted=True)
                             self._deci.struct_changed(struct)
@@ -104,7 +119,7 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                             parent_namespace = obj.getParentNamespace()
                             storage = obj.getVariableStorage()
                             if (
-                                    (newValue is not None) and (storage is not None) and bool(storage.isStackStorage())
+                                    (new_value is not None) and (storage is not None) and bool(storage.isStackStorage())
                                     and (parent_namespace is not None)
                             ):
                                 self._deci.stack_variable_changed(
@@ -119,7 +134,7 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
 
                     else:
                         try:
-                            struct = self._deci.structs[newValue.name]
+                            struct = self._deci.structs[new_value.name]
                             # TODO: access old name indicate deletion
                             # self._deci.struct_changed(Struct(None, None, None), deleted=True)
                             self._deci.struct_changed(struct)
@@ -127,7 +142,7 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                             pass
 
                         try:
-                            enum = self._deci.enums[newValue.name]
+                            enum = self._deci.enums[new_value.name]
                             # self._deci.enum_changed(Enum(None, None), deleted=True)
                             self._deci.enum_changed(enum)
                         except KeyError:
@@ -141,8 +156,8 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                         self._deci.global_variable_changed(removed, deleted=True)
                 elif changeType in self.symChgEvents:
                     # For creation events, obj is stored in newValue
-                    if obj is None and newValue is not None:
-                        obj = newValue
+                    if obj is None and new_value is not None:
+                        obj = new_value
 
                     if changeType == ChangeManager.DOCR_SYMBOL_ADDED:
                         if self._deci.isinstance(obj, CodeSymbol):
@@ -150,22 +165,22 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                             self._deci.global_variable_changed(gvar)
                     elif changeType == ChangeManager.DOCR_SYMBOL_RENAMED:
                         if self._deci.isinstance(obj, CodeSymbol):
-                            gvar = GlobalVariable(obj.getAddress().getOffset(), newValue)
+                            gvar = GlobalVariable(obj.getAddress().getOffset(), new_value)
                             self._deci.global_variable_changed(gvar)
                         if self._deci.isinstance(obj, FunctionSymbol):
-                            header = FunctionHeader(name=newValue, addr=int(obj.getAddress().offset))
+                            header = FunctionHeader(name=new_value, addr=int(obj.getAddress().offset))
                             self._deci.function_header_changed(header)
                     elif self._deci.isinstance(obj, VariableDB):
                         parent_namespace = obj.getParentNamespace()
                         storage = obj.getVariableStorage()
                         if (
-                                (newValue is not None) and (storage is not None) and bool(storage.isStackStorage())
+                                (new_value is not None) and (storage is not None) and bool(storage.isStackStorage())
                                 and (parent_namespace is not None)
                         ):
                             self._deci.stack_variable_changed(
                                 StackVariable(
                                     int(obj.variableStorage.stackOffset),
-                                    newValue,
+                                    new_value,
                                     None,
                                     None,
                                     int(obj.parentNamespace.entryPoint.offset)
@@ -179,6 +194,10 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                         pass
                     else:
                         continue
+                elif changeType in self.imageBaseEvents:
+                    new_base_addr = int(new_value.getOffset()) if new_value is not None else None
+                    if new_base_addr is not None:
+                        self._deci._binary_base_addr = new_base_addr
 
     data_monitor = DataMonitor(deci)
     return data_monitor
