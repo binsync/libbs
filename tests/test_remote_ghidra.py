@@ -1,4 +1,5 @@
 import logging
+import time
 import unittest
 from pathlib import Path
 from collections import defaultdict
@@ -8,6 +9,8 @@ from libbs.api import DecompilerInterface
 from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment
 from libbs.decompilers import GHIDRA_DECOMPILER
 from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
+from libbs.decompilers.ghidra.compat.transaction import Transaction
+from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
 
 GHIDRA_HEADLESS_PATH = Path(os.environ.get('GHIDRA_INSTALL_DIR', "")) / "support" / "analyzeHeadless"
 TEST_BINARY_DIR = Path(__file__).parent / "binaries"
@@ -27,12 +30,25 @@ class TestRemoteGhidra(unittest.TestCase):
 
     def test_ghidra_artifact_watchers(self):
         with HeadlessGhidraDecompiler(self.FAUXWARE_PATH, headless_dec_path=GHIDRA_HEADLESS_PATH):
-            deci = DecompilerInterface.discover(
+            deci: GhidraDecompilerInterface = DecompilerInterface.discover(
                 force_decompiler=GHIDRA_DECOMPILER,
                 binary_path=self.FAUXWARE_PATH,
                 start_headless_watchers=True
             )
             self.deci = deci
+
+            #
+            # Test Image Base Watcher
+            #
+
+            original_base_addr = deci.binary_base_addr
+            new_base_addr = 0x1000000
+            with Transaction(deci.flat_api, msg="BS::test_ghidra_artifact_watchers"):
+                deci.flat_api.currentProgram.setImageBase(deci.flat_api.toAddr(new_base_addr), True)
+
+            time.sleep(0.5)
+            assert deci.binary_base_addr != original_base_addr
+            assert deci.binary_base_addr == new_base_addr
 
             #
             # Test Artifact Watchers

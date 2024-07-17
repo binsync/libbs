@@ -54,7 +54,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._last_addr = None
         self._last_func = None
         self._binary_base_addr = None
-        self._last_base_addr_access = time.time()
         self._default_pointer_size = None
 
         super().__init__(
@@ -213,10 +212,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
-        # TODO: this is a hack for a dumb cache, and can cause bugs, but good enough for now:
-        if (time.time() - self._last_base_addr_access > self.CACHE_TIMEOUT) or self._binary_base_addr is None:
+        if self._binary_base_addr is None:
             self._binary_base_addr = int(self.currentProgram.getImageBase().getOffset())
-            self._last_base_addr_access = time.time()
 
         return self._binary_base_addr
 
