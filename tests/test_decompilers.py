@@ -8,7 +8,8 @@ from collections import defaultdict
 import os
 
 from libbs.api import DecompilerInterface
-from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat
+from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat, \
+    Decompilation
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
 from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
 
@@ -266,7 +267,14 @@ class TestHeadlessInterfaces(unittest.TestCase):
             )
             self.deci = deci
             main_func_addr = deci.art_lifter.lift_addr(0x40071d)
-            decompilation = deci.decompile(main_func_addr)
+            decompilation = deci.decompile(main_func_addr, map_lines=True)
+
+            assert decompilation is not None, f"Decompilation failed for {dec_name}"
+            assert decompilation.decompiler == deci.name
+            assert decompilation.addr == main_func_addr
+            assert decompilation.text is not None
+
+            self.deci.shutdown()
 
 if __name__ == "__main__":
     unittest.main()

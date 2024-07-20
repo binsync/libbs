@@ -148,7 +148,7 @@ class IDAInterface(DecompilerInterface):
         except Exception:
             return None
 
-        decompilation = Decompilation(addr=function.addr, text=str(cfunc), decompiler="Hexrays")
+        decompilation = Decompilation(addr=function.addr, text=str(cfunc), decompiler=self.name)
         if map_lines:
             linenum_to_addr = defaultdict(set)
             # always add the start as line 1

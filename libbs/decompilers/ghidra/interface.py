@@ -241,18 +241,19 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if dec_obj is None:
             return None
 
-        dec_func = dec_obj.getDecompiledFunction()
+        dec_results = dec_obj
+        dec_func = dec_results.getDecompiledFunction()
         if dec_func is None:
             return None
 
-        decompilation = Decompilation(addr=function.addr, text=str(dec_func.getC()), decompiler="Ghidra")
+        decompilation = Decompilation(addr=function.addr, text=str(dec_func.getC()), decompiler=self.name)
         if map_lines:
             from .compat.imports import PrettyPrinter
 
+            g_func = dec_results.function
             linenum_to_addr = defaultdict(set)
-            g_func = dec_func.function
             linenum_to_addr[1].add(function.addr)
-            pp = PrettyPrinter(g_func, dec_func.getCCodeMarkup())
+            pp = PrettyPrinter(g_func, dec_results.getCCodeMarkup(), None)
             for line in pp.getLines():
                 ln = line.getLineNumber()
                 for i in range(line.getNumTokens()):

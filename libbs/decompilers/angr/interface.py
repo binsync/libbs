@@ -43,7 +43,7 @@ class AngrInterface(DecompilerInterface):
     def _init_headless_components(self, *args, **kwargs):
         super()._init_headless_components(*args, check_dec_path=False, **kwargs)
         self.project = angr.Project(str(self._binary_path), auto_load_libs=False)
-        cfg = self.project.analyses.CFG(show_progressbar=True, normalize=True, data_references=True)
+        cfg = self.project.analyses.CFG(show_progressbar=False, normalize=True, data_references=True)
         self.project.analyses.CompleteCallingConventions(cfg=cfg, recover_variables=True)
 
     def _init_gui_components(self, *args, **kwargs):
@@ -117,7 +117,7 @@ class AngrInterface(DecompilerInterface):
         if codegen is None or not codegen.text:
             return None
 
-        decompilation = Decompilation(addr=function.addr, text=codegen.text, decompiler="angr decompiler")
+        decompilation = Decompilation(addr=function.addr, text=codegen.text, decompiler=self.name)
         if map_lines:
             decompilation.line_map = line_map_from_decompilation(decompilation)
 

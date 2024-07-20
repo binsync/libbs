@@ -110,6 +110,7 @@ class DecompilerInterface:
         else:
             self._init_headless_components()
 
+        self.info(f"Using configuration file: {self.config.save_location}")
         self.config.save()
 
     def _init_headless_components(self, *args, check_dec_path=True, **kwargs):

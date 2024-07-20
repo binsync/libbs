@@ -245,7 +245,7 @@ class BinjaInterface(DecompilerInterface):
         decompilation = Decompilation(
             addr=function.addr,
             text=decomp_text,
-            decompiler="Binary Ninja"
+            decompiler=self.name
         )
         if map_lines:
             # TODO: make this more accurate!
