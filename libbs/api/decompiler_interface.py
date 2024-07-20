@@ -17,7 +17,7 @@ from libbs.artifacts import (
     Artifact,
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch,
-    Enum, Struct, FunctionArgument
+    Enum, Struct, FunctionArgument, Decompilation
 )
 from libbs.decompilers import SUPPORTED_DECOMPILERS, ANGR_DECOMPILER, \
     BINJA_DECOMPILER, IDA_DECOMPILER, GHIDRA_DECOMPILER
@@ -270,26 +270,30 @@ class DecompilerInterface:
         """
         return True
 
-    def decompile(self, addr: int) -> Optional[str]:
+    def decompile(self, addr: int, map_lines=False, **kwargs) -> Optional[Decompilation]:
         lowered_addr = self.art_lifter.lower_addr(addr)
         if not self.decompiler_available:
             _l.error("Decompiler is not available.")
             return None
 
-        # TODO: make this a function call after transitioning decompiler artifacts to LiveState
         sorted_funcs = sorted(self._functions().items(), key=lambda x: x[0])
-        for func_addr, func in sorted_funcs:
-            if func.addr <= lowered_addr < (func.addr + func.size):
-                break
+        func_by_addr = {_addr: func for _addr, func in sorted_funcs}
+        func = None
+        if lowered_addr in func_by_addr:
+            func = func_by_addr[lowered_addr]
         else:
-            func = None
+            _l.debug(f"Address is not a function start, searching for function...")
+            for func_addr, _func in sorted_funcs:
+                if _func.addr <= lowered_addr < (_func.addr + _func.size):
+                    func = _func
+                    break
 
         if func is None:
             self.warning(f"Failed to find function for address {hex(lowered_addr)}")
             return None
 
         try:
-            decompilation = self._decompile(func)
+            decompilation = self._decompile(func, map_lines=map_lines, **kwargs)
         except Exception as e:
             self.warning(f"Failed to decompile function at {hex(lowered_addr)}: {e}")
             decompilation = None
@@ -307,7 +311,7 @@ class DecompilerInterface:
     def get_func_containing(self, addr: int) -> Optional[Function]:
         raise NotImplementedError
 
-    def _decompile(self, function: Function) -> Optional[str]:
+    def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
         raise NotImplementedError
 
     def get_decompilation_object(self, function: Function, **kwargs) -> Optional[object]:

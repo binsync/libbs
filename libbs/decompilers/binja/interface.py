@@ -31,7 +31,7 @@ import libbs
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch, StructMember, FunctionArgument,
-    Enum, Struct, Artifact
+    Enum, Struct, Artifact, Decompilation
 )
 
 from .artifact_lifter import BinjaArtifactLifter
@@ -201,7 +201,7 @@ class BinjaInterface(DecompilerInterface):
         bn_func = funcs[0]
         return self._get_function(bn_func.start)
 
-    def _decompile(self, function: Function) -> Optional[str]:
+    def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
         bv = self.bv
         if bv is None:
             print("[DAILA] Warning: was unable to collect the current BinaryView. Please report this issue.")
@@ -216,7 +216,7 @@ class BinjaInterface(DecompilerInterface):
         settings.set_option(DisassemblyOption.GroupLinearDisassemblyFunctions)
         settings.set_option(DisassemblyOption.WaitForIL)
 
-        decomp = ""
+        decomp_text = ""
         obj = lineardisassembly.LinearViewObject.single_function_language_representation(bn_func, settings)
         cursor = obj.cursor
         while True:
@@ -231,13 +231,22 @@ class BinjaInterface(DecompilerInterface):
                     if i.type == InstructionTextTokenType.TagToken:
                         continue
 
-                    decomp += str(i)
-                decomp += "\n"
+                    decomp_text += str(i)
+                decomp_text += "\n"
 
             if not cursor.next():
                 break
 
-        return decomp
+        decompilation = Decompilation(
+            addr=function.addr,
+            text=decomp_text,
+            decompiler="Binary Ninja"
+        )
+        if map_lines:
+            # TODO: implement line mapping, maybe use hlil_instructions
+            raise NotImplementedError("Mapping lines is not yet implemented for Binja.")
+
+        return decompilation
 
     def local_variable_names(self, func: Function) -> List[str]:
         bn_func = self.addr_to_bn_func(self.bv, self.art_lifter.lower_addr(func.addr))

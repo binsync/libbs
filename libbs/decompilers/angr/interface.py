@@ -10,9 +10,10 @@ from libbs.api.decompiler_interface import (
     DecompilerInterface,
 )
 from libbs.artifacts import (
-    Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact
+    Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact, Decompilation
 )
 from .artifact_lifter import AngrArtifactLifter
+from .compat import line_map_from_decompilation
 
 l = logging.getLogger(__name__)
 
@@ -105,14 +106,22 @@ class AngrInterface(DecompilerInterface):
 
         return xrefs
 
-    def _decompile(self, function: Function) -> Optional[str]:
-        if function.dec_obj is not None:
-            dec_text = function.dec_obj.text
-        else:
+    def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
+        if function.dec_obj is None:
             function.dec_obj = self.get_decompilation_object(function, do_lower=False)
-            dec_text = function.dec_obj.text if function.dec_obj else None
 
-        return dec_text
+        if function.dec_obj is None:
+            return None
+
+        codegen = function.dec_obj.codegen
+        if codegen is None or not codegen.text:
+            return None
+
+        decompilation = Decompilation(addr=function.addr, text=codegen.text, decompiler="angr decompiler")
+        if map_lines:
+            decompilation.line_map = line_map_from_decompilation(decompilation)
+
+        return decompilation
 
     def get_decompilation_object(self, function: Function, do_lower=True, **kwargs) -> Optional[object]:
         func_addr = self.art_lifter.lower_addr(function.addr) if do_lower else function.addr
@@ -121,17 +130,17 @@ class AngrInterface(DecompilerInterface):
             return None
 
         try:
-            codegen = self.decompile_function(func)
+            decomp = self.decompile_function(func)
         except Exception as e:
             l.warning(f"Failed to decompile {func} because {e}")
-            codegen = None
+            decomp = None
 
-        return codegen
+        return decomp
 
     def local_variable_names(self, func: Function) -> List[str]:
         codegen = self.decompile_function(
             self.main_instance.project.kb.functions[self.art_lifter.lower_addr(func.addr)]
-        )
+        ).codegen
         if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
             return []
 
@@ -140,7 +149,7 @@ class AngrInterface(DecompilerInterface):
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str],  **kwargs) -> bool:
         codegen = self.decompile_function(
             self.main_instance.project.kb.functions[self.art_lifter.lower_addr(func.addr)]
-        )
+        ).codegen
         if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
             return False
 
@@ -198,7 +207,7 @@ class AngrInterface(DecompilerInterface):
         angr_func = self.main_instance.project.kb.functions[func.addr]
 
         # re-decompile a function if needed
-        decompilation = self.decompile_function(angr_func)
+        decompilation = self.decompile_function(angr_func).codegen
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
         if not self.headless:
             self.refresh_decompilation(func.addr)
@@ -218,7 +227,7 @@ class AngrInterface(DecompilerInterface):
         )
 
         try:
-            decompilation = self.decompile_function(_func)
+            decompilation = self.decompile_function(_func).codegen
         except Exception as e:
             l.warning(f"Failed to decompile function {hex(_func.addr)}: {e}")
             decompilation = None
@@ -402,7 +411,7 @@ class AngrInterface(DecompilerInterface):
                 self._headless_decompile(func)
 
         # grab newly cached pseudocode
-        decomp = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')].codegen
+        decomp = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')]
 
         # refresh the UI after decompiling
         if refresh_gui and not self.headless:
