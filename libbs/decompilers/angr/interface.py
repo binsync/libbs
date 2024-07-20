@@ -14,7 +14,6 @@ from libbs.artifacts import (
     Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact, Decompilation
 )
 from .artifact_lifter import AngrArtifactLifter
-from .compat import line_map_from_decompilation
 
 l = logging.getLogger(__name__)
 

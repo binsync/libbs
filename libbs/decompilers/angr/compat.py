@@ -184,5 +184,3 @@ class GenericBSAngrManagementPlugin(BasePlugin):
             Comment(addr=address, comment=new_cmt, func_addr=func_addr, decompiled=True), deleted=not new_cmt
         )
         return True
-
-
