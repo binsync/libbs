@@ -265,8 +265,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
                     if max_addr is not None:
                         linenum_to_addr[ln].add(max_addr.offset)
 
-            list_linenum_to_addr = {
-                str(k): list(v) for k, v in dict(linenum_to_addr).items()
+            decompilation.line_map = {
+                k: list(v) for k, v in dict(linenum_to_addr).items()
             }
 
         return decompilation
