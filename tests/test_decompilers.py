@@ -217,11 +217,14 @@ class TestHeadlessInterfaces(unittest.TestCase):
             binary_path=self.FAUXWARE_PATH
         )
         func_addr = deci.art_lifter.lift_addr(0x400664)
-        main = deci.functions[func_addr]
-        main.name = self.RENAMED_NAME
-        deci.functions[func_addr] = main
+        func_authenticate = deci.functions[func_addr]
+        func_authenticate.name = self.RENAMED_NAME
+
+        # test renaming a function
+        deci.functions[func_addr] = func_authenticate
         assert deci.functions[func_addr].name == self.RENAMED_NAME
 
+        # test strucr creation
         new_struct = Struct()
         new_struct.name = "my_new_struct"
         new_struct.add_struct_member('char_member', 0, 'char', 1)
@@ -233,6 +236,20 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert updated.members[0].type == 'char'
         assert updated.members[1].type == 'int'
 
+        # test function arg change
+        func_main = deci.functions[deci.art_lifter.lift_addr(0x40071d)]
+        func_main.header.args[0].name = "my_arg"
+        # this arg is normally char** argv, so we can retype to another pointer
+        new_struct_type = new_struct.name + "*"
+        func_main.header.args[1].type = new_struct_type
+
+        deci.functions[func_main.addr] = func_main
+        assert deci.functions[func_main.addr].header.args[0].name == "my_arg"
+        current_struct_type = deci.functions[func_main.addr].header.args[1].type
+        current_struct_type = current_struct_type.replace("struct ", "").replace(" ", "")
+        assert current_struct_type == new_struct_type
+
+        # test struct deletion
         del deci.structs[new_struct.name]
         struct_items = deci.structs.items()
         struct_keys = [k for k, v in struct_items]
