@@ -38,13 +38,14 @@ class AngrInterface(DecompilerInterface):
         self.main_instance = workspace.main_instance if workspace else self
         self._ctx_menu_items = []
         self._am_logger = None
+        self._cfg = None
         super().__init__(name="angr", artifact_lifter=AngrArtifactLifter(self), **kwargs)
 
     def _init_headless_components(self, *args, **kwargs):
         super()._init_headless_components(*args, check_dec_path=False, **kwargs)
         self.project = angr.Project(str(self._binary_path), auto_load_libs=False)
-        cfg = self.project.analyses.CFG(show_progressbar=False, normalize=True, data_references=True)
-        self.project.analyses.CompleteCallingConventions(cfg=cfg, recover_variables=True)
+        self._cfg = self.project.analyses.CFG(show_progressbar=False, normalize=True, data_references=True)
+        self.project.analyses.CompleteCallingConventions(cfg=self._cfg, recover_variables=True, analyze_callsites=True)
 
     def _init_gui_components(self, *args, **kwargs):
         super()._init_gui_components(*args, **kwargs)
@@ -119,7 +120,11 @@ class AngrInterface(DecompilerInterface):
 
         decompilation = Decompilation(addr=function.addr, text=codegen.text, decompiler=self.name)
         if map_lines:
-            decompilation.line_map = line_map_from_decompilation(decompilation)
+            if self.headless:
+                decompilation.line_map = self.line_map_from_decompilation(function.dec_obj)
+            else:
+                self.warning("Mapping lines is only supported in headless mode.")
+                decompilation.line_map = {}
 
         return decompilation
 
@@ -368,20 +373,10 @@ class AngrInterface(DecompilerInterface):
         return True
 
     def _headless_decompile(self, func):
-        all_optimization_passes = angr.analyses.decompiler.optimization_passes.get_default_optimization_passes(
-            "AMD64", "linux"
-        )
-        options = [([
-            o for o in angr.analyses.decompiler.decompilation_options.options
-            if o.param == "structurer_cls"
-        ][0], "phoenix")]
-
         if not func.normalized:
             func.normalize()
 
-        self.main_instance.project.analyses.Decompiler(
-            func, flavor='pseudocode', options=options, optimization_passes=all_optimization_passes
-        )
+        return self.main_instance.project.analyses.Decompiler(func, cfg=self._cfg, flavor='pseudocode')
 
     def _angr_management_decompile(self, func):
         # recover direct pseudocode
@@ -397,21 +392,23 @@ class AngrInterface(DecompilerInterface):
         # check for known decompilation
         available = self.main_instance.project.kb.structured_code.available_flavors(func.addr)
         should_decompile = False
-        if 'pseudocode' not in available:
+        if self.headless or 'pseudocode' not in available:
             should_decompile = True
         else:
             cached = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')]
             if isinstance(cached, DummyStructuredCodeGenerator):
                 should_decompile = True
 
+        decomp = None
         if should_decompile:
             if not self.headless:
                 self._angr_management_decompile(func)
             else:
-                self._headless_decompile(func)
+                decomp = self._headless_decompile(func)
 
         # grab newly cached pseudocode
-        decomp = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')]
+        if not self.headless:
+            decomp = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')]
 
         # refresh the UI after decompiling
         if refresh_gui and not self.headless:
@@ -560,7 +557,7 @@ class AngrInterface(DecompilerInterface):
         line_end_pos = [i for i, x in enumerate(decompilation) if x == "\n"]
         line_to_addr = defaultdict(set)
         last_pos = len(decompilation) - 1
-        line_to_addr[str(1)].add(codegen.cfunc.addr - base_addr)
+        line_to_addr[1].add(codegen.cfunc.addr - base_addr)
         for i, pos in enumerate(line_end_pos[:-1]):
             if pos == last_pos:
                 break
@@ -568,7 +565,7 @@ class AngrInterface(DecompilerInterface):
             curr_end = line_end_pos[i+1] - 1
             # check if this is the variable decs and header
             if curr_end < first_code_pos:
-                line_to_addr[str(i+2)].add(codegen.cfunc.addr - base_addr)
+                line_to_addr[i+2].add(codegen.cfunc.addr - base_addr)
                 continue
 
             # not header, real code
@@ -577,8 +574,8 @@ class AngrInterface(DecompilerInterface):
                     # line_to_addr[str(i+1)].update(pos_addr_map[p_idx])
                     for ail_ins_addr in pos_addr_map[p_idx]:
                         if ail_ins_addr in ailaddr_to_addr:
-                            line_to_addr[str(i+2)].update(ailaddr_to_addr[ail_ins_addr])
+                            line_to_addr[i+2].update(ailaddr_to_addr[ail_ins_addr])
                         else:
-                            line_to_addr[str(i+2)].add(ail_ins_addr)
+                            line_to_addr[i+2].add(ail_ins_addr)
 
         return line_to_addr

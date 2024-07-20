@@ -83,8 +83,11 @@ class ArtifactLifter:
                     setattr(lifted_art, attr, lifting_func(curr_val, lifted_art.addr))
                 # special handling for decompilation
                 elif attr == "line_map":
-                    # TODO finish me
-                    pass
+                    lifted_line_map = {}
+                    for k, v in curr_val.items():
+                        lifted_line_map[k] = {self.lift_addr(_v) for _v in v}
+
+                    setattr(lifted_art, attr, lifted_line_map)
                 else:
                     attr_func_name = attr if attr != "func_addr" else "addr"
                     lifting_func = getattr(self, f"{mode}_{attr_func_name}")

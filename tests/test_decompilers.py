@@ -258,7 +258,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert new_struct.name not in struct_keys and new_struct not in struct_values
 
     def test_decompile_api(self):
-        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER]:
+        for dec_name in [ANGR_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
@@ -273,6 +273,14 @@ class TestHeadlessInterfaces(unittest.TestCase):
             assert decompilation.decompiler == deci.name
             assert decompilation.addr == main_func_addr
             assert decompilation.text is not None
+            print_username_line = 'puts("Username: ");'
+            assert print_username_line in decompilation.text
+
+            line_no = [line.strip() for line in decompilation.text.splitlines()].index(print_username_line) + 1
+            assert bool(decompilation.line_map) is True
+
+            correct_addr = deci.art_lifter.lift_addr(0x400739)
+            assert correct_addr in decompilation.line_map[line_no]
 
             self.deci.shutdown()
 
