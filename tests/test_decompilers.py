@@ -258,7 +258,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert new_struct.name not in struct_keys and new_struct not in struct_values
 
     def test_decompile_api(self):
-        for dec_name in [ANGR_DECOMPILER]:
+        for dec_name in [ANGR_DECOMPILER, GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
