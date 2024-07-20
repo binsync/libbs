@@ -1,5 +1,6 @@
 import threading
 import functools
+from collections import defaultdict
 from typing import Dict, Optional, Any, List
 import hashlib
 import logging
@@ -219,20 +220,24 @@ class BinjaInterface(DecompilerInterface):
         decomp_text = ""
         obj = lineardisassembly.LinearViewObject.single_function_language_representation(bn_func, settings)
         cursor = obj.cursor
+        line_map = defaultdict(set)
         while True:
-            for line in cursor.lines:
+            for ln, line in enumerate(cursor.lines):
                 if line.type in [
                     LinearDisassemblyLineType.FunctionHeaderStartLineType,
                     LinearDisassemblyLineType.FunctionHeaderEndLineType,
                     LinearDisassemblyLineType.AnalysisWarningLineType,
                 ]:
                     continue
+
                 for i in line.contents.tokens:
                     if i.type == InstructionTextTokenType.TagToken:
                         continue
 
                     decomp_text += str(i)
                 decomp_text += "\n"
+                if line.contents and line.contents.address is not None:
+                    line_map[ln].add(int(line.contents.address))
 
             if not cursor.next():
                 break
@@ -243,8 +248,8 @@ class BinjaInterface(DecompilerInterface):
             decompiler="Binary Ninja"
         )
         if map_lines:
-            # TODO: implement line mapping, maybe use hlil_instructions
-            raise NotImplementedError("Mapping lines is not yet implemented for Binja.")
+            # TODO: make this more accurate!
+            decompilation.line_map = dict(line_map)
 
         return decompilation
 

@@ -298,6 +298,9 @@ class DecompilerInterface:
             self.warning(f"Failed to decompile function at {hex(lowered_addr)}: {e}")
             decompilation = None
 
+        if decompilation is not None:
+            decompilation = self.art_lifter.lift(decompilation)
+
         return decompilation
 
     def xrefs_to(self, artifact: Artifact) -> List[Artifact]:

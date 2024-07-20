@@ -256,6 +256,17 @@ class TestHeadlessInterfaces(unittest.TestCase):
         struct_values = [v for k, v in struct_items]
         assert new_struct.name not in struct_keys and new_struct not in struct_values
 
+    def test_decompile_api(self):
+        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER]:
+            deci = DecompilerInterface.discover(
+                force_decompiler=dec_name,
+                headless=True,
+                headless_dec_path=DEC_TO_HEADLESS[dec_name],
+                binary_path=TEST_BINARY_DIR / "fauxware",
+            )
+            self.deci = deci
+            main_func_addr = deci.art_lifter.lift_addr(0x40071d)
+            decompilation = deci.decompile(main_func_addr)
 
 if __name__ == "__main__":
     unittest.main()
