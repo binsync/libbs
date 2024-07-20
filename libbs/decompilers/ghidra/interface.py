@@ -247,6 +247,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         decompilation = Decompilation(addr=function.addr, text=str(dec_func.getC()), decompiler="Ghidra")
         if map_lines:
+            from .compat.imports import PrettyPrinter
+
             linenum_to_addr = defaultdict(set)
             g_func = dec_func.function
             linenum_to_addr[1].add(function.addr)
