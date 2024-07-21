@@ -75,6 +75,18 @@ class AngrInterface(DecompilerInterface):
         except Exception:
             return None
 
+    def fast_get_function(self, func_addr) -> Optional[Function]:
+        lowered_addr = self.art_lifter.lower_addr(func_addr)
+        try:
+            _func = self.main_instance.project.kb.functions[lowered_addr]
+        except KeyError:
+            self.warning(f"Function at {hex(func_addr)} not found.")
+            return None
+
+        func = Function(addr=_func.addr, size=_func.size, name=_func.name)
+        func.header.type = _func.prototype.returnty.c_repr() if _func.prototype.returnty else None
+        return self.art_lifter.lift(func)
+
     def get_func_size(self, func_addr) -> int:
         func_addr = self.art_lifter.lower_addr(func_addr)
         try:

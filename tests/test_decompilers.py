@@ -286,5 +286,21 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
             self.deci.shutdown()
 
+    def test_fast_function_api(self):
+        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER]:
+            deci = DecompilerInterface.discover(
+                force_decompiler=dec_name,
+                headless=True,
+                headless_dec_path=DEC_TO_HEADLESS[dec_name],
+                binary_path=TEST_BINARY_DIR / "fauxware",
+            )
+            self.deci = deci
+            main_func_addr = deci.art_lifter.lift_addr(0x40071d)
+            main_func = deci.fast_get_function(main_func_addr)
+            assert main_func is not None
+            assert main_func.name is not None
+
+            self.deci.shutdown()
+
 if __name__ == "__main__":
     unittest.main()

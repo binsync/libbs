@@ -169,7 +169,7 @@ class BinjaInterface(DecompilerInterface):
         if not func:
             return None
 
-        return self.bn_func_to_bs(func)
+        return self.art_lifter.lift(self.bn_func_to_bs(func))
 
     def get_func_size(self, func_addr) -> int:
         func_addr = self.art_lifter.lower_addr(func_addr)
@@ -291,14 +291,14 @@ class BinjaInterface(DecompilerInterface):
 
         return update
 
-    def get_decompilation_object(self, function: Function) -> Optional[object]:
+    def get_decompilation_object(self, function: Function, **kwargs) -> Optional[object]:
         """
         Binary Ninja has no internal object that needs to be refreshed.
         """
         return None
 
     def start_artifact_watchers(self):
-        if not self._watchers_started:
+        if not self._artifact_watchers_started:
             from .hooks import DataMonitor
             if self.bv is None:
                 raise RuntimeError("Cannot start artifact watchers without a BinaryView.")
@@ -308,7 +308,7 @@ class BinjaInterface(DecompilerInterface):
             super().start_artifact_watchers()
 
     def stop_artifact_watchers(self):
-        if self._watchers_started:
+        if self._artifact_watchers_started:
             self.bv.unregister_notification(self._data_monitor)
             self._data_monitor = None
             super().stop_artifact_watchers()

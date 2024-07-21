@@ -172,13 +172,13 @@ class IDAInterface(DecompilerInterface):
 
     def fast_get_function(self, func_addr) -> Optional[Function]:
         lowered_addr = self.art_lifter.lower_addr(func_addr)
-        ida_func = idaapi.get_func(func_addr)
+        ida_func = compat.get_func(lowered_addr)
         if ida_func is None:
             _l.error(f"Function does not exist at {lowered_addr}")
             return None
 
-        ret_type = compat.get_func_ret_type(func_addr)
-        name = compat.get_func_name(func_addr)
+        ret_type = compat.get_func_ret_type(lowered_addr)
+        name = compat.get_func_name(lowered_addr)
         lowered_func = Function(
             addr=lowered_addr,
             size=ida_func.size(),
@@ -213,6 +213,12 @@ class IDAInterface(DecompilerInterface):
             hook.unhook()
 
     def gui_active_context(self) -> Context:
+        if self._gui_active_context is None:
+            low_addr = compat.get_screen_ea()
+            self._gui_active_context = Context(
+                addr=self.art_lifter.lift_addr(low_addr) if low_addr is not None else None
+            )
+
         return self._gui_active_context
 
     def gui_goto(self, func_addr) -> None:
