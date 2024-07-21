@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Union
 import logging
@@ -11,7 +12,8 @@ from ghidra_bridge import GhidraBridge
 from libbs.api import DecompilerInterface
 from libbs.api.decompiler_interface import requires_decompilation
 from libbs.artifacts import (
-    Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum
+    Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum,
+    Decompilation
 )
 
 from .artifact_lifter import GhidraArtifactLifter
@@ -234,16 +236,41 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return int(gfunc.getBody().getNumAddresses())
 
-    def _decompile(self, function: Function) -> Optional[str]:
+    def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
         dec_obj = self.get_decompilation_object(function, do_lower=False)
         if dec_obj is None:
             return None
 
-        dec_func = dec_obj.getDecompiledFunction()
+        dec_results = dec_obj
+        dec_func = dec_results.getDecompiledFunction()
         if dec_func is None:
             return None
 
-        return str(dec_func.getC())
+        decompilation = Decompilation(addr=function.addr, text=str(dec_func.getC()), decompiler=self.name)
+        if map_lines:
+            from .compat.imports import PrettyPrinter
+
+            g_func = dec_results.function
+            linenum_to_addr = defaultdict(set)
+            linenum_to_addr[1].add(function.addr)
+            pp = PrettyPrinter(g_func, dec_results.getCCodeMarkup(), None)
+            for line in pp.getLines():
+                ln = line.getLineNumber()
+                for i in range(line.getNumTokens()):
+                    min_addr = line.getToken(i).getMinAddress()
+                    if min_addr is None:
+                        continue
+
+                    linenum_to_addr[ln].add(min_addr.offset)
+                    max_addr = line.getToken(i).getMaxAddress()
+                    if max_addr is not None:
+                        linenum_to_addr[ln].add(max_addr.offset)
+
+            decompilation.line_map = {
+                k: list(v) for k, v in dict(linenum_to_addr).items()
+            }
+
+        return decompilation
 
     def get_decompilation_object(self, function: Function, do_lower=True) -> Optional[object]:
         lowered_addr = self.art_lifter.lower_addr(function.addr) if do_lower else function.addr

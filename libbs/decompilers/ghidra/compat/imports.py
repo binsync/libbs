@@ -39,6 +39,7 @@ if HEADLESS:
     from ghidra.app.decompiler import DecompInterface
     from ghidra.app.plugin.core.analysis import AutoAnalysisManager
     from ghidra.app.util.cparser.C import CParserUtils
+    from ghidra.app.decompiler import PrettyPrinter
     from ghidra.util.task import ConsoleTaskMonitor
     from ghidra.util.data import DataTypeParser
     from ghidra.util.exception import CancelledException
@@ -64,6 +65,7 @@ else:
     DecompInterface = import_objs("ghidra.app.decompiler", ("DecompInterface",))
     AutoAnalysisManager = import_objs("ghidra.app.plugin.core.analysis", ("AutoAnalysisManager",))
     CParserUtils = import_objs("ghidra.app.util.cparser.C", ("CParserUtils",))
+    PrettyPrinter = import_objs("ghidra.app.decompiler", ("PrettyPrinter",))
     ConsoleTaskMonitor = import_objs("ghidra.util.task", ("ConsoleTaskMonitor",))
     DataTypeParser = import_objs("ghidra.util.data", ("DataTypeParser",))
     CancelledException = import_objs("ghidra.util.exception", ("CancelledException",))
@@ -96,6 +98,7 @@ __all__ = [
     "RenameLabelCmd",
     "SymbolType",
     "StructureDB",
+    "PrettyPrinter",
     "ConsoleTaskMonitor",
     "DecompInterface",
     "AutoAnalysisManager",

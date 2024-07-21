@@ -1,5 +1,6 @@
 import logging
 import os
+from collections import defaultdict
 from typing import Optional, Dict, List
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from libbs.api.decompiler_interface import (
     DecompilerInterface,
 )
 from libbs.artifacts import (
-    Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact
+    Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact, Decompilation
 )
 from .artifact_lifter import AngrArtifactLifter
 
@@ -37,13 +38,14 @@ class AngrInterface(DecompilerInterface):
         self.main_instance = workspace.main_instance if workspace else self
         self._ctx_menu_items = []
         self._am_logger = None
+        self._cfg = None
         super().__init__(name="angr", artifact_lifter=AngrArtifactLifter(self), **kwargs)
 
     def _init_headless_components(self, *args, **kwargs):
         super()._init_headless_components(*args, check_dec_path=False, **kwargs)
         self.project = angr.Project(str(self._binary_path), auto_load_libs=False)
-        cfg = self.project.analyses.CFG(show_progressbar=True, normalize=True, data_references=True)
-        self.project.analyses.CompleteCallingConventions(cfg=cfg, recover_variables=True)
+        self._cfg = self.project.analyses.CFG(show_progressbar=False, normalize=True, data_references=True)
+        self.project.analyses.CompleteCallingConventions(cfg=self._cfg, recover_variables=True, analyze_callsites=True)
 
     def _init_gui_components(self, *args, **kwargs):
         super()._init_gui_components(*args, **kwargs)
@@ -105,14 +107,26 @@ class AngrInterface(DecompilerInterface):
 
         return xrefs
 
-    def _decompile(self, function: Function) -> Optional[str]:
-        if function.dec_obj is not None:
-            dec_text = function.dec_obj.text
-        else:
+    def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
+        if function.dec_obj is None:
             function.dec_obj = self.get_decompilation_object(function, do_lower=False)
-            dec_text = function.dec_obj.text if function.dec_obj else None
 
-        return dec_text
+        if function.dec_obj is None:
+            return None
+
+        codegen = function.dec_obj.codegen
+        if codegen is None or not codegen.text:
+            return None
+
+        decompilation = Decompilation(addr=function.addr, text=codegen.text, decompiler=self.name)
+        if map_lines:
+            if self.headless:
+                decompilation.line_map = self.line_map_from_decompilation(function.dec_obj)
+            else:
+                self.warning("Mapping lines is only supported in headless mode.")
+                decompilation.line_map = {}
+
+        return decompilation
 
     def get_decompilation_object(self, function: Function, do_lower=True, **kwargs) -> Optional[object]:
         func_addr = self.art_lifter.lower_addr(function.addr) if do_lower else function.addr
@@ -121,17 +135,17 @@ class AngrInterface(DecompilerInterface):
             return None
 
         try:
-            codegen = self.decompile_function(func)
+            decomp = self.decompile_function(func)
         except Exception as e:
             l.warning(f"Failed to decompile {func} because {e}")
-            codegen = None
+            decomp = None
 
-        return codegen
+        return decomp
 
     def local_variable_names(self, func: Function) -> List[str]:
         codegen = self.decompile_function(
             self.main_instance.project.kb.functions[self.art_lifter.lower_addr(func.addr)]
-        )
+        ).codegen
         if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
             return []
 
@@ -140,7 +154,7 @@ class AngrInterface(DecompilerInterface):
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str],  **kwargs) -> bool:
         codegen = self.decompile_function(
             self.main_instance.project.kb.functions[self.art_lifter.lower_addr(func.addr)]
-        )
+        ).codegen
         if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
             return False
 
@@ -198,7 +212,7 @@ class AngrInterface(DecompilerInterface):
         angr_func = self.main_instance.project.kb.functions[func.addr]
 
         # re-decompile a function if needed
-        decompilation = self.decompile_function(angr_func)
+        decompilation = self.decompile_function(angr_func).codegen
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
         if not self.headless:
             self.refresh_decompilation(func.addr)
@@ -218,7 +232,7 @@ class AngrInterface(DecompilerInterface):
         )
 
         try:
-            decompilation = self.decompile_function(_func)
+            decompilation = self.decompile_function(_func).codegen
         except Exception as e:
             l.warning(f"Failed to decompile function {hex(_func.addr)}: {e}")
             decompilation = None
@@ -359,20 +373,10 @@ class AngrInterface(DecompilerInterface):
         return True
 
     def _headless_decompile(self, func):
-        all_optimization_passes = angr.analyses.decompiler.optimization_passes.get_default_optimization_passes(
-            "AMD64", "linux"
-        )
-        options = [([
-            o for o in angr.analyses.decompiler.decompilation_options.options
-            if o.param == "structurer_cls"
-        ][0], "phoenix")]
-
         if not func.normalized:
             func.normalize()
 
-        self.main_instance.project.analyses.Decompiler(
-            func, flavor='pseudocode', options=options, optimization_passes=all_optimization_passes
-        )
+        return self.main_instance.project.analyses.Decompiler(func, cfg=self._cfg, flavor='pseudocode')
 
     def _angr_management_decompile(self, func):
         # recover direct pseudocode
@@ -388,21 +392,23 @@ class AngrInterface(DecompilerInterface):
         # check for known decompilation
         available = self.main_instance.project.kb.structured_code.available_flavors(func.addr)
         should_decompile = False
-        if 'pseudocode' not in available:
+        if self.headless or 'pseudocode' not in available:
             should_decompile = True
         else:
             cached = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')]
             if isinstance(cached, DummyStructuredCodeGenerator):
                 should_decompile = True
 
+        decomp = None
         if should_decompile:
             if not self.headless:
                 self._angr_management_decompile(func)
             else:
-                self._headless_decompile(func)
+                decomp = self._headless_decompile(func)
 
         # grab newly cached pseudocode
-        decomp = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')].codegen
+        if not self.headless:
+            decomp = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')]
 
         # refresh the UI after decompiling
         if refresh_gui and not self.headless:
@@ -471,3 +477,105 @@ class AngrInterface(DecompilerInterface):
 
         return func_addr
 
+    @staticmethod
+    def line_map_from_decompilation(dec):
+        import ailment
+        from angr.analyses.decompiler.structured_codegen.c import CStructuredCodeWalker, CFunctionCall, CIfElse, CIfBreak
+
+        if dec is None or dec.codegen is None:
+            return None
+
+        codegen = dec.codegen
+        base_addr = dec.project.loader.main_object.image_base_delta
+        if hasattr(dec, "unoptimized_ail_graph"):
+            nodes = dec.unoptimized_ail_graph.nodes
+        else:
+            l.critical(f"You are likely using an older version of angr that has no unoptimized_ail_graph."
+                       f" Using clinic_graph instead, results will be less accurate...")
+            nodes = dec.clinic.cc_graph.nodes
+
+        # get the mapping of the original AIL graph
+        mapping = defaultdict(set)
+        ail_node_addr_map = {
+            node.addr: node for node in nodes
+        }
+        for addr, ail_block in ail_node_addr_map.items():
+            # get instructions of this block
+            try:
+                vex_block = dec.project.factory.block(addr)
+            except Exception:
+                continue
+
+            ail_block_stmts = [stmt for stmt in ail_block.statements if not isinstance(stmt, ailment.statement.Label)]
+            if not ail_block_stmts:
+                continue
+
+            next_ail_stmt_idx = 0
+            for ins_addr in vex_block.instruction_addrs:
+                next_ail_stmt_addr = ail_block_stmts[next_ail_stmt_idx].ins_addr
+                mapping[next_ail_stmt_addr].add(ins_addr)
+                if ins_addr == next_ail_stmt_addr:
+                    next_ail_stmt_idx += 1
+                if next_ail_stmt_idx >= len(ail_block_stmts):
+                    break
+
+        # node to addr map
+        ailaddr_to_addr = defaultdict(set)
+        for k, v in mapping.items():
+            for v_ in v:
+                ailaddr_to_addr[k - base_addr].add(v_ - base_addr)
+
+        codegen.show_externs = False
+        codegen.regenerate_text()
+
+        decompilation = codegen.text
+        if not decompilation:
+            return
+
+        try:
+            first_code_pos = codegen.map_pos_to_addr.items()[0][0]
+        except Exception:
+            return
+
+        # map the position start to an address
+        pos_addr_map = defaultdict(set)
+        for start, pos_map in codegen.map_pos_to_addr.items():
+            obj = pos_map.obj
+            if not hasattr(obj, "tags"):
+                continue
+
+            # leads to mapping at the beginning of loops, so skip.
+            # see kill.o binary for send_signals
+            if isinstance(obj, CIfElse):
+                continue
+
+            ins_addr = obj.tags.get("ins_addr", None)
+            if ins_addr:
+                pos_addr_map[start].add(ins_addr - base_addr)
+
+        # find every line
+        line_end_pos = [i for i, x in enumerate(decompilation) if x == "\n"]
+        line_to_addr = defaultdict(set)
+        last_pos = len(decompilation) - 1
+        line_to_addr[1].add(codegen.cfunc.addr - base_addr)
+        for i, pos in enumerate(line_end_pos[:-1]):
+            if pos == last_pos:
+                break
+
+            curr_end = line_end_pos[i+1] - 1
+            # check if this is the variable decs and header
+            if curr_end < first_code_pos:
+                line_to_addr[i+2].add(codegen.cfunc.addr - base_addr)
+                continue
+
+            # not header, real code
+            for p_idx in range(pos+1, curr_end+1):
+                if p_idx in pos_addr_map:
+                    # line_to_addr[str(i+1)].update(pos_addr_map[p_idx])
+                    for ail_ins_addr in pos_addr_map[p_idx]:
+                        if ail_ins_addr in ailaddr_to_addr:
+                            line_to_addr[i+2].update(ailaddr_to_addr[ail_ins_addr])
+                        else:
+                            line_to_addr[i+2].add(ail_ins_addr)
+
+        return line_to_addr

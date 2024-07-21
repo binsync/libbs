@@ -9,7 +9,7 @@ import ida_hexrays
 import libbs
 from libbs.api.decompiler_interface import DecompilerInterface
 from libbs.artifacts import (
-    StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact
+    StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact, Decompilation
 )
 from libbs.api.decompiler_interface import requires_decompilation
 from . import compat
@@ -142,13 +142,31 @@ class IDAInterface(DecompilerInterface):
 
         return dec
 
-    def _decompile(self, function: Function) -> Optional[str]:
+    def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
         try:
             cfunc = ida_hexrays.decompile(function.addr)
         except Exception:
             return None
 
-        return str(cfunc)
+        decompilation = Decompilation(addr=function.addr, text=str(cfunc), decompiler=self.name)
+        if map_lines:
+            linenum_to_addr = defaultdict(set)
+            # always add the start as line 1
+            linenum_to_addr[1].add(cfunc.entry_ea)
+
+            # find all lines 2 - N
+            for addr, lines in cfunc.get_eamap().items():
+                for line in lines:
+                    y_holder = idaapi.int_pointer()
+                    if not cfunc.find_item_coords(line, None, y_holder):
+                        continue
+
+                    linenum = y_holder.value()
+                    linenum_to_addr[linenum].add(addr)
+
+            decompilation.line_map = {k: v for k, v in linenum_to_addr.items()}
+
+        return decompilation
 
     #
     # GUI API

@@ -8,7 +8,8 @@ from collections import defaultdict
 import os
 
 from libbs.api import DecompilerInterface
-from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat
+from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat, \
+    Decompilation
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
 from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
 
@@ -256,6 +257,34 @@ class TestHeadlessInterfaces(unittest.TestCase):
         struct_values = [v for k, v in struct_items]
         assert new_struct.name not in struct_keys and new_struct not in struct_values
 
+    def test_decompile_api(self):
+        for dec_name in [ANGR_DECOMPILER, GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
+            deci = DecompilerInterface.discover(
+                force_decompiler=dec_name,
+                headless=True,
+                headless_dec_path=DEC_TO_HEADLESS[dec_name],
+                binary_path=TEST_BINARY_DIR / "fauxware",
+            )
+            self.deci = deci
+            main_func_addr = deci.art_lifter.lift_addr(0x40071d)
+            decompilation = deci.decompile(main_func_addr, map_lines=True)
+
+            assert decompilation is not None, f"Decompilation failed for {dec_name}"
+            assert decompilation.decompiler == deci.name
+            assert decompilation.addr == main_func_addr
+            assert decompilation.text is not None
+            print_username_line = 'puts("Username: ");'
+            assert print_username_line in decompilation.text
+
+            line_no = [line.strip() for line in decompilation.text.splitlines()].index(print_username_line) + 1
+            assert bool(decompilation.line_map) is True
+
+            correct_addr = deci.art_lifter.lift_addr(0x400739)
+            # TODO: fix the mapping for binja
+            if dec_name != BINJA_DECOMPILER:
+                assert correct_addr in decompilation.line_map[line_no]
+
+            self.deci.shutdown()
 
 if __name__ == "__main__":
     unittest.main()

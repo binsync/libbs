@@ -1,5 +1,6 @@
 # pylint: disable=wrong-import-position,wrong-import-order
 import logging
+from collections import defaultdict
 from typing import Optional
 
 from angrmanagement.plugins import BasePlugin
@@ -94,7 +95,7 @@ class GenericBSAngrManagementPlugin(BasePlugin):
         if func is None:
             return False
 
-        decompilation = self.interface.decompile_function(func)
+        decompilation = self.interface.decompile_function(func).codegen
         stack_var = self.interface.find_stack_var_in_codegen(decompilation, offset)
         print("handle_stack_var_renamed signal sent out to everyone")
         self.interface.stack_variable_changed(StackVariable(offset, new_name, None, stack_var.size, func.addr))
@@ -102,7 +103,7 @@ class GenericBSAngrManagementPlugin(BasePlugin):
 
     # pylint: disable=unused-argument
     def handle_stack_var_retyped(self, func, offset, old_type, new_type):
-        decompilation = self.interface.decompile_function(func)
+        decompilation = self.interface.decompile_function(func).codegen
         stack_var = self.interface.find_stack_var_in_codegen(decompilation, offset)
         var_type = AngrInterface.stack_var_type_str(decompilation, stack_var)
         self.interface.stack_variable_changed(StackVariable(offset, stack_var.name, var_type, stack_var.size, func.addr))
@@ -110,7 +111,7 @@ class GenericBSAngrManagementPlugin(BasePlugin):
 
     # pylint: disable=unused-argument
     def handle_func_arg_renamed(self, func, offset, old_name, new_name):
-        decompilation = self.interface.decompile_function(func)
+        decompilation = self.interface.decompile_function(func).codegen
         func_args = AngrInterface.func_args_as_libbs_args(decompilation)
         self.interface.function_header_changed(
             FunctionHeader(
@@ -127,7 +128,7 @@ class GenericBSAngrManagementPlugin(BasePlugin):
 
     # pylint: disable=unused-argument
     def handle_func_arg_retyped(self, func, offset, old_type, new_type):
-        decompilation = self.interface.decompile_function(func)
+        decompilation = self.interface.decompile_function(func).codegen
         func_args = AngrInterface.func_args_as_libbs_args(decompilation)
         self.interface.function_header_changed(
             FunctionHeader(

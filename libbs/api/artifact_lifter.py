@@ -60,7 +60,7 @@ class ArtifactLifter:
     #
 
     def _lift_or_lower_artifact(self, artifact, mode):
-        target_attrs = ("type", "offset", "addr", "func_addr")
+        target_attrs = ("type", "offset", "addr", "func_addr", "line_map")
         if mode not in ("lower", "lift"):
             return None
 
@@ -81,6 +81,14 @@ class ArtifactLifter:
                         continue
                     lifting_func = getattr(self, f"{mode}_stack_offset")
                     setattr(lifted_art, attr, lifting_func(curr_val, lifted_art.addr))
+                # special handling for decompilation
+                elif attr == "line_map":
+                    lifted_line_map = {}
+                    lift_or_lower_func = self.lift_addr if mode == "lift" else self.lower_addr
+                    for k, v in curr_val.items():
+                        lifted_line_map[k] = {lift_or_lower_func(_v) for _v in v}
+
+                    setattr(lifted_art, attr, lifted_line_map)
                 else:
                     attr_func_name = attr if attr != "func_addr" else "addr"
                     lifting_func = getattr(self, f"{mode}_{attr_func_name}")
