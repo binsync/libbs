@@ -84,8 +84,9 @@ class ArtifactLifter:
                 # special handling for decompilation
                 elif attr == "line_map":
                     lifted_line_map = {}
+                    lift_or_lower_func = self.lift_addr if mode == "lift" else self.lower_addr
                     for k, v in curr_val.items():
-                        lifted_line_map[k] = {self.lift_addr(_v) for _v in v}
+                        lifted_line_map[k] = {lift_or_lower_func(_v) for _v in v}
 
                     setattr(lifted_art, attr, lifted_line_map)
                 else:
