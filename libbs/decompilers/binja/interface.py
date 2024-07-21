@@ -32,7 +32,7 @@ import libbs
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch, StructMember, FunctionArgument,
-    Enum, Struct, Artifact, Decompilation
+    Enum, Struct, Artifact, Decompilation, Context
 )
 
 from .artifact_lifter import BinjaArtifactLifter
@@ -92,7 +92,7 @@ class BinjaInterface(DecompilerInterface):
     # GUI
     #
 
-    def gui_active_context(self):
+    def gui_active_context(self) -> Optional[Context]:
         all_contexts = UIContext.allContexts()
         if not all_contexts:
             return None
@@ -103,14 +103,14 @@ class BinjaInterface(DecompilerInterface):
             return None
 
         actionContext = handler.actionContext()
-        func = actionContext.function
-        if func is None:
+        if actionContext is None:
             return None
 
-        func_addr = self.art_lifter.lift_addr(func.start)
-        return libbs.artifacts.Function(
-            func_addr, 0, header=FunctionHeader(func.name, func_addr)
-        )
+        func_addr = actionContext.function.start if actionContext.function is not None else None
+        addr = actionContext.address if actionContext.address is not None else None
+        # TODO: support screen_name
+        context = Context(addr=addr, func_addr=func_addr)
+        return self.art_lifter.lift(context)
 
     def gui_goto(self, func_addr) -> None:
         func_addr = self.art_lifter.lower_addr(func_addr)
@@ -162,6 +162,14 @@ class BinjaInterface(DecompilerInterface):
             return self.bv.file.filename
         except Exception:
             return None
+
+    def fast_get_function(self, func_addr) -> Optional[Function]:
+        func_addr = self.art_lifter.lower_addr(func_addr)
+        func = self.bv.get_function_at(func_addr)
+        if not func:
+            return None
+
+        return self.art_lifter.lift(self.bn_func_to_bs(func))
 
     def get_func_size(self, func_addr) -> int:
         func_addr = self.art_lifter.lower_addr(func_addr)
@@ -283,7 +291,7 @@ class BinjaInterface(DecompilerInterface):
 
         return update
 
-    def get_decompilation_object(self, function: Function) -> Optional[object]:
+    def get_decompilation_object(self, function: Function, **kwargs) -> Optional[object]:
         """
         Binary Ninja has no internal object that needs to be refreshed.
         """
@@ -372,6 +380,7 @@ class BinjaInterface(DecompilerInterface):
             if bs_var.type and bs_var.type != self.art_lifter.lift_type(str(bn_var.type)):
                 bn_var.type = bs_var.type
                 updates |= True
+                # refresh
                 bn_var = bn_func.parameter_vars[i]
 
             # name

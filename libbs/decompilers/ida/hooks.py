@@ -41,7 +41,7 @@ import idc
 from . import compat
 from libbs.artifacts import (
     FunctionHeader, StackVariable,
-    Comment, GlobalVariable, Enum, Struct
+    Comment, GlobalVariable, Enum, Struct, Context
 )
 
 
@@ -55,6 +55,16 @@ IDA_CMT_CMT = "cmt"
 IDA_RANGE_CMT = "range"
 IDA_EXTRA_CMT = "extra"
 IDA_CMT_TYPES = {IDA_CMT_CMT, IDA_EXTRA_CMT, IDA_RANGE_CMT}
+
+FORM_TYPE_TO_NAME = {
+    idaapi.BWN_PSEUDOCODE: "decompilation",
+    idaapi.BWN_DISASM: "disassembly",
+    idaapi.BWN_FUNCS: "functions",
+    idaapi.BWN_STRUCTS: "structs",
+    idaapi.BWN_ENUMS: "enums",
+}
+
+FUNC_FORMS = {"decompilation", "disassembly"}
 
 
 def while_should_watch(func):
@@ -90,20 +100,25 @@ class ScreenHook(ida_kernwin.View_Hooks):
         super(ScreenHook, self).__init__()
 
     def view_click(self, view, event):
+        if not self.interface._artifact_watchers_started:
+            return
+
         form_type = idaapi.get_widget_type(view)
-        decomp_view = idaapi.get_widget_vdui(view)
+        #decomp_view = idaapi.get_widget_vdui(view)
         if not form_type:
             return
 
-        # check if view is decomp or disassembly before doing expensive ea lookup
-        if not decomp_view and not form_type == idaapi.BWN_DISASM:
-            return
+        view_name = FORM_TYPE_TO_NAME.get(form_type, "unknown")
+        ctx = Context(screen_name=view_name)
+        if view_name in FUNC_FORMS:
+            ctx.addr = idaapi.get_screen_ea()
+            func = idaapi.get_func(ctx.addr)
+            if func is not None:
+                ctx.func_addr = func.start_ea
 
-        ea = idc.get_screen_ea()
-        if not ea:
-            return
-
-        self.interface.update_active_context(ea)
+        ctx = self.interface.art_lifter.lift(ctx)
+        self.interface._gui_active_context = ctx
+        self.interface.gui_context_changed(ctx)
 
 
 class IDAHotkeyHook(ida_kernwin.UI_Hooks):

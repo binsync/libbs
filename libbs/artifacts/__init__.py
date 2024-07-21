@@ -8,6 +8,7 @@ from .global_variable import GlobalVariable
 from .patch import Patch
 from .stack_variable import StackVariable
 from .struct import Struct, StructMember
+from .context import Context
 
 ART_NAME_TO_CLS = {
     Function.__name__: Function,

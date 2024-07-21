@@ -9,7 +9,8 @@ import ida_hexrays
 import libbs
 from libbs.api.decompiler_interface import DecompilerInterface
 from libbs.artifacts import (
-    StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact, Decompilation
+    StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact, Decompilation,
+    Context
 )
 from libbs.api.decompiler_interface import requires_decompilation
 from . import compat
@@ -28,6 +29,7 @@ class IDAInterface(DecompilerInterface):
         self._ctx_menu_names = []
         self._ui_hooks = []
         self._artifact_watcher_hooks = []
+        self._gui_active_context = None
 
         super().__init__(
             name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self),
@@ -168,11 +170,33 @@ class IDAInterface(DecompilerInterface):
 
         return decompilation
 
+    def fast_get_function(self, func_addr) -> Optional[Function]:
+        lowered_addr = self.art_lifter.lower_addr(func_addr)
+        ida_func = compat.get_func(lowered_addr)
+        if ida_func is None:
+            _l.error(f"Function does not exist at {lowered_addr}")
+            return None
+
+        ret_type = compat.get_func_ret_type(lowered_addr)
+        name = compat.get_func_name(lowered_addr)
+        lowered_func = Function(
+            addr=lowered_addr,
+            size=ida_func.size(),
+            header=FunctionHeader(
+                addr=lowered_addr,
+                name=name,
+                type_=ret_type
+            )
+        )
+
+        return self.art_lifter.lift(lowered_func)
+
     #
     # GUI API
     #
 
     def start_artifact_watchers(self):
+        super().start_artifact_watchers()
         self._artifact_watcher_hooks = [
             IDBHooks(self),
             # this hook is special because it relies on the decompiler being present, which can only be checked
@@ -184,19 +208,18 @@ class IDAInterface(DecompilerInterface):
             hook.hook()
 
     def stop_artifact_watchers(self):
+        super().stop_artifact_watchers()
         for hook in self._artifact_watcher_hooks:
             hook.unhook()
 
-    def gui_active_context(self):
-        if not self._init_plugin:
-            bs_func = self._ea_to_func(compat.get_screen_ea())
-            if bs_func is None:
-                return None
+    def gui_active_context(self) -> Context:
+        if self._gui_active_context is None:
+            low_addr = compat.get_screen_ea()
+            self._gui_active_context = Context(
+                addr=self.art_lifter.lift_addr(low_addr) if low_addr is not None else None
+            )
 
-            bs_func.addr = self.art_lifter.lift_addr(bs_func.addr)
-            return bs_func
-
-        return self._updated_ctx
+        return self._gui_active_context
 
     def gui_goto(self, func_addr) -> None:
         func_addr = self.art_lifter.lower_addr(func_addr)
@@ -350,14 +373,6 @@ class IDAInterface(DecompilerInterface):
     #
     # utils
     #
-
-    def update_active_context(self, addr):
-        bs_func = self._ea_to_func(addr)
-        if bs_func is None:
-            return
-
-        bs_func.addr = self.art_lifter.lift_addr(bs_func.addr)
-        self._updated_ctx = bs_func
 
     @staticmethod
     def _ea_to_func(addr):
