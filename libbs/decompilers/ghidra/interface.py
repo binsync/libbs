@@ -13,7 +13,7 @@ from libbs.api import DecompilerInterface
 from libbs.api.decompiler_interface import requires_decompilation
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum,
-    Decompilation
+    Decompilation, Context
 )
 
 from .artifact_lifter import GhidraArtifactLifter
@@ -53,8 +53,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._bridge = None
 
         # cachable attributes
-        self._last_addr = None
-        self._last_func = None
+        self._active_ctx = None
         self._binary_base_addr = None
         self._default_pointer_size = None
 
@@ -192,17 +191,19 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
         return answer if answer else ""
 
-    def gui_active_context(self):
+    def gui_active_context(self) -> Optional[Context]:
         active_addr = self.flat_api.currentLocation.getAddress().getOffset()
-        if active_addr is None:
-            return Function(0, 0)
+        if (self._active_ctx is None) or (active_addr is not None and self._active_ctx.addr != active_addr):
+            gfuncs = self.__fast_function(active_addr)
+            gfunc = gfuncs[0] if gfuncs else None
+            # TODO: support scree_name
+            context = Context(addr=active_addr)
+            if gfunc is not None:
+                context.func_addr = int(gfunc.getEntryPoint().getOffset())
 
-        if active_addr != self._last_addr:
-            self._last_addr = active_addr
-            self._last_func = self._gfunc_to_bsfunc(self._get_nearest_function(active_addr))
-            self._last_func.addr = self.art_lifter.lift_addr(self._last_func.addr)
+            self._active_ctx = self.art_lifter.lift(context)
 
-        return self._last_func
+        return self._active_ctx
 
     def gui_goto(self, func_addr) -> None:
         func_addr = self.art_lifter.lower_addr(func_addr)

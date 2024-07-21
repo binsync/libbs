@@ -72,7 +72,7 @@ class ArtifactLifter:
         for attr in target_attrs:
             if hasattr(lifted_art, attr):
                 curr_val = getattr(lifted_art, attr)
-                if not curr_val:
+                if curr_val is None:
                     continue
 
                 # special handling for stack variables

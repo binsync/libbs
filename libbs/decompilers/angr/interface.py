@@ -11,7 +11,7 @@ from libbs.api.decompiler_interface import (
     DecompilerInterface,
 )
 from libbs.artifacts import (
-    Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact, Decompilation
+    Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact, Decompilation, Context
 )
 from .artifact_lifter import AngrArtifactLifter
 
@@ -198,7 +198,7 @@ class AngrInterface(DecompilerInterface):
         self.gui_plugin.context_menu_items = self._ctx_menu_items
         return True
 
-    def gui_active_context(self):
+    def gui_active_context(self) -> Optional[Context]:
         curr_view = self.workspace.view_manager.current_tab
         if not curr_view:
             return None
@@ -208,13 +208,13 @@ class AngrInterface(DecompilerInterface):
         except NotImplementedError:
             return None
 
+        # TODO: support addr and screen_name for Context
         if func is None or func.am_obj is None:
             return None
 
-        func_addr = self.art_lifter.lift_addr(func.addr)
-        return Function(
-            func_addr, func.size, header=FunctionHeader(func.name, func_addr)
-        )
+        context = Context(addr=None, func_addr=func.addr)
+        return self.art_lifter.lift(context)
+
 
     #
     # Artifact API
