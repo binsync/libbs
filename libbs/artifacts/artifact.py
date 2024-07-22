@@ -60,7 +60,7 @@ class Artifact:
 
     @property
     def slots(self):
-        return [s for s in self.slots if s != self.ATTR_ATTR_IGNORE_SET and s not in self._attr_ignore_set]
+        return [s for s in self.__slots__ if s != self.ATTR_ATTR_IGNORE_SET and s not in self._attr_ignore_set]
 
     def copy(self) -> "Artifact":
         new_obj = self.__class__()
