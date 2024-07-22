@@ -203,6 +203,9 @@ class Function(Artifact):
         **kwargs
     ):
         super().__init__(**kwargs)
+        # never use dec_obj for comparison, dumping, etc.
+        self._attr_ignore_set.add("dec_obj")
+
         self.addr = addr
         self.size = size
         self.header = header

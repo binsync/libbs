@@ -15,20 +15,23 @@ class Artifact:
     """
     LST_CHNG_ATTR = "last_change"
     ADDR_ATTR = "addr"
+    ATTR_ATTR_IGNORE_SET = "_attr_ignore_set"
     __slots__ = (
         LST_CHNG_ATTR,
+        ATTR_ATTR_IGNORE_SET
     )
 
     def __init__(self, last_change: Optional[datetime.datetime] = None):
         self.last_change = last_change
+        self._attr_ignore_set = set()
 
     def __getstate__(self) -> Dict:
         return dict(
-            (k, getattr(self, k)) for k in self.__slots__
+            (k, getattr(self, k)) for k in self.slots
         )
 
     def __setstate__(self, state):
-        for k in self.__slots__:
+        for k in self.slots:
             if k in state:
                 setattr(self, k, state[k])
 
@@ -36,7 +39,7 @@ class Artifact:
         if not isinstance(other, self.__class__):
             return False
 
-        for k in self.__slots__:
+        for k in self.slots:
             if k == self.LST_CHNG_ATTR:
                 continue
 
@@ -47,7 +50,7 @@ class Artifact:
 
     def __hash__(self):
         long_str = ""
-        for attr in self.__slots__:
+        for attr in self.slots:
             long_str += getattr(self, attr)
 
         return hash(long_str)
@@ -55,9 +58,13 @@ class Artifact:
     def __repr__(self):
         return self.__str__()
 
+    @property
+    def slots(self):
+        return [s for s in self.slots if s != self.ATTR_ATTR_IGNORE_SET and s not in self._attr_ignore_set]
+
     def copy(self) -> "Artifact":
         new_obj = self.__class__()
-        for attr in self.__slots__:
+        for attr in self.slots:
             attr_v = getattr(self, attr)
             if isinstance(attr_v, list):
                 new_list = []
@@ -168,7 +175,7 @@ class Artifact:
     def diff(self, other, **kwargs) -> Dict:
         diff_dict = {}
         if not isinstance(other, self.__class__):
-            for k in self.__slots__:
+            for k in self.slots:
                 if k == self.LST_CHNG_ATTR:
                     continue
 
@@ -178,7 +185,7 @@ class Artifact:
                 }
             return diff_dict
 
-        for k in self.__slots__:
+        for k in self.slots:
             self_attr, other_attr = getattr(self, k), getattr(other, k)
             if self_attr != other_attr:
                 if k == self.LST_CHNG_ATTR:
@@ -220,7 +227,7 @@ class Artifact:
         if not obj2 or merge_obj == obj2:
             return merge_obj
 
-        for attr in self.__slots__:
+        for attr in self.slots:
             a2 = getattr(obj2, attr)
             if a2 is not None:
                 setattr(merge_obj, attr, a2)
@@ -235,7 +242,7 @@ class Artifact:
         obj_diff = obj1.diff(obj2)
         merge_obj = obj1.copy()
 
-        for attr in self.__slots__:
+        for attr in self.slots:
             if attr in obj_diff and obj_diff[attr]["before"] is None:
                 setattr(merge_obj, attr, getattr(obj2, attr))
 

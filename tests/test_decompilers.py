@@ -9,7 +9,7 @@ import os
 
 from libbs.api import DecompilerInterface
 from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat, \
-    Decompilation
+    Decompilation, Function
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
 from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
 
@@ -72,8 +72,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
             for func in deci.functions.values():
                 json_strings.append(func.dumps(fmt=ArtifactFormat.JSON))
                 # verify decompilation works
-                dec_func = deci.functions[func.addr]
+                dec_func: Function = deci.functions[func.addr]
                 assert dec_func is not None
+                dec_json: dict = json.loads(func.dumps(fmt=ArtifactFormat.JSON))
+                assert dec_json.get("header", {}).get("type", None) is not None
             for struct in deci.structs.values():
                 json_strings.append(struct.dumps(fmt=ArtifactFormat.JSON))
             for enum in deci.enums.values():
