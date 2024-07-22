@@ -320,7 +320,17 @@ class DecompilerInterface:
         @param artifact: Artifact to find references to
         @return: List of artifacts that reference the provided artifact
         """
+        if not isinstance(artifact, Function):
+            raise ValueError("Only functions are supported for xrefs_to")
+
         return []
+
+    def get_dependencies(self, artifact: Artifact, decompile=True, **kwargs) -> List[Artifact]:
+        if not isinstance(artifact, Function):
+            raise ValueError("Only functions are supported for get_dependencies")
+
+        # TODO: finish me
+        art_users = self.xrefs_to(artifact)
 
     def get_func_containing(self, addr: int) -> Optional[Function]:
         raise NotImplementedError
