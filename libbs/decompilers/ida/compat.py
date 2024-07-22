@@ -20,7 +20,7 @@ import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
 
 import libbs
 from libbs.artifacts import (
-    Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact
+    Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact, Context
 )
 
 from PyQt5.Qt import QObject
@@ -29,6 +29,16 @@ if typing.TYPE_CHECKING:
     from .interface import IDAInterface
 
 _l = logging.getLogger(__name__)
+
+FORM_TYPE_TO_NAME = {
+    idaapi.BWN_PSEUDOCODE: "decompilation",
+    idaapi.BWN_DISASM: "disassembly",
+    idaapi.BWN_FUNCS: "functions",
+    idaapi.BWN_STRUCTS: "structs",
+    idaapi.BWN_ENUMS: "enums",
+}
+
+FUNC_FORMS = {"decompilation", "disassembly"}
 
 #
 # Wrappers for IDA Main thread r/w operations
@@ -1081,6 +1091,28 @@ def has_older_hexrays_version():
 
     return not vers.startswith("8.2")
 
+def view_to_bs_context(view, get_var=True) -> Optional[Context]:
+    form_type = idaapi.get_widget_type(view)
+    if form_type is None:
+        return None
+
+    view_name = FORM_TYPE_TO_NAME.get(form_type, "unknown")
+    ctx = Context(screen_name=view_name)
+    if view_name in FUNC_FORMS:
+        ctx.addr = idaapi.get_screen_ea()
+        func = idaapi.get_func(ctx.addr)
+        if func is not None:
+            ctx.func_addr = func.start_ea
+            if get_var and view_name == "decompilation":
+                # get lvar info at cursor
+                vu = idaapi.get_widget_vdui(view)
+                if vu and vu.item:
+                    lvar = vu.item.get_lvar()
+                    if lvar:
+                        ctx.variable = lvar.name
+
+    return ctx
+
 
 #
 # IDA Classes
@@ -1109,25 +1141,22 @@ class GenericIDAPlugin(QObject, idaapi.plugin_t):
 
 
 class GenericAction(idaapi.action_handler_t):
-    def __init__(self, action_target, action_function):
+    def __init__(self, action_target, action_function, deci=None):
         idaapi.action_handler_t.__init__(self)
         self.action_target = action_target
         self.action_function = action_function
+        self.deci: IDAInterface = deci
 
     def activate(self, ctx):
         if ctx is None or ctx.action != self.action_target:
             return
 
+        ctx = view_to_bs_context(ctx.widget)
+        if ctx is None:
+            return
+
         dec_view = ida_hexrays.get_widget_vdui(ctx.widget)
-        # show a thing while we work
-        #prg = QProgressDialog("Querying...", "Stop", 0, 1, None)
-        #prg.show()
-
-        self.action_function()
-
-        # close the panel we showed while running
-        #prg.setValue(1)
-        #prg.close()
+        self.action_function(ctx, deci=self.deci)
 
         if dec_view is not None:
             dec_view.refresh_view(False)
