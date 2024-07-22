@@ -35,6 +35,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         analyze=True,
         project_location: Optional[Union[str, Path]] = None,
         project_name: Optional[str] = None,
+        program_name: Optional[str] = None,
         **kwargs
     ):
         self.loop_on_plugin = loop_on_plugin
@@ -45,6 +46,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._headless_analyze = analyze
         self._headless_project_location = project_location
         self._headless_project_name = project_name
+        self._program_name = program_name
         self._project = None
         self._program = None
 
@@ -91,18 +93,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
             self._program = None
 
     def _init_headless_components(self, *args, **kwargs):
-        if not self._binary_path.exists():
-            raise FileNotFoundError(f"Binary path does not exist: {self._binary_path}")
-
         if os.getenv("GHIDRA_INSTALL_DIR", None) is None:
             raise RuntimeError("GHIDRA_INSTALL_DIR must be set in the environment to use Ghidra headless.")
 
         from .compat.headless import open_program
         flat_api, project, program = open_program(
-            self._binary_path,
+            binary_path=self._binary_path,
             analyze=self._headless_analyze,
             project_location=self._headless_project_location,
             project_name=self._headless_project_name,
+            program_name=self._program_name,
         )
         if flat_api is None:
             raise RuntimeError("Failed to open program with Pyhidra")

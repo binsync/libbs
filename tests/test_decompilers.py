@@ -188,7 +188,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
             deci = DecompilerInterface.discover(
                 force_decompiler=GHIDRA_DECOMPILER,
                 headless=True,
-                binary_path=binary_path,
                 project_location=tmpdir,
                 project_name=proj_name,
                 analyze=False,
