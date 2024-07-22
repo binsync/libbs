@@ -74,7 +74,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
                 # verify decompilation works
                 dec_func: Function = deci.functions[func.addr]
                 assert dec_func is not None
-                dec_json: dict = json.loads(func.dumps(fmt=ArtifactFormat.JSON))
+                dec_json: dict = json.loads(dec_func.dumps(fmt=ArtifactFormat.JSON))
                 assert dec_json.get("header", {}).get("type", None) is not None
             for struct in deci.structs.values():
                 json_strings.append(struct.dumps(fmt=ArtifactFormat.JSON))
