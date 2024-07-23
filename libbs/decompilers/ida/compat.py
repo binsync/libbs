@@ -1091,7 +1091,8 @@ def has_older_hexrays_version():
 
     return not vers.startswith("8.2")
 
-def view_to_bs_context(view, get_var=True) -> Optional[Context]:
+
+def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
     form_type = idaapi.get_widget_type(view)
     if form_type is None:
         return None
@@ -1151,12 +1152,12 @@ class GenericAction(idaapi.action_handler_t):
         if ctx is None or ctx.action != self.action_target:
             return
 
-        ctx = view_to_bs_context(ctx.widget)
-        if ctx is None:
+        bs_ctx = view_to_bs_context(ctx.widget)
+        if bs_ctx is None:
             return
 
         dec_view = ida_hexrays.get_widget_vdui(ctx.widget)
-        self.action_function(ctx, deci=self.deci)
+        self.action_function(bs_ctx, deci=self.deci)
 
         if dec_view is not None:
             dec_view.refresh_view(False)

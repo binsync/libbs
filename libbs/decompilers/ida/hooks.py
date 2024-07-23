@@ -442,6 +442,7 @@ class IDPHooks(ida_idp.IDP_Hooks):
         action name is a vague String description of what changes occured
         is_undo specifies if this action was an undo or a redo
         """
+        self.interface.gui_undo_event(action=action_name)
         return 0
 
     def ev_replaying_undo(self, action_name, vec, is_undo):
