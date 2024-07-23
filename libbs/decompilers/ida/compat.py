@@ -288,6 +288,7 @@ def function(addr, decompiler_available=True, ida_code_view=None, **kwargs):
         with IDAViewCTX(func_addr) as ida_code_view:
             func = _get_func_info(ida_code_view)
 
+    func.dec_obj = ida_code_view.cfunc if ida_code_view is not None else None
     return func
 
 
