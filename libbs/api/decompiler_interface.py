@@ -314,13 +314,60 @@ class DecompilerInterface:
 
         return decompilation
 
-    def xrefs_to(self, artifact: Artifact) -> List[Artifact]:
+    def xrefs_to(self, artifact: Artifact, decompile=False) -> List[Artifact]:
         """
         Returns a list of artifacts that reference the provided artifact.
         @param artifact: Artifact to find references to
         @return: List of artifacts that reference the provided artifact
         """
+        if not isinstance(artifact, Function):
+            raise ValueError("Only functions are supported for xrefs_to")
+
         return []
+
+    def get_dependencies(self, artifact: Artifact, decompile=True, max_resolves=50, **kwargs) -> List[Artifact]:
+        if not isinstance(artifact, Function):
+            raise ValueError("Only functions are supported for get_dependencies")
+
+        # collect all xrefs to the function (for global variables)
+        if decompile:
+            # the function was never decompiled
+            if artifact.dec_obj is None:
+                artifact = self.functions[artifact.addr]
+
+        art_users = self.xrefs_to(artifact, decompile=decompile)
+        gvars = [art for art in art_users if isinstance(art, GlobalVariable)]
+
+        # collect all structs/enums used in the function types
+        imported_types = set()
+        imported_types.add(self.get_defined_type(artifact.header.type))
+        for arg in artifact.header.args.values():
+            imported_types.add(self.get_defined_type(arg.type))
+        for svar in artifact.stack_vars.values():
+            imported_types.add(self.get_defined_type(svar.type))
+
+        # start resolving dependencies in structs
+        for _ in range(max_resolves):
+            new_imports = False
+            for imported_type in list(imported_types):
+                if isinstance(imported_type, Struct):
+                    for member in imported_type.members.values():
+                        new_type = self.get_defined_type(member.type)
+                        if new_type is not None and new_type not in imported_types:
+                            imported_types.add(new_type)
+                            new_imports = True
+                            break
+
+                    if new_imports:
+                        break
+
+            if not new_imports:
+                break
+        else:
+            self.warning("Max dependency resolves reached, returning partial results")
+
+        all_deps = [art for art in list(imported_types) + gvars if art is not None]
+        return all_deps
 
     def get_func_containing(self, addr: int) -> Optional[Function]:
         raise NotImplementedError
@@ -690,7 +737,7 @@ class DecompilerInterface:
         elif isinstance(artifact, (Struct, Enum)):
             return (artifact.name,)
 
-    def type_is_user_defined(self, type_str, state=None):
+    def get_defined_type(self, type_str) -> Optional[Artifact]:
         if not type_str:
             return None
 
@@ -704,7 +751,12 @@ class DecompilerInterface:
             return None
 
         base_type_str = type_.base_type.type
-        return base_type_str if base_type_str in self.structs.keys() else None
+        if base_type_str in self.structs:
+            return self.structs[base_type_str]
+        elif base_type_str in self.enums:
+            return self.enums[base_type_str]
+
+        return None
 
     @staticmethod
     def _find_global_in_call_frames(global_name, max_frames=10):

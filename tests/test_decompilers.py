@@ -9,7 +9,7 @@ import os
 
 from libbs.api import DecompilerInterface
 from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat, \
-    Decompilation, Function
+    Decompilation, Function, StructMember
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
 from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
 
@@ -90,6 +90,85 @@ class TestHeadlessInterfaces(unittest.TestCase):
                 json.loads(json_str)
 
             deci.shutdown()
+
+    def test_ghidra_artifact_dependency_resolving(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            proj_name = "fauxware_ghidra"
+
+            deci = DecompilerInterface.discover(
+                force_decompiler=GHIDRA_DECOMPILER,
+                headless=True,
+                binary_path=self.FAUXWARE_PATH,
+                project_location=Path(temp_dir),
+                project_name=proj_name,
+            )
+            self.deci = deci
+            light_funcs = {addr: func for addr, func in deci.functions.items()}
+            auth_func_addr = deci.art_lifter.lift_addr(0x400664)
+            sneaky_gvar = deci.art_lifter.lift_addr(0x601048)
+
+            # dont decompile the function to test it is decompiled on demand, however
+            # a normal use case would be to decompile it first
+            auth_func = light_funcs[auth_func_addr]
+            initial_deps = deci.get_dependencies(auth_func)
+            for art in initial_deps:
+                assert art is not None
+                assert art.dumps(fmt=ArtifactFormat.JSON) is not None
+
+            assert len(initial_deps) == 1
+            dep = initial_deps[0]
+            assert isinstance(dep, GlobalVariable)
+            assert dep.addr == sneaky_gvar
+
+            # TODO: right now in headless Ghidra you cant ever set structs to variable types.
+            #   This is a limitation of the headless decompiler, not the API.
+            # now create two structs that reference each other
+            #
+            # struct A {
+            #     struct B *b;
+            # };
+            #
+            # struct B {
+            #   struct A *a;
+            #   int size;
+            # };
+            #
+
+            #struct_a = Struct(
+            #    name="A",
+            #    members={
+            #        0: StructMember(name="b", type_="B*", offset=0, size=8)
+            #    },
+            #    size=8
+            #)
+            #struct_b = Struct(
+            #    name="B",
+            #    members={
+            #        0: StructMember(name="a", type_="A*", offset=0, size=8),
+            #        1: StructMember(name="size", type_="int", offset=8, size=4)
+            #    },
+            #    size=12
+            #)
+
+            ## first add the structs to the decompiler, empty, so both names can exist
+            #deci.structs[struct_a.name] = Struct(name=struct_a.name, size=struct_a.size)
+            #deci.structs[struct_b.name] = Struct(name=struct_b.name, size=struct_b.size)
+
+            ## now add the members to the structs
+            #deci.structs[struct_a.name] = struct_a
+            #deci.structs[struct_b.name] = struct_b
+
+            ## now change a stack variable to be of type A
+            #auth_func = deci.functions[auth_func_addr]
+            #auth_func.stack_vars[-24].type = "A*"
+            #deci.functions[auth_func_addr] = auth_func
+            ## refresh the decompilation
+            #auth_func = deci.functions[auth_func_addr]
+
+            ## now get the dependencies again
+            #new_deps = deci.get_dependencies(auth_func)
+            #assert len(new_deps) == 3
+
 
     def test_ghidra_fauxware(self):
         deci = DecompilerInterface.discover(

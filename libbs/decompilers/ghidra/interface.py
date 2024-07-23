@@ -9,11 +9,11 @@ import logging
 from jfx_bridge.bridge import BridgedObject
 from ghidra_bridge import GhidraBridge
 
-from libbs.api import DecompilerInterface
+from libbs.api import DecompilerInterface, CType
 from libbs.api.decompiler_interface import requires_decompilation
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum,
-    Decompilation, Context
+    Decompilation, Context, Artifact
 )
 
 from .artifact_lifter import GhidraArtifactLifter
@@ -288,6 +288,37 @@ class GhidraDecompilerInterface(DecompilerInterface):
         lowered_addr = self.art_lifter.lower_addr(function.addr) if do_lower else function.addr
         return self._ghidra_decompile(self._get_nearest_function(lowered_addr))
 
+    def xrefs_to(self, artifact: Artifact, decompile=False) -> List[Artifact]:
+        xrefs = super().xrefs_to(artifact)
+        if not decompile:
+            return xrefs
+
+        artifact: Function
+        if artifact.dec_obj is None:
+            artifact = self.functions[artifact.addr]
+        decompilation_results = self.get_decompilation_object(artifact, do_lower=True)
+
+        high_function = decompilation_results.getHighFunction()
+        if high_function is None:
+            return xrefs
+
+        new_xrefs = []
+        for global_sym in high_function.getGlobalSymbolMap().getSymbols():
+            sym_storage = global_sym.getStorage()
+            if not sym_storage.isMemoryStorage():
+                continue
+
+            gvar = GlobalVariable(
+                addr=int(sym_storage.getMinAddress().getOffset()),
+                name=str(global_sym.getName()),
+                type_=str(global_sym.getDataType()) if global_sym.getDataType() else None,
+                size=int(global_sym.getSize()),
+            )
+            new_xrefs.append(gvar)
+
+        lifted_xrefs = [self.art_lifter.lift(x) for x in xrefs + new_xrefs]
+        return lifted_xrefs
+
     #
     # Extra API
     #
@@ -389,13 +420,15 @@ class GhidraDecompilerInterface(DecompilerInterface):
         func_addr = first_svar.addr
         decompilation = kwargs.get('decompilation', None) or self._ghidra_decompile(self._get_function(func_addr))
         ghidra_func = decompilation.getFunction() if decompilation else self._get_nearest_function(func_addr)
-        gstack_vars = self.__get_gstack_vars(ghidra_func)
+        gstack_vars = self.__get_decless_gstack_vars(ghidra_func)  # this works because the func was already decompiled
+        #gstack_vars = self.__get_gstack_vars(decompilation.getHighFunction())
         if not gstack_vars:
             return changes
 
         var_pairs = []
         for svar in svars:
             for gstack_var in gstack_vars:
+                #if svar.offset == gstack_var.storage.stackOffset:
                 if svar.offset == gstack_var.getStackOffset():
                     var_pairs.append((svar, gstack_var))
                     break
@@ -403,19 +436,26 @@ class GhidraDecompilerInterface(DecompilerInterface):
         rename_pairs = []
         retype_pairs = []
         changes = False
+        #updates = {}
         for svar, gstack_var in var_pairs:
-            if svar.name and svar.name != gstack_var.getName():
+            #update_data = [gstack_var.name, None]
+            if svar.name and svar.name != gstack_var.name:
                 changes |= True
                 rename_pairs.append((gstack_var, svar.name))
+                #update_data[0] = svar.name
 
             if svar.type:
                 parsed_type = self.typestr_to_gtype(svar.type)
                 if parsed_type is not None and parsed_type != str(gstack_var.getDataType()):
                     changes |= True
                     retype_pairs.append((gstack_var, parsed_type))
+                    #update_data[1] = parsed_type
+
+            #updates[gstack_var] = update_data
 
         self.__set_sym_names(rename_pairs, SourceType.USER_DEFINED)
         self.__set_sym_types(retype_pairs, SourceType.USER_DEFINED)
+        #changes = self._update_local_variable_symbols(updates)
         return changes
 
     def _get_stack_variable(self, addr: int, offset: int, **kwargs) -> Optional[StackVariable]:
@@ -496,6 +536,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                         ghidra_struct.clearAtOffset(i)
                     ghidra_struct.replaceAtOffset(offset, gtype, member.size, member.name, "")
                     break
+        # TODO: normalize the size of the struct if it did not grow enough
         try:
             if old_ghidra_struct is not None:
                 data_manager.replaceDataType(old_ghidra_struct, ghidra_struct, True)
@@ -795,16 +836,39 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def _get_gstack_var(self, func: "GhidraFunction", offset: int) -> Optional["LocalVariableDB"]:
         """
+        TODO: this needs to be updated that when its called we get decomilation, and pass it to
+            __get_gstack_vars
+
         @param func:
         @param offset:
         @return:
         """
-        gstack_vars = self.__get_gstack_vars(func)
+        gstack_vars = self.__get_decless_gstack_vars(func)
         for var in gstack_vars:
             if var.getStackOffset() == offset:
                 return var
 
         return None
+
+    def _headless_lookup_struct(self, typestr: str) -> Optional["DataType"]:
+        """
+        This function is mostly a hack because getDataTypeManagerService does not have up to date
+        datatypes in headless mode, so any structs you create dont get registerd
+        """
+        if not typestr:
+            return None
+
+        type_: CType = self.type_parser.parse_type(typestr)
+        if not type_:
+            # it was not parseable
+            return None
+
+        # type is known and parseable
+        if not type_.is_unknown:
+            return None
+
+        base_type_str = type_.base_type.type
+        return self.currentProgram.getDataTypeManager().getDataType("/" + base_type_str)
 
     def typestr_to_gtype(self, typestr: str) -> Optional["DataType"]:
         """
@@ -825,8 +889,14 @@ class GhidraDecompilerInterface(DecompilerInterface):
         try:
             parsed_type = dt_parser.parse(typestr)
         except Exception as e:
+            parsed_type = None
+
+        if self.headless and parsed_type is None:
+            # try again in headless mode only!
+            parsed_type = self._headless_lookup_struct(typestr)
+
+        if parsed_type is None:
             _l.warning(f"Failed to parse type string: {typestr}")
-            return None
 
         return parsed_type
 
@@ -891,8 +961,15 @@ class GhidraDecompilerInterface(DecompilerInterface):
         ]
 
     @ui_remote_eval
-    def __get_gstack_vars(self, func: "GhidraFunction") -> List["LocalVariableDB"]:
+    def __get_decless_gstack_vars(self, func: "GhidraFunction") -> List["LocalVariableDB"]:
         return [var for var in func.getAllVariables() if var.isStackVariable()]
+
+    @ui_remote_eval
+    def __get_gstack_vars(self, high_func: "HighFunction") -> List["LocalVariableDB"]:
+        return [
+            var for var in high_func.getLocalSymbolMap().getSymbols()
+            if var.storage and var.storage.isStackStorage()
+        ]
 
     @ui_remote_eval
     def __enum_names(self) -> List[Tuple[str, "EnumDB"]]:
@@ -907,7 +984,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ui_remote_eval
     def __stack_variables(self, decompilation) -> List[Tuple[int, str, str, int]]:
         return [
-            (int(sym.getStorage().getStackOffset()), str(sym.getName()), str(sym.getDataType()), int(sym.getSize()))
+            (int(sym.getStorage().getStackOffset()), str(sym.getName()), sym.getDataType().displayName, int(sym.getSize()))
             for sym in decompilation.getHighFunction().getLocalSymbolMap().getSymbols()
             if sym.getStorage().isStackStorage()
         ]

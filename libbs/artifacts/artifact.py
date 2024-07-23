@@ -51,7 +51,7 @@ class Artifact:
     def __hash__(self):
         long_str = ""
         for attr in self.slots:
-            long_str += getattr(self, attr)
+            long_str += str(getattr(self, attr))
 
         return hash(long_str)
 
