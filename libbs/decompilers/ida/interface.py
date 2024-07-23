@@ -71,16 +71,15 @@ class IDAInterface(DecompilerInterface):
         return compat.ask_choice(question, choices, title=title)
 
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
-        # Function explaining action
-        explain_action = idaapi.action_desc_t(
+        action = idaapi.action_desc_t(
             name,
             action_string,
-            compat.GenericAction(name, callback_func),
+            compat.GenericAction(name, callback_func, deci=self),
             "",
             action_string,
             199
         )
-        idaapi.register_action(explain_action)
+        idaapi.register_action(action)
         idaapi.attach_action_to_menu(
             f"Edit/{category}/{name}" if category else f"Edit/{name}",
             name,
