@@ -213,10 +213,10 @@ class IDAInterface(DecompilerInterface):
 
     def gui_active_context(self) -> Context:
         if self._gui_active_context is None:
-            low_addr = compat.get_screen_ea()
-            self._gui_active_context = Context(
-                addr=self.art_lifter.lift_addr(low_addr) if low_addr is not None else None
-            )
+            low_addr, low_func_addr = compat.get_function_cursor_at()
+            self._gui_active_context = self.art_lifter.lift(Context(
+                addr=low_addr, func_addr=low_func_addr
+            ))
 
         return self._gui_active_context
 

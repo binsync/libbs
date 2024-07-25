@@ -1028,9 +1028,9 @@ def get_screen_ea():
 def get_function_cursor_at():
     curr_addr = get_screen_ea()
     if curr_addr is None:
-        return None
+        return None, None
 
-    return ida_func_addr(curr_addr)
+    return curr_addr, ida_func_addr(curr_addr)
 
 
 #
