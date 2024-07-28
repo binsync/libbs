@@ -10,7 +10,7 @@ import libbs
 from libbs.api.decompiler_interface import DecompilerInterface
 from libbs.artifacts import (
     StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact, Decompilation,
-    Context
+    Context, Typedef
 )
 from libbs.api.decompiler_interface import requires_decompilation
 from . import compat
@@ -333,6 +333,16 @@ class IDAInterface(DecompilerInterface):
         @return:
         """
         return compat.enums()
+
+    # typedefs
+    def _set_typedef(self, typedef: Typedef, **kwargs) -> bool:
+        return compat.set_typedef(typedef)
+
+    def _get_typedef(self, name) -> Optional[Typedef]:
+        return compat.typedef(name)
+
+    def _typedefs(self) -> Dict[str, Typedef]:
+        return compat.typedefs()
 
     # patches
     def _set_patch(self, patch: Patch, **kwargs) -> bool:

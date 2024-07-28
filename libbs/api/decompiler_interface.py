@@ -17,7 +17,7 @@ from libbs.artifacts import (
     Artifact,
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch,
-    Enum, Struct, FunctionArgument, Context, Decompilation
+    Enum, Struct, FunctionArgument, Context, Decompilation, Typedef
 )
 from libbs.decompilers import SUPPORTED_DECOMPILERS, ANGR_DECOMPILER, \
     BINJA_DECOMPILER, IDA_DECOMPILER, GHIDRA_DECOMPILER
@@ -97,6 +97,7 @@ class DecompilerInterface:
         self.structs = ArtifactDict(Struct, self, error_on_duplicate=error_on_artifact_duplicates)
         self.patches = ArtifactDict(Patch, self, error_on_duplicate=error_on_artifact_duplicates)
         self.global_vars = ArtifactDict(GlobalVariable, self, error_on_duplicate=error_on_artifact_duplicates)
+        self.typedefs = ArtifactDict(Typedef, self, error_on_duplicate=error_on_artifact_duplicates)
 
         self._decompiler_available = decompiler_available
         # override the file-saved config when one is passed in manually, otherwise
@@ -538,6 +539,26 @@ class DecompilerInterface:
     def _enums(self) -> Dict[str, Enum]:
         """
         Returns a dict of libbs.Enum that contain the name of the enums in the decompiler.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
+
+        @return:
+        """
+        return {}
+
+    # typedefs
+    def _set_typedef(self, typedef: Typedef, **kwargs) -> bool:
+        return False
+
+    def _get_typedef(self, name) -> Optional[Typedef]:
+        return None
+
+    def _del_typedef(self, name) -> bool:
+        return False
+
+    def _typedefs(self) -> Dict[str, Typedef]:
+        """
+        Returns a dict of libbs.Typedef that contain the name of the typedefs in the decompiler.
         Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
         exists. To get live artifacts, use the singleton function of the same name.
 

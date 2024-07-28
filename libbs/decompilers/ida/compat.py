@@ -20,7 +20,7 @@ import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
 
 import libbs
 from libbs.artifacts import (
-    Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact, Context
+    Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact, Context, Typedef
 )
 
 from PyQt5.Qt import QObject
@@ -941,6 +941,58 @@ def set_enum(bs_enum: Enum):
 
     return True
 
+#
+# Typedefs
+#
+
+@execute_write
+def typedefs() -> typing.Dict[str, Typedef]:
+    typedefs = {}
+    idati = idaapi.get_idati()
+    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+        tif = ida_typeinf.tinfo_t()
+        success = tif.get_numbered_type(idati, ord_num)
+        if not success:
+            continue
+
+        # TODO: this is incorrect!
+        if not tif.is_typeref():
+            continue
+
+        name = tif.get_type_name()
+        if not name:
+            continue
+
+        type_name = tif.get_next_type_name()
+        if not type_name:
+            continue
+
+        typedefs[name] = Typedef(name=name, type_=type_name)
+
+    return typedefs
+
+@execute_write
+def typedef(name) -> typing.Optional[Typedef]:
+    idati = idaapi.get_idati()
+    tif = ida_typeinf.tinfo_t()
+    success = tif.get_named_type(idati, name)
+    if not success:
+        return None
+
+    type_name = tif.get_final_type_name()
+    return Typedef(name=name, type_=type_name)
+
+@execute_write
+def set_typedef(bs_typedef: Typedef):
+    base_type_tif = convert_type_str_to_ida_type(bs_typedef.type)
+    if base_type_tif is None:
+        return False
+
+    idati = idaapi.get_idati()
+    typedef_tif = ida_typeinf.tinfo_t()
+    typedef_tif.create_typedef(idati, base_type_tif.get_final_type_name())
+    typedef_tif.set_named_type(idati, bs_typedef.name, ida_typeinf.NTF_REPLACE)
+    return True
 
 #
 #   IDA GUI r/w

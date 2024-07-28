@@ -3,7 +3,7 @@ import logging
 
 from libbs.artifacts import (
     Artifact, Comment, Enum, FunctionHeader, Function, FunctionArgument,
-    GlobalVariable, Patch, StackVariable, Struct, StructMember
+    GlobalVariable, Patch, StackVariable, Struct, StructMember, Typedef
 )
 
 if typing.TYPE_CHECKING:
@@ -44,6 +44,7 @@ class ArtifactDict(dict):
             GlobalVariable: (self._deci._set_global_variable, self._deci._get_global_var, self._deci._global_vars, self._deci._del_global_var),
             Struct: (self._deci._set_struct, self._deci._get_struct, self._deci._structs, self._deci._del_struct),
             Enum: (self._deci._set_enum, self._deci._get_enum, self._deci._enums, self._deci._del_enum),
+            Typedef: (self._deci._set_typedef, self._deci._get_typedef, self._deci._typedefs, self._deci._del_typedef),
             Comment: (self._deci._set_comment, self._deci._get_comment, self._deci._comments, self._deci._del_comment),
             Patch: (self._deci._set_patch, self._deci._get_patch, self._deci._patches, self._deci._del_patch)
         }
