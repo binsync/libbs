@@ -166,7 +166,6 @@ def convert_type_str_to_ida_type(type_str) -> typing.Optional['ida_typeinf']:
 
     return tif if valid_parse is not None else None
 
-
 @execute_write
 def ida_to_bs_stack_offset(func_addr, ida_stack_off):
     frame = idaapi.get_frame(func_addr)
@@ -945,6 +944,35 @@ def set_enum(bs_enum: Enum):
 # Typedefs
 #
 
+
+@execute_write
+def typedef_info(tif) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
+    if not tif.is_typeref():
+        return False, None, None
+
+    name = tif.get_type_name()
+    type_name = tif.get_next_type_name()
+    if not name:
+        return False, None, None
+
+    if type_name is None:
+        # try again, but with ordinal
+        backup_tif = ida_typeinf.tinfo_t()
+        backup_tif.get_named_type(idaapi.get_idati(), name, ida_typeinf.BTF_TYPEDEF, True, True)
+        real_type_val = backup_tif.get_realtype()
+        try:
+            real_type = ida_typeinf.tinfo_t(real_type_val)
+        except Exception:
+            return False, None, None
+
+        type_name = str(real_type)
+
+    if not name or not type_name or name == type_name:
+        return False, None, None
+
+    return True, name, type_name
+
+
 @execute_write
 def typedefs() -> typing.Dict[str, Typedef]:
     typedefs = {}
@@ -955,21 +983,14 @@ def typedefs() -> typing.Dict[str, Typedef]:
         if not success:
             continue
 
-        # TODO: this is incorrect!
-        if not tif.is_typeref():
-            continue
-
-        name = tif.get_type_name()
-        if not name:
-            continue
-
-        type_name = tif.get_next_type_name()
-        if not type_name:
+        is_typedef, name, type_name = typedef_info(tif)
+        if not is_typedef:
             continue
 
         typedefs[name] = Typedef(name=name, type_=type_name)
 
     return typedefs
+
 
 @execute_write
 def typedef(name) -> typing.Optional[Typedef]:
@@ -979,19 +1000,30 @@ def typedef(name) -> typing.Optional[Typedef]:
     if not success:
         return None
 
+    is_typedef, name, type_name = typedef_info(tif)
+    if not is_typedef:
+        return None
+
     type_name = tif.get_final_type_name()
     return Typedef(name=name, type_=type_name)
 
+
+def make_typedef_tif(name, type_str):
+    tif = ida_typeinf.tinfo_t()
+    ida_type_str = f"typedef {type_str} {name};"
+    valid_parse = ida_typeinf.parse_decl(tif, None, ida_type_str, 1)
+    return tif if valid_parse is not None else None
+
+
 @execute_write
 def set_typedef(bs_typedef: Typedef):
-    base_type_tif = convert_type_str_to_ida_type(bs_typedef.type)
-    if base_type_tif is None:
+    type_tif = convert_type_str_to_ida_type(bs_typedef.type)
+    if type_tif is None:
+        _l.critical(f"Attempted to set a typedef with an invalid type: {bs_typedef.type} (does not exist)")
         return False
 
-    idati = idaapi.get_idati()
-    typedef_tif = ida_typeinf.tinfo_t()
-    typedef_tif.create_typedef(idati, base_type_tif.get_final_type_name())
-    typedef_tif.set_named_type(idati, bs_typedef.name, ida_typeinf.NTF_REPLACE)
+    typedef_tif = make_typedef_tif(bs_typedef.name, bs_typedef.type)
+    typedef_tif.set_named_type(idaapi.get_idati(), bs_typedef.name, ida_typeinf.NTF_REPLACE)
     return True
 
 #
