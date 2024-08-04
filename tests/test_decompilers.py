@@ -84,6 +84,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
                 json_strings.append(gvar.dumps(fmt=ArtifactFormat.JSON))
             for comment in deci.comments.values():
                 json_strings.append(comment.dumps(fmt=ArtifactFormat.JSON))
+            for typedef in deci.typedefs.values():
+                json_strings.append(typedef.dumps(fmt=ArtifactFormat.JSON))
 
             # validate each one is not corrupted
             for json_str in json_strings:
@@ -351,6 +353,15 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert updated.name == new_struct.name
         assert updated.members[0].type == 'char'
         assert updated.members[1].type == 'int'
+
+        # test some typedef stuff
+        new_typedef = Typedef(name="my_int", type_="int")
+        deci.typedefs[new_typedef.name] = new_typedef
+        assert deci.typedefs[new_typedef.name] == new_typedef
+
+        new_typedef = Typedef(name="my_int_t", type_="my_int")
+        deci.typedefs[new_typedef.name] = new_typedef
+        assert deci.typedefs[new_typedef.name] == new_typedef
 
         # test function arg change
         func_main = deci.functions[deci.art_lifter.lift_addr(0x40071d)]
