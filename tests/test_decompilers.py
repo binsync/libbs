@@ -9,7 +9,7 @@ import os
 
 from libbs.api import DecompilerInterface
 from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat, \
-    Decompilation, Function, StructMember
+    Decompilation, Function, StructMember, Typedef
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
 from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
 
@@ -185,6 +185,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].name == self.RENAMED_NAME
 
+        #
+        # Structs
+        #
+
         func_args = main.header.args
         func_args[0].name = "new_name_1"
         func_args[0].type = "int"
@@ -195,15 +199,24 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
 
-        struct = deci.structs['eh_frame_hdr']
-        struct.name = "my_struct_name"
-        struct.members[0].type = 'char'
-        struct.members[1].type = 'char'
-        deci.structs['eh_frame_hdr'] = struct
-        updated = deci.structs[struct.name]
-        assert updated.name == struct.name
+        eh_hdr_struct = deci.structs['eh_frame_hdr']
+        eh_hdr_struct.name = "my_struct_name"
+        eh_hdr_struct.members[0].type = 'char'
+        eh_hdr_struct.members[1].type = 'char'
+        deci.structs['eh_frame_hdr'] = eh_hdr_struct
+        updated = deci.structs[eh_hdr_struct.name]
+        assert updated.name == eh_hdr_struct.name
         assert updated.members[0].type == 'char'
         assert updated.members[1].type == 'char'
+
+        #
+        # Enums
+        #
+
+        elf_dyn_tag_enum: Enum = deci.enums['ELF/Elf64_DynTag']
+        elf_dyn_tag_enum.members['DT_YEET'] = elf_dyn_tag_enum.members['DT_FILTER'] + 1
+        deci.enums[elf_dyn_tag_enum.name] = elf_dyn_tag_enum
+        assert deci.enums[elf_dyn_tag_enum.name] == elf_dyn_tag_enum
 
         enum = Enum("my_enum", {"member1": 0, "member2": 1})
         deci.enums[enum.name] = enum
@@ -212,6 +225,28 @@ class TestHeadlessInterfaces(unittest.TestCase):
         nested_enum = Enum("SomeEnums/nested_enum", {"field": 0, "another_field": 2, "third_field": 3})
         deci.enums[nested_enum.name] = nested_enum
         assert deci.enums[nested_enum.name] == nested_enum
+
+        #
+        # Typedefs
+        #
+
+        # simple typedef
+        typedef = Typedef("my_typedef", "int")
+        deci.typedefs[typedef.name] = typedef
+        assert deci.typedefs[typedef.name] == typedef
+
+        # typedef to a struct
+        typedef = Typedef("my_eh_frame_hdr", eh_hdr_struct.name)
+        deci.typedefs[typedef.name] = typedef
+        assert deci.typedefs[typedef.name] == typedef
+
+        # typedef to an enum
+        typedef = Typedef("my_elf_dyn_tag", elf_dyn_tag_enum.name)
+        deci.typedefs[typedef.name] = typedef
+        updated_typedef = deci.typedefs[typedef.name]
+        assert updated_typedef.name == typedef.name
+        # TODO: this should be changed when we do https://github.com/binsync/libbs/issues/97
+        assert updated_typedef.type == typedef.type.split("/")[-1]
 
         # gvar_addr = deci.art_lifter.lift_addr(0x4008e0)
         # g1 = deci.global_vars[gvar_addr]
@@ -236,12 +271,12 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # Test Artifact Deletion
         #
 
-        struct = deci.structs['my_struct_name']
+        eh_hdr_struct = deci.structs['my_struct_name']
         del deci.structs['my_struct_name']
         struct_items = deci.structs.items()
         struct_keys = [k for k, v in struct_items]
         struct_values = [v for k, v in struct_items]
-        assert struct.name not in struct_keys and struct not in struct_values
+        assert eh_hdr_struct.name not in struct_keys and eh_hdr_struct not in struct_values
 
         deci.shutdown()
 

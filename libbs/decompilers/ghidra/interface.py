@@ -13,7 +13,7 @@ from libbs.api import DecompilerInterface, CType
 from libbs.api.decompiler_interface import requires_decompilation
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable, Comment, FunctionArgument, GlobalVariable, Struct, StructMember, Enum,
-    Decompilation, Context, Artifact
+    Decompilation, Context, Artifact, Typedef
 )
 
 from .artifact_lifter import GhidraArtifactLifter
@@ -647,7 +647,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 data_manager.addDataType(ghidra_enum, DataTypeConflictHandler.DEFAULT_HANDLER)
             return True
         except Exception as ex:
-            print(f'Error adding enum {enum.name}: {ex}')
+            self.error(f'Error adding enum {enum.name}: {ex}')
             return False
 
     def _get_enum(self, name) -> Optional[Enum]:
@@ -667,6 +667,66 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 enums[enum_name] = Enum(name=enum_name, members=members)
 
         return enums
+
+    @ghidra_transaction
+    def _set_typedef(self, typedef: Typedef, **kwargs) -> bool:
+        from .compat.imports import TypedefDataType, CategoryPath, DataTypeConflictHandler
+
+        # validate the typedef basetype
+        base_g_type = self.typestr_to_gtype(typedef.type)
+        if base_g_type is None:
+            raise ValueError(f"Invalid base type for typedef {typedef.name}: {typedef.type}")
+
+        # parse out the correct name
+        corrected_typedef_name = "/" + typedef.name
+        split = corrected_typedef_name.split('/')
+        unpathed_name = split[-1]
+        category_path = '/'.join(split[:-1])
+        # do a full parse of the typedef
+        ghidra_typedef = TypedefDataType(CategoryPath(category_path), unpathed_name, base_g_type)
+        if ghidra_typedef is None:
+            raise ValueError(f"Failed to create TypedefDataType for {typedef.name}")
+
+        # get the old typedef if it exists, and override it
+        old_g_typedef = self.currentProgram.getDataTypeManager().getDataType(corrected_typedef_name)
+        data_manager = self.currentProgram.getDataTypeManager()
+
+        try:
+            if old_g_typedef:
+                data_manager.replaceDataType(old_g_typedef, ghidra_typedef, True)
+            else:
+                data_manager.addDataType(ghidra_typedef, DataTypeConflictHandler.DEFAULT_HANDLER)
+            return True
+        except Exception as ex:
+            self.error(f'Error adding typedef {typedef.name}: {ex}')
+            return False
+
+    def _get_typedef(self, name) -> Optional[Typedef]:
+        g_typedef = self._get_ghidra_typedef(name)
+        if g_typedef is None:
+            return None
+
+        base_type = g_typedef.getDataType()
+        if base_type is None:
+            return None
+
+        return Typedef(name=name, type_=str(base_type.getName()))
+
+    def _typedefs(self) -> Dict[str, Typedef]:
+        typedefs = {}
+        typedefs_by_name = self.__gtypedefs()
+        for name, gtypedef in typedefs_by_name:
+            type_ = gtypedef.getDataType()
+            if type_ is None:
+                continue
+
+            type_name = str(type_.getName())
+            if not type_name or type_name == name:
+                continue
+
+            typedefs[name] = Typedef(name=name, type_=type_name)
+
+        return typedefs
 
     @ghidra_transaction
     def _set_global_variable(self, gvar: GlobalVariable, **kwargs):
@@ -891,9 +951,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
         except Exception as e:
             parsed_type = None
 
-        if self.headless and parsed_type is None:
-            # try again in headless mode only!
-            parsed_type = self._headless_lookup_struct(typestr)
+        # attempt a lookup as a custom datatype
+        if parsed_type is None:
+            parsed_type = self.currentProgram.getDataTypeManager().getDataType("/" + typestr)
+
+        #if self.headless and parsed_type is None:
+        #    # try again in headless mode only!
+        #    parsed_type = self._headless_lookup_struct(typestr)
 
         if parsed_type is None:
             _l.warning(f"Failed to parse type string: {typestr}")
@@ -918,6 +982,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         ghidra_enum = self.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
         return ghidra_enum if self.isinstance(ghidra_enum, EnumDB) else None
+
+    def _get_ghidra_typedef(self, typedef_name: str) -> Optional["TypedefDB"]:
+        from .compat.imports import TypedefDB
+
+        ghidra_typedef = self.currentProgram.getDataTypeManager().getDataType("/" + typedef_name)
+        return ghidra_typedef if self.isinstance(ghidra_typedef, TypedefDB) else None
 
     @staticmethod
     def isinstance(obj, cls):
@@ -1032,6 +1102,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return [
             (struct.getPathName()[1:], struct)
             for struct in self.currentProgram.getDataTypeManager().getAllStructures()
+        ]
+
+    @ui_remote_eval
+    def __gtypedefs(self):
+        from .compat.imports import TypedefDB
+
+        return [
+            (typedef.getPathName()[1:], typedef)
+            for typedef in self.currentProgram.getDataTypeManager().getAllDataTypes()
+            if isinstance(typedef, TypedefDB)
         ]
 
     @ui_remote_eval
