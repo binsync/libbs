@@ -5,6 +5,7 @@ from collections import OrderedDict, defaultdict
 import idc
 import idaapi
 import ida_hexrays
+from packaging.version import Version
 
 import libbs
 from libbs.api.decompiler_interface import DecompilerInterface
@@ -38,7 +39,7 @@ class IDAInterface(DecompilerInterface):
 
         self._max_patch_size = 0xff
         self._decompiler_available = None
-        self._crashing_version = False
+        self._dec_version = False
 
         # GUI properties
         self._updated_ctx = None
@@ -288,8 +289,9 @@ class IDAInterface(DecompilerInterface):
 
     # structs
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
+        self._dec_version = compat.get_decompiler_version() if self._dec_version is None else self._dec_version
         data_changed = False
-        if self._crashing_version and struct.name == "gcc_va_list":
+        if (self._dec_version is not None and self._dec_version < Version("8.3")) and "gcc_va_list" in struct.name:
             _l.critical(f"Syncing the struct {struct.name} in IDA Pro 8.2 <= will cause a crash. Skipping...")
             return False
 

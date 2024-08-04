@@ -14,6 +14,7 @@ import threading
 from functools import wraps
 import typing
 import logging
+from packaging.version import Version
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
     ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum, ida_kernwin
@@ -945,17 +946,24 @@ def set_enum(bs_enum: Enum):
 #
 
 
-@execute_write
-def typedef_info(tif) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
-    if not tif.is_typeref():
-        return False, None, None
+def use_new_typedef_check():
+    dec_version = get_decompiler_version()
+    return dec_version >= Version("8.4") if dec_version is not None else False
+
+
+def typedef_info(tif, use_new_check=False) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
+    invalid_typedef = False, None, None
+    tdef_checker = lambda t: t.is_typedef() if use_new_check else t.is_typeref()
+    if not tdef_checker(tif):
+        return invalid_typedef
 
     name = tif.get_type_name()
     type_name = tif.get_next_type_name()
     if not name:
-        return False, None, None
+        return invalid_typedef
 
-    if type_name is None:
+    # only on high IDA versions can you run this code
+    if type_name is None and use_new_check:
         # try again, but with ordinal
         backup_tif = ida_typeinf.tinfo_t()
         backup_tif.get_named_type(idaapi.get_idati(), name, ida_typeinf.BTF_TYPEDEF, True, True)
@@ -963,12 +971,12 @@ def typedef_info(tif) -> typing.Tuple[bool, typing.Optional[str], typing.Optiona
         try:
             real_type = ida_typeinf.tinfo_t(real_type_val)
         except Exception:
-            return False, None, None
+            return invalid_typedef
 
         type_name = str(real_type)
 
     if not name or not type_name or name == type_name:
-        return False, None, None
+        return invalid_typedef
 
     return True, name, type_name
 
@@ -977,13 +985,14 @@ def typedef_info(tif) -> typing.Tuple[bool, typing.Optional[str], typing.Optiona
 def typedefs() -> typing.Dict[str, Typedef]:
     typedefs = {}
     idati = idaapi.get_idati()
+    use_new_check = use_new_typedef_check()
     for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
         tif = ida_typeinf.tinfo_t()
         success = tif.get_numbered_type(idati, ord_num)
         if not success:
             continue
 
-        is_typedef, name, type_name = typedef_info(tif)
+        is_typedef, name, type_name = typedef_info(tif, use_new_check=use_new_check)
         if not is_typedef:
             continue
 
@@ -1000,11 +1009,10 @@ def typedef(name) -> typing.Optional[Typedef]:
     if not success:
         return None
 
-    is_typedef, name, type_name = typedef_info(tif)
+    is_typedef, name, type_name = typedef_info(tif, use_new_check=use_new_typedef_check())
     if not is_typedef:
         return None
 
-    type_name = tif.get_final_type_name()
     return Typedef(name=name, type_=type_name)
 
 
@@ -1023,7 +1031,7 @@ def set_typedef(bs_typedef: Typedef):
         return False
 
     typedef_tif = make_typedef_tif(bs_typedef.name, bs_typedef.type)
-    typedef_tif.set_named_type(idaapi.get_idati(), bs_typedef.name, ida_typeinf.NTF_REPLACE)
+    typedef_tif.set_named_type(idaapi.get_idati(), bs_typedef.name, ida_typeinf.NTF_TYPE)
     return True
 
 #
@@ -1175,6 +1183,20 @@ def has_older_hexrays_version():
 
     return not vers.startswith("8.2")
 
+
+def get_decompiler_version() -> typing.Optional[Version]:
+    wait_for_idc_initialization()
+    try:
+        _vers = ida_hexrays.get_hexrays_version()
+    except Exception:
+        return None
+
+    try:
+        vers = Version(_vers)
+    except TypeError:
+        return None
+
+    return vers
 
 def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
     form_type = idaapi.get_widget_type(view)
