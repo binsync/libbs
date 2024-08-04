@@ -962,18 +962,15 @@ def typedef_info(tif, use_new_check=False) -> typing.Tuple[bool, typing.Optional
     if not name:
         return invalid_typedef
 
-    # only on high IDA versions can you run this code
-    if type_name is None and use_new_check:
-        # try again, but with ordinal
-        backup_tif = ida_typeinf.tinfo_t()
-        backup_tif.get_named_type(idaapi.get_idati(), name, ida_typeinf.BTF_TYPEDEF, True, True)
-        real_type_val = backup_tif.get_realtype()
-        try:
-            real_type = ida_typeinf.tinfo_t(real_type_val)
-        except Exception:
-            return invalid_typedef
-
-        type_name = str(real_type)
+    # in older versions we have to parse the type directly (thanks @arizvisa)
+    if not type_name:
+        ser_info = idaapi.get_named_type(None, name, idaapi.NTF_TYPE)
+        ser_bytes = ser_info[1]
+        if ser_info is not None:
+            base_tif = ida_typeinf.tinfo_t()
+            found_base_type = base_tif.deserialize(idaapi.get_idati(), ser_bytes, None, None)
+            if not base_tif.is_struct():
+                type_name = str(base_tif) if found_base_type else None
 
     if not name or not type_name or name == type_name:
         return invalid_typedef
