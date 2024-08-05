@@ -170,6 +170,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             ## now get the dependencies again
             #new_deps = deci.get_dependencies(auth_func)
             #assert len(new_deps) == 3
+            deci.shutdown()
 
         # Test another case of dependency resolving where we have a function that looks like this:
         # 1. A custom-typed function argument (typedef)
@@ -197,6 +198,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
             assert len(structs) == 1
             struct = structs[0]
             assert struct.name.split("/")[-1] == "evp_pkey_ctx_st"
+
+            deci.shutdown()
 
     def test_ghidra_fauxware(self):
         deci = DecompilerInterface.discover(
