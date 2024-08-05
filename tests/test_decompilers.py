@@ -171,6 +171,32 @@ class TestHeadlessInterfaces(unittest.TestCase):
             #new_deps = deci.get_dependencies(auth_func)
             #assert len(new_deps) == 3
 
+        # Test another case of dependency resolving where we have a function that looks like this:
+        # 1. A custom-typed function argument (typedef)
+        # 2. The typedef points to a struct
+        # 3. The pointed to struct is empty
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deci = DecompilerInterface.discover(
+                force_decompiler=GHIDRA_DECOMPILER,
+                headless=True,
+                binary_path=TEST_BINARY_DIR / "posix_syscall",
+                project_location=Path(temp_dir),
+                project_name="posix_syscall_ghidra",
+            )
+            self.deci = deci
+
+            start_func = deci.functions[deci.art_lifter.lift_addr(0x100740)]
+            deps = deci.get_dependencies(start_func)
+            assert len(deps) == 3
+            typdefs = [d for d in deps if isinstance(d, Typedef)]
+            assert len(typdefs) == 1
+            typdef = typdefs[0]
+            assert typdef.name.split("/")[-1] == "EVP_PKEY_CTX"
+            assert typdef.type.split("/")[-1] == "evp_pkey_ctx_st"
+            structs = [d for d in deps if isinstance(d, Struct)]
+            assert len(structs) == 1
+            struct = structs[0]
+            assert struct.name.split("/")[-1] == "evp_pkey_ctx_st"
 
     def test_ghidra_fauxware(self):
         deci = DecompilerInterface.discover(

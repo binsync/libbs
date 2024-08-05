@@ -364,6 +364,12 @@ class DecompilerInterface:
                     if new_imports:
                         break
 
+                if isinstance(imported_type, Typedef):
+                    new_type = self.get_defined_type(imported_type.type)
+                    if new_type is not None and new_type not in imported_types:
+                        imported_types.add(new_type)
+                        new_imports = True
+
             if not new_imports:
                 break
         else:
@@ -781,12 +787,30 @@ class DecompilerInterface:
             return None
 
         base_type_str = type_.base_type.type
+        # use a speical handler for ghidra until a later issue is fixed
+        if self.name == "ghidra":
+            return self._find_ghidra_type_name_in_types(base_type_str)
+
         if base_type_str in self.structs:
             return self.structs[base_type_str]
         elif base_type_str in self.enums:
             return self.enums[base_type_str]
+        elif base_type_str in self.typedefs:
+            return self.typedefs[base_type_str]
+        else:
+            return None
 
-        return None
+    def _find_ghidra_type_name_in_types(self, type_name: str) -> Struct | Enum | Typedef | None:
+        """
+        TODO: deprecate me after https://github.com/binsync/libbs/issues/97 is closed.
+        """
+        type_dicts = [self.structs, self.enums, self.typedefs]
+        for type_dict in type_dicts:
+            for name, type_ in type_dict.items():
+                normalized_name = name.split("/")[-1]
+                if normalized_name == type_name:
+                    return type_
+
 
     @staticmethod
     def _find_global_in_call_frames(global_name, max_frames=10):
