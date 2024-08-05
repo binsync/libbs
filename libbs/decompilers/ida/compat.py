@@ -14,13 +14,14 @@ import threading
 from functools import wraps
 import typing
 import logging
+from packaging.version import Version
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
     ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum, ida_kernwin
 
 import libbs
 from libbs.artifacts import (
-    Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact, Context
+    Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact, Context, Typedef
 )
 
 from PyQt5.Qt import QObject
@@ -165,7 +166,6 @@ def convert_type_str_to_ida_type(type_str) -> typing.Optional['ida_typeinf']:
         valid_parse = ida_typeinf.parse_decl(tif, None, ida_type_str, 1)
 
     return tif if valid_parse is not None else None
-
 
 @execute_write
 def ida_to_bs_stack_offset(func_addr, ida_stack_off):
@@ -941,6 +941,95 @@ def set_enum(bs_enum: Enum):
 
     return True
 
+#
+# Typedefs
+#
+
+
+def use_new_typedef_check():
+    dec_version = get_decompiler_version()
+    return dec_version >= Version("8.4") if dec_version is not None else False
+
+
+def typedef_info(tif, use_new_check=False) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
+    invalid_typedef = False, None, None
+    tdef_checker = lambda t: t.is_typedef() if use_new_check else t.is_typeref()
+    if not tdef_checker(tif):
+        return invalid_typedef
+
+    name = tif.get_type_name()
+    type_name = tif.get_next_type_name()
+    if not name:
+        return invalid_typedef
+
+    # in older versions we have to parse the type directly (thanks @arizvisa)
+    if not type_name:
+        ser_info = idaapi.get_named_type(None, name, idaapi.NTF_TYPE)
+        ser_bytes = ser_info[1]
+        if ser_info is not None:
+            base_tif = ida_typeinf.tinfo_t()
+            found_base_type = base_tif.deserialize(idaapi.get_idati(), ser_bytes, None, None)
+            if not base_tif.is_struct():
+                type_name = str(base_tif) if found_base_type else None
+
+    if not name or not type_name or name == type_name:
+        return invalid_typedef
+
+    return True, name, type_name
+
+
+@execute_write
+def typedefs() -> typing.Dict[str, Typedef]:
+    typedefs = {}
+    idati = idaapi.get_idati()
+    use_new_check = use_new_typedef_check()
+    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+        tif = ida_typeinf.tinfo_t()
+        success = tif.get_numbered_type(idati, ord_num)
+        if not success:
+            continue
+
+        is_typedef, name, type_name = typedef_info(tif, use_new_check=use_new_check)
+        if not is_typedef:
+            continue
+
+        typedefs[name] = Typedef(name=name, type_=type_name)
+
+    return typedefs
+
+
+@execute_write
+def typedef(name) -> typing.Optional[Typedef]:
+    idati = idaapi.get_idati()
+    tif = ida_typeinf.tinfo_t()
+    success = tif.get_named_type(idati, name)
+    if not success:
+        return None
+
+    is_typedef, name, type_name = typedef_info(tif, use_new_check=use_new_typedef_check())
+    if not is_typedef:
+        return None
+
+    return Typedef(name=name, type_=type_name)
+
+
+def make_typedef_tif(name, type_str):
+    tif = ida_typeinf.tinfo_t()
+    ida_type_str = f"typedef {type_str} {name};"
+    valid_parse = ida_typeinf.parse_decl(tif, None, ida_type_str, 1)
+    return tif if valid_parse is not None else None
+
+
+@execute_write
+def set_typedef(bs_typedef: Typedef):
+    type_tif = convert_type_str_to_ida_type(bs_typedef.type)
+    if type_tif is None:
+        _l.critical(f"Attempted to set a typedef with an invalid type: {bs_typedef.type} (does not exist)")
+        return False
+
+    typedef_tif = make_typedef_tif(bs_typedef.name, bs_typedef.type)
+    typedef_tif.set_named_type(idaapi.get_idati(), bs_typedef.name, ida_typeinf.NTF_TYPE)
+    return True
 
 #
 #   IDA GUI r/w
@@ -1091,6 +1180,20 @@ def has_older_hexrays_version():
 
     return not vers.startswith("8.2")
 
+
+def get_decompiler_version() -> typing.Optional[Version]:
+    wait_for_idc_initialization()
+    try:
+        _vers = ida_hexrays.get_hexrays_version()
+    except Exception:
+        return None
+
+    try:
+        vers = Version(_vers)
+    except TypeError:
+        return None
+
+    return vers
 
 def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
     form_type = idaapi.get_widget_type(view)

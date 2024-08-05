@@ -27,7 +27,7 @@ if HEADLESS:
     from ghidra.program.model.symbol import SourceType, SymbolType
     from ghidra.program.model.pcode import HighFunctionDBUtil
     from ghidra.program.model.data import (
-        DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath,
+        DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath, TypedefDataType
     )
     from ghidra.program.util import ChangeManager, ProgramChangeRecord
     from ghidra.program.database.function import VariableDB, FunctionDB
@@ -47,13 +47,14 @@ if HEADLESS:
 
     EnumDB = get_private_class("ghidra.program.database.data.EnumDB")
     StructureDB = get_private_class("ghidra.program.database.data.StructureDB")
+    TypedefDB = get_private_class("ghidra.program.database.data.TypedefDB")
 else:
     DomainObjectListener = import_objs("ghidra.framework.model", ("DomainObjectListener",))
     SourceType, SymbolType = import_objs("ghidra.program.model.symbol", ("SourceType", "SymbolType"))
     HighFunctionDBUtil = import_objs("ghidra.program.model.pcode", ("HighFunctionDBUtil",))
-    DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath = import_objs(
+    DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath, TypedefDataType = import_objs(
         "ghidra.program.model.data",
-        ("DataTypeConflictHandler", "StructureDataType", "ByteDataType", "EnumDataType", "CategoryPath")
+        ("DataTypeConflictHandler", "StructureDataType", "ByteDataType", "EnumDataType", "CategoryPath", "TypedefDataType")
     )
     ChangeManager, ProgramChangeRecord = import_objs("ghidra.program.util", ("ChangeManager", "ProgramChangeRecord"))
     VariableDB, FunctionDB = import_objs("ghidra.program.database.function", ("VariableDB", "FunctionDB"))
@@ -72,6 +73,7 @@ else:
     MenuData = import_objs("docking.action", ("MenuData",))
     EnumDB = import_objs("ghidra.program.database.data", ("EnumDB",))
     StructureDB = import_objs("ghidra.program.database.data", ("StructureDB",))
+    TypedefDB = import_objs("ghidra.program.database.data", ("TypedefDB",))
 
 
 __all__ = [
@@ -94,6 +96,7 @@ __all__ = [
     "SetCommentCmd",
     "EnumDataType",
     "CategoryPath",
+    "TypedefDataType",
     "EnumDB",
     "RenameLabelCmd",
     "SymbolType",
@@ -104,7 +107,8 @@ __all__ = [
     "AutoAnalysisManager",
     "DataTypeParser",
     "CParserUtils",
-    "CancelledException"
+    "CancelledException",
     "EnumDB",
     "StructureDB",
+    "TypedefDB"
 ]

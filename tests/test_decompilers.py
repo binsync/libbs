@@ -9,7 +9,7 @@ import os
 
 from libbs.api import DecompilerInterface
 from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat, \
-    Decompilation, Function, StructMember
+    Decompilation, Function, StructMember, Typedef
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
 from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
 
@@ -84,6 +84,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
                 json_strings.append(gvar.dumps(fmt=ArtifactFormat.JSON))
             for comment in deci.comments.values():
                 json_strings.append(comment.dumps(fmt=ArtifactFormat.JSON))
+            for typedef in deci.typedefs.values():
+                json_strings.append(typedef.dumps(fmt=ArtifactFormat.JSON))
 
             # validate each one is not corrupted
             for json_str in json_strings:
@@ -168,7 +170,36 @@ class TestHeadlessInterfaces(unittest.TestCase):
             ## now get the dependencies again
             #new_deps = deci.get_dependencies(auth_func)
             #assert len(new_deps) == 3
+            deci.shutdown()
 
+        # Test another case of dependency resolving where we have a function that looks like this:
+        # 1. A custom-typed function argument (typedef)
+        # 2. The typedef points to a struct
+        # 3. The pointed to struct is empty
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deci = DecompilerInterface.discover(
+                force_decompiler=GHIDRA_DECOMPILER,
+                headless=True,
+                binary_path=TEST_BINARY_DIR / "posix_syscall",
+                project_location=Path(temp_dir),
+                project_name="posix_syscall_ghidra",
+            )
+            self.deci = deci
+
+            start_func = deci.functions[deci.art_lifter.lift_addr(0x100740)]
+            deps = deci.get_dependencies(start_func)
+            assert len(deps) == 3
+            typdefs = [d for d in deps if isinstance(d, Typedef)]
+            assert len(typdefs) == 1
+            typdef = typdefs[0]
+            assert typdef.name.split("/")[-1] == "EVP_PKEY_CTX"
+            assert typdef.type.split("/")[-1] == "evp_pkey_ctx_st"
+            structs = [d for d in deps if isinstance(d, Struct)]
+            assert len(structs) == 1
+            struct = structs[0]
+            assert struct.name.split("/")[-1] == "evp_pkey_ctx_st"
+
+            deci.shutdown()
 
     def test_ghidra_fauxware(self):
         deci = DecompilerInterface.discover(
@@ -185,6 +216,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].name == self.RENAMED_NAME
 
+        #
+        # Structs
+        #
+
         func_args = main.header.args
         func_args[0].name = "new_name_1"
         func_args[0].type = "int"
@@ -195,15 +230,24 @@ class TestHeadlessInterfaces(unittest.TestCase):
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].header.args == func_args
 
-        struct = deci.structs['eh_frame_hdr']
-        struct.name = "my_struct_name"
-        struct.members[0].type = 'char'
-        struct.members[1].type = 'char'
-        deci.structs['eh_frame_hdr'] = struct
-        updated = deci.structs[struct.name]
-        assert updated.name == struct.name
+        eh_hdr_struct = deci.structs['eh_frame_hdr']
+        eh_hdr_struct.name = "my_struct_name"
+        eh_hdr_struct.members[0].type = 'char'
+        eh_hdr_struct.members[1].type = 'char'
+        deci.structs['eh_frame_hdr'] = eh_hdr_struct
+        updated = deci.structs[eh_hdr_struct.name]
+        assert updated.name == eh_hdr_struct.name
         assert updated.members[0].type == 'char'
         assert updated.members[1].type == 'char'
+
+        #
+        # Enums
+        #
+
+        elf_dyn_tag_enum: Enum = deci.enums['ELF/Elf64_DynTag']
+        elf_dyn_tag_enum.members['DT_YEET'] = elf_dyn_tag_enum.members['DT_FILTER'] + 1
+        deci.enums[elf_dyn_tag_enum.name] = elf_dyn_tag_enum
+        assert deci.enums[elf_dyn_tag_enum.name] == elf_dyn_tag_enum
 
         enum = Enum("my_enum", {"member1": 0, "member2": 1})
         deci.enums[enum.name] = enum
@@ -212,6 +256,28 @@ class TestHeadlessInterfaces(unittest.TestCase):
         nested_enum = Enum("SomeEnums/nested_enum", {"field": 0, "another_field": 2, "third_field": 3})
         deci.enums[nested_enum.name] = nested_enum
         assert deci.enums[nested_enum.name] == nested_enum
+
+        #
+        # Typedefs
+        #
+
+        # simple typedef
+        typedef = Typedef("my_typedef", "int")
+        deci.typedefs[typedef.name] = typedef
+        assert deci.typedefs[typedef.name] == typedef
+
+        # typedef to a struct
+        typedef = Typedef("my_eh_frame_hdr", eh_hdr_struct.name)
+        deci.typedefs[typedef.name] = typedef
+        assert deci.typedefs[typedef.name] == typedef
+
+        # typedef to an enum
+        typedef = Typedef("my_elf_dyn_tag", elf_dyn_tag_enum.name)
+        deci.typedefs[typedef.name] = typedef
+        updated_typedef = deci.typedefs[typedef.name]
+        assert updated_typedef.name == typedef.name
+        # TODO: this should be changed when we do https://github.com/binsync/libbs/issues/97
+        assert updated_typedef.type == typedef.type.split("/")[-1]
 
         # gvar_addr = deci.art_lifter.lift_addr(0x4008e0)
         # g1 = deci.global_vars[gvar_addr]
@@ -236,12 +302,12 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # Test Artifact Deletion
         #
 
-        struct = deci.structs['my_struct_name']
+        eh_hdr_struct = deci.structs['my_struct_name']
         del deci.structs['my_struct_name']
         struct_items = deci.structs.items()
         struct_keys = [k for k, v in struct_items]
         struct_values = [v for k, v in struct_items]
-        assert struct.name not in struct_keys and struct not in struct_values
+        assert eh_hdr_struct.name not in struct_keys and eh_hdr_struct not in struct_values
 
         deci.shutdown()
 
@@ -316,6 +382,15 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert updated.name == new_struct.name
         assert updated.members[0].type == 'char'
         assert updated.members[1].type == 'int'
+
+        # test some typedef stuff
+        new_typedef = Typedef(name="my_int", type_="int")
+        deci.typedefs[new_typedef.name] = new_typedef
+        assert deci.typedefs[new_typedef.name] == new_typedef
+
+        new_typedef = Typedef(name="my_int_t", type_="my_int")
+        deci.typedefs[new_typedef.name] = new_typedef
+        assert deci.typedefs[new_typedef.name] == new_typedef
 
         # test function arg change
         func_main = deci.functions[deci.art_lifter.lift_addr(0x40071d)]

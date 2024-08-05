@@ -17,7 +17,7 @@ from libbs.artifacts import (
     Artifact,
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch,
-    Enum, Struct, FunctionArgument, Context, Decompilation
+    Enum, Struct, FunctionArgument, Context, Decompilation, Typedef
 )
 from libbs.decompilers import SUPPORTED_DECOMPILERS, ANGR_DECOMPILER, \
     BINJA_DECOMPILER, IDA_DECOMPILER, GHIDRA_DECOMPILER
@@ -97,6 +97,7 @@ class DecompilerInterface:
         self.structs = ArtifactDict(Struct, self, error_on_duplicate=error_on_artifact_duplicates)
         self.patches = ArtifactDict(Patch, self, error_on_duplicate=error_on_artifact_duplicates)
         self.global_vars = ArtifactDict(GlobalVariable, self, error_on_duplicate=error_on_artifact_duplicates)
+        self.typedefs = ArtifactDict(Typedef, self, error_on_duplicate=error_on_artifact_duplicates)
 
         self._decompiler_available = decompiler_available
         # override the file-saved config when one is passed in manually, otherwise
@@ -363,6 +364,12 @@ class DecompilerInterface:
                     if new_imports:
                         break
 
+                if isinstance(imported_type, Typedef):
+                    new_type = self.get_defined_type(imported_type.type)
+                    if new_type is not None and new_type not in imported_types:
+                        imported_types.add(new_type)
+                        new_imports = True
+
             if not new_imports:
                 break
         else:
@@ -538,6 +545,26 @@ class DecompilerInterface:
     def _enums(self) -> Dict[str, Enum]:
         """
         Returns a dict of libbs.Enum that contain the name of the enums in the decompiler.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
+
+        @return:
+        """
+        return {}
+
+    # typedefs
+    def _set_typedef(self, typedef: Typedef, **kwargs) -> bool:
+        return False
+
+    def _get_typedef(self, name) -> Optional[Typedef]:
+        return None
+
+    def _del_typedef(self, name) -> bool:
+        return False
+
+    def _typedefs(self) -> Dict[str, Typedef]:
+        """
+        Returns a dict of libbs.Typedef that contain the name of the typedefs in the decompiler.
         Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
         exists. To get live artifacts, use the singleton function of the same name.
 
@@ -760,12 +787,31 @@ class DecompilerInterface:
             return None
 
         base_type_str = type_.base_type.type
+        # use a speical handler for ghidra until a later issue is fixed
+        if self.name == "ghidra":
+            return self._find_ghidra_type_name_in_types(base_type_str)
+
         if base_type_str in self.structs:
             return self.structs[base_type_str]
         elif base_type_str in self.enums:
             return self.enums[base_type_str]
+        elif base_type_str in self.typedefs:
+            return self.typedefs[base_type_str]
+        else:
+            return None
 
+    def _find_ghidra_type_name_in_types(self, type_name: str) -> Struct | Enum | Typedef | None:
+        """
+        TODO: deprecate me after https://github.com/binsync/libbs/issues/97 is closed.
+        """
+        type_dicts = [self.structs, self.enums, self.typedefs]
+        for type_dict in type_dicts:
+            for name, type_ in type_dict.items():
+                normalized_name = name.split("/")[-1]
+                if normalized_name == type_name:
+                    return type_
         return None
+
 
     @staticmethod
     def _find_global_in_call_frames(global_name, max_frames=10):

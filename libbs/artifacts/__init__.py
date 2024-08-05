@@ -9,6 +9,7 @@ from .patch import Patch
 from .stack_variable import StackVariable
 from .struct import Struct, StructMember
 from .context import Context
+from .typedef import Typedef
 
 ART_NAME_TO_CLS = {
     Function.__name__: Function,
@@ -22,4 +23,6 @@ ART_NAME_TO_CLS = {
     StructMember.__name__: StructMember,
     Patch.__name__: Patch,
     Decompilation.__name__: Decompilation,
+    Context.__name__: Context,
+    Typedef.__name__: Typedef,
 }

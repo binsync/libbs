@@ -27,12 +27,12 @@ if BN_UI_AVAILABLE:
     from binaryninjaui import UIContext
 
 
-from libbs.api.decompiler_interface import DecompilerInterface
 import libbs
+from libbs.api.decompiler_interface import DecompilerInterface
 from libbs.artifacts import (
     Function, FunctionHeader, StackVariable,
     Comment, GlobalVariable, Patch, StructMember, FunctionArgument,
-    Enum, Struct, Artifact, Decompilation, Context
+    Enum, Struct, Artifact, Decompilation, Context, Typedef
 )
 
 from .artifact_lifter import BinjaArtifactLifter
@@ -523,6 +523,41 @@ class BinjaInterface(DecompilerInterface):
             if isinstance(t, EnumerationType)
         }
 
+    # typedef
+    def _set_typedef(self, typedef: Typedef, **kwargs) -> bool:
+        base_type = self.bv.parse_type_string(typedef.type)[0]
+        if base_type is None:
+            raise ValueError(f"Could not parse the type {typedef.type}")
+
+        # handle primitive types
+        try:
+            base_type_name = str(base_type.name)
+        except NotImplementedError:
+            base_type_name = str(base_type)
+
+        base_type_ref = binaryninja.TypeBuilder.named_type_reference(
+            binaryninja.NamedTypeReferenceClass.TypedefNamedTypeClass, base_type_name, base_type_name,
+            0, base_type.width
+        )
+        self.bv.define_user_type(typedef.name, base_type_ref)
+        return True
+
+    def _get_typedef(self, name) -> Optional[Typedef]:
+        bn_typedef = self.bv.types.get(name, None)
+        if bn_typedef is None:
+            return None
+
+        if isinstance(bn_typedef, binaryninja.NamedTypeReferenceType):
+            return self.bn_typedef_to_bs(name, bn_typedef)
+
+        return None
+
+    def _typedefs(self) -> Dict[str, Typedef]:
+        return {
+            name: self.bn_typedef_to_bs(''.join(name.name), t) for name, t in self.bv.types.items()
+            if isinstance(t, binaryninja.NamedTypeReferenceType)
+        }
+
     # patches
     def _set_patch(self, patch: Patch, **kwargs) -> bool:
         l.warning(f"Patch setting is unimplemented in Binja")
@@ -671,6 +706,10 @@ class BinjaInterface(DecompilerInterface):
                 members[enum_member.name] = enum_member.value
 
         return Enum(name, members)
+
+    @staticmethod
+    def bn_typedef_to_bs(name: str, bn_typedef: binaryninja.NamedTypeReferenceType):
+        return Typedef(name, str(bn_typedef.name))
 
     @staticmethod
     def addr_to_bn_func(bv, address):
