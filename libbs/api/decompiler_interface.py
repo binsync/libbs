@@ -810,6 +810,7 @@ class DecompilerInterface:
                 normalized_name = name.split("/")[-1]
                 if normalized_name == type_name:
                     return type_
+        return None
 
 
     @staticmethod
