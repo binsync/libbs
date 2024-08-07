@@ -79,6 +79,8 @@ class Artifact:
                     new_dv = dv.copy() if hasattr(dv, "copy") else dv
                     new_dict[new_dk] = new_dv
                 setattr(new_obj, attr, new_dict)
+            elif isinstance(attr_v, Artifact):
+                setattr(new_obj, attr, attr_v.copy())
             else:
                 setattr(new_obj, attr, attr_v)
 
