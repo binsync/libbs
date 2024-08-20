@@ -214,10 +214,10 @@ class IDAInterface(DecompilerInterface):
 
     def gui_active_context(self) -> Context:
         if self._gui_active_context is None:
+            # in cases that we end up here, we are likely in UI mode, without artifact watchers started,
+            # so we should not cache this result (as it will be stale)
             low_addr, low_func_addr = compat.get_function_cursor_at()
-            self._gui_active_context = self.art_lifter.lift(Context(
-                addr=low_addr, func_addr=low_func_addr
-            ))
+            return self.art_lifter.lift(Context(addr=low_addr, func_addr=low_func_addr))
 
         return self._gui_active_context
 
