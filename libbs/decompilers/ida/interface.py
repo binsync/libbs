@@ -39,7 +39,7 @@ class IDAInterface(DecompilerInterface):
 
         self._max_patch_size = 0xff
         self._decompiler_available = None
-        self._dec_version = False
+        self._dec_version = None
 
         # GUI properties
         self._updated_ctx = None

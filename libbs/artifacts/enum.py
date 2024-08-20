@@ -19,7 +19,7 @@ class Enum(Artifact):
         super().__init__(**kwargs)
         self.name = name
         # sorts map by the int value
-        self.members = self._order_members(members) if members else None
+        self.members = self._order_members(members) if members else {}
 
     def __str__(self):
         return f"<Enum: {self.name} member_count={len(self.members)}>"
