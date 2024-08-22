@@ -31,6 +31,7 @@ class IDAInterface(DecompilerInterface):
         self._ui_hooks = []
         self._artifact_watcher_hooks = []
         self._gui_active_context = None
+        self._deleted_artifacts = defaultdict(set)
 
         super().__init__(
             name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self),

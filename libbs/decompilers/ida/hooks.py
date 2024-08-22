@@ -159,9 +159,19 @@ class IDBHooks(ida_idp.IDB_Hooks):
     #
 
     @while_should_watch
-    def ida_enum_changed(self, enum_id, new_name=None, deleted=False):
+    def ida_enum_changed(self, enum_id, new_name=None, deleted=False, member_deleted=False):
         name = ida_enum.get_enum_name(enum_id)
         _enum = compat.enum(name) if not deleted else Enum(name, {})
+        if name in self.interface._deleted_artifacts[Enum]:
+            if member_deleted:
+                _l.debug("Attempting to delete the member of an already deleted enum. Skipping...")
+                return 0
+            else:
+                self.interface._deleted_artifacts[Enum].remove(name)
+
+        if deleted:
+            self.interface._deleted_artifacts[Enum].add(name)
+
         if new_name:
             _enum.name = new_name
 
@@ -207,21 +217,32 @@ class IDBHooks(ida_idp.IDB_Hooks):
     # XXX - use enum_member_deleted(self, id, cid) instead?
     @while_should_watch
     def deleting_enum_member(self, id, cid):
-        self.ida_enum_changed(id)
+        self.ida_enum_changed(id, member_deleted=True)
         return 0
 
     #
     # Struct & Stack Var Hooks
     #
 
-    def ida_struct_changed(self, sid: int, new_name=None, deleted=False):
+    def ida_struct_changed(self, sid: int, new_name=None, deleted=False, member_deleted=False):
         # parse the info of the current struct
         struct_name = new_name if new_name else ida_struct.get_struc_name(sid)
+
+        if struct_name in self.interface._deleted_artifacts[Struct]:
+            if member_deleted:
+                # attempting to re-delete an already deleted struct
+                _l.debug("Attempting to delete the member of an already deleted struct. Skipping...")
+                return 0
+            else:
+                # if we readded a struct that was previously deleted, remove it from the deleted list
+                self.interface._deleted_artifacts[Struct].remove(struct_name)
+
         if struct_name.startswith(IDA_STACK_VAR_PREFIX) or struct_name.startswith("__"):
             _l.info(f"Not recording change to {struct_name} since its likely an internal IDA struct.")
             return 0
 
         if deleted:
+            self.interface._deleted_artifacts[Struct].add(struct_name)
             self.interface.struct_changed(Struct(struct_name, -1, {}), deleted=True)
             return 0
 
@@ -314,7 +335,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     @while_should_watch
     def struc_member_deleted(self, sptr, off1, off2):
         if not sptr.is_frame():
-            self.ida_struct_changed(sptr.id)
+            self.ida_struct_changed(sptr.id, member_deleted=True)
 
         return 0
 
