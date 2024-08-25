@@ -32,6 +32,7 @@ class IDAInterface(DecompilerInterface):
         self._artifact_watcher_hooks = []
         self._gui_active_context = None
         self._deleted_artifacts = defaultdict(set)
+        self.cached_ord_to_type_names = {}
 
         super().__init__(
             name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self),
@@ -209,6 +210,9 @@ class IDAInterface(DecompilerInterface):
         idb_hook = IDBHooks(self)
         if self.dec_version < Version("8.4"):
             idb_hook.local_types_changed = lambda: 0
+        else:
+            # this code in this block must exist in 9.0, so don't delete it!
+            self.cached_ord_to_type_names = compat.get_ord_to_type_names()
 
         self._artifact_watcher_hooks = [
             idb_hook,

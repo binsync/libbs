@@ -38,6 +38,7 @@ FORM_TYPE_TO_NAME = {
     idaapi.BWN_FUNCS: "functions",
     idaapi.BWN_STRUCTS: "structs",
     idaapi.BWN_ENUMS: "enums",
+    idaapi.BWN_TILIST: "types",
 }
 
 FUNC_FORMS = {"decompilation", "disassembly"}
@@ -181,6 +182,32 @@ def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artif
             _l.warning("Enums are not supported in this API until IDA 9.0")
 
     return types
+
+
+@execute_write
+def get_ord_to_type_names() -> typing.Dict[int, typing.Tuple[str, typing.Type[Artifact]]]:
+    idati = idaapi.get_idati()
+    ord_to_name = {}
+    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+        tif = ida_typeinf.tinfo_t()
+        success = tif.get_numbered_type(idati, ord_num)
+        if not success:
+            continue
+
+        type_name = tif.get_type_name()
+        if tif.is_typedef():
+            type_type = Typedef
+        elif tif.is_struct():
+            type_type = Struct
+        elif tif.is_enum():
+            type_type = Enum
+        else:
+            type_type = None
+
+        if type_name:
+            ord_to_name[ord_num] = (type_name, type_type)
+
+    return ord_to_name
 
 
 def get_ida_type(ida_ord=None, name=None):
@@ -1273,6 +1300,7 @@ def get_decompiler_version() -> typing.Optional[Version]:
         return None
 
     return vers
+
 
 def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
     form_type = idaapi.get_widget_type(view)
