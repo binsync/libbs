@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from libbs.artifacts import Typedef
 from libbs.plugin_installer import LibBSPluginInstaller
 
 __version__ = "0.0.1"
@@ -28,7 +29,7 @@ def create_plugin(*args, **kwargs):
     # register the callback for all the types we want to print
     deci.artifact_change_callbacks = {
         typ: [decompiler_printer] for typ in (
-            FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment, Context
+            FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment, Typedef, Context
         )
     }
 

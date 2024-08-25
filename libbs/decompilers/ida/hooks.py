@@ -23,6 +23,7 @@
 import functools
 import logging
 from typing import TYPE_CHECKING
+from packaging.version import Version
 
 from PyQt5 import QtCore
 from PyQt5.QtGui import QKeyEvent
@@ -41,7 +42,7 @@ import idc
 from . import compat
 from libbs.artifacts import (
     FunctionHeader, StackVariable,
-    Comment, GlobalVariable, Enum, Struct, Context
+    Comment, GlobalVariable, Enum, Struct, Context, Typedef, StructMember
 )
 
 
@@ -132,8 +133,27 @@ class IDBHooks(ida_idp.IDB_Hooks):
         self.interface: "IDAInterface" = interface
         self._seen_function_prototypes = {}
 
-    @while_should_watch
-    def local_types_changed(self):
+    def local_types_changed(self, ltc, ordinal, name):
+        # this can't be a decorator for this function due to how IDA implements these overrides
+        if not self.interface.should_watch_artifacts():
+            return 0
+
+        tif = compat.get_ida_type(ida_ord=ordinal, name=name)
+        if tif is None:
+            return 0
+
+        # first need to eliminate the typedefs
+        is_typedef, name, type_name = compat.typedef_info(tif, use_new_check=True)
+        if is_typedef:
+            self.interface.typedef_changed(Typedef(nam=name, type_=type_name))
+            return 0
+
+        # TODO: refactor this more for new API in 9
+        # now it could be a struct or an enum
+        if tif.is_struct():
+            bs_struct = compat.bs_struct_from_tif(tif)
+            self.interface.struct_changed(bs_struct)
+
         return 0
 
     @while_should_watch
@@ -252,6 +272,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
             ida_struct.get_struc_size(struct_ptr),
             {},
         )
+        print("Initial bs_struct: ", bs_struct)
 
         for mptr in struct_ptr.members:
             m_name = ida_struct.get_member_name(mptr.id)
@@ -260,6 +281,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
             m_size = ida_struct.get_member_size(mptr)
             bs_struct.add_struct_member(m_name, m_off, m_type, m_size)
 
+        print("Final bs_struct: ", bs_struct)
         self.interface.struct_changed(bs_struct, deleted=False)
         return 0
 
