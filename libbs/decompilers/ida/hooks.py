@@ -23,6 +23,7 @@
 import functools
 import logging
 from typing import TYPE_CHECKING
+from packaging.version import Version
 
 from PyQt5 import QtCore
 from PyQt5.QtGui import QKeyEvent
@@ -41,7 +42,7 @@ import idc
 from . import compat
 from libbs.artifacts import (
     FunctionHeader, StackVariable,
-    Comment, GlobalVariable, Enum, Struct, Context
+    Comment, GlobalVariable, Enum, Struct, Context, Typedef, StructMember
 )
 
 
@@ -132,8 +133,54 @@ class IDBHooks(ida_idp.IDB_Hooks):
         self.interface: "IDAInterface" = interface
         self._seen_function_prototypes = {}
 
-    @while_should_watch
-    def local_types_changed(self):
+    def bs_type_deleted(self, ordinal):
+        old_name, old_type = self.interface.cached_ord_to_type_names[ordinal]
+        if old_type == Struct:
+            self.interface.struct_changed(Struct(old_name, -1, members={}), deleted=True)
+        elif old_type == Enum:
+            self.interface.enum_changed(Enum(old_name, members={}), deleted=True)
+        elif old_type == Typedef:
+            self.interface.typedef_changed(Typedef(nam=old_name), deleted=True)
+
+        del self.interface.cached_ord_to_type_names[ordinal]
+
+    def local_types_changed(self, ltc, ordinal, name):
+        # this can't be a decorator for this function due to how IDA implements these overrides
+        if not self.interface.should_watch_artifacts():
+            return 0
+
+        tif = compat.get_ida_type(ida_ord=ordinal, name=name)
+        # was the type deleted?
+        if tif is None:
+            if ltc == ida_idp.LTC_DELETED and ordinal in self.interface.cached_ord_to_type_names:
+                self.bs_type_deleted(ordinal)
+
+            return 0
+
+        # was the type renamed?
+        if ordinal in self.interface.cached_ord_to_type_names:
+            old_name, _ = self.interface.cached_ord_to_type_names[ordinal]
+            if old_name != name:
+                self.bs_type_deleted(ordinal)
+
+        # at this point, the type is either completely new or renamed from an existing type.
+        # in either case we need to just gather the new info and trigger an update
+        #
+        # check if it's a typedef first since this these can also trigger strucs
+        is_typedef, name, type_name = compat.typedef_info(tif, use_new_check=True)
+        new_type_type = None
+        if is_typedef:
+            self.interface.typedef_changed(Typedef(nam=name, type_=type_name))
+            new_type_type = Typedef
+        elif tif.is_struct():
+            bs_struct = compat.bs_struct_from_tif(tif)
+            self.interface.struct_changed(bs_struct)
+            new_type_type = Struct
+        elif tif.is_enum():
+            # TODO: handle enum changes in IDA 9
+            pass
+
+        self.interface.cached_ord_to_type_names[ordinal] = (name, new_type_type)
         return 0
 
     @while_should_watch

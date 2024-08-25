@@ -21,7 +21,8 @@ import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
 
 import libbs
 from libbs.artifacts import (
-    Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact, Context, Typedef
+    Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact, Context, Typedef,
+    StructMember
 )
 
 from PyQt5.Qt import QObject
@@ -37,6 +38,7 @@ FORM_TYPE_TO_NAME = {
     idaapi.BWN_FUNCS: "functions",
     idaapi.BWN_STRUCTS: "structs",
     idaapi.BWN_ENUMS: "enums",
+    idaapi.BWN_TILIST: "types",
 }
 
 FUNC_FORMS = {"decompilation", "disassembly"}
@@ -150,7 +152,82 @@ def set_func_ret_type(ea, return_type_str):
     return True
 
 #
-#   Data Type Converters
+# Types
+#
+
+
+@execute_write
+def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artifact]:
+    types = {}
+    idati = idaapi.get_idati()
+
+    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+        tif = ida_typeinf.tinfo_t()
+        success = tif.get_numbered_type(idati, ord_num)
+        if not success:
+            continue
+
+        is_typedef, name, type_name = typedef_info(tif, use_new_check=True)
+        # must check typedefs first, since they can be structs
+        if is_typedef:
+            if typedefs:
+                types[name] = Typedef(name, type_name)
+            continue
+
+        if structs and tif.is_struct():
+            bs_struct = bs_struct_from_tif(tif)
+            types[bs_struct.name] = bs_struct
+        elif enums and tif.is_enum():
+            # TODO: implement this for 9.0
+            _l.warning("Enums are not supported in this API until IDA 9.0")
+
+    return types
+
+
+@execute_write
+def get_ord_to_type_names() -> typing.Dict[int, typing.Tuple[str, typing.Type[Artifact]]]:
+    idati = idaapi.get_idati()
+    ord_to_name = {}
+    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+        tif = ida_typeinf.tinfo_t()
+        success = tif.get_numbered_type(idati, ord_num)
+        if not success:
+            continue
+
+        type_name = tif.get_type_name()
+        if tif.is_typedef():
+            type_type = Typedef
+        elif tif.is_struct():
+            type_type = Struct
+        elif tif.is_enum():
+            type_type = Enum
+        else:
+            type_type = None
+
+        if type_name:
+            ord_to_name[ord_num] = (type_name, type_type)
+
+    return ord_to_name
+
+
+def get_ida_type(ida_ord=None, name=None):
+    tif = ida_typeinf.tinfo_t()
+    idati = idaapi.get_idati()
+    if ida_ord is not None:
+        success = tif.get_numbered_type(idati, ida_ord)
+        if not success:
+            return None
+    elif name is not None:
+        success = tif.get_named_type(idati, name)
+        if not success:
+            return None
+    else:
+        return None
+
+    return tif
+
+#
+# Type Converters
 #
 
 @execute_write
@@ -716,16 +793,45 @@ def ida_get_frame(func_addr):
 #   IDA Struct r/w
 #
 
+def bs_struct_from_tif(tif):
+    if not tif.is_struct():
+        return None
+
+    size = tif.get_size()
+    name = tif.get_type_name()
+
+    # get members
+    members = {}
+    if size > 0:
+        udt_data = ida_typeinf.udt_type_data_t()
+        if tif.get_udt_details(udt_data):
+            for udt_memb in udt_data:
+                offset = udt_memb.offset
+                m_name = udt_memb.name
+                m_type = udt_memb.type
+                type_name = m_type.get_type_name() or str(m_type)
+                m_size = m_type.get_size()
+                members[offset] = StructMember(name=m_name, type_=type_name, size=m_size, offset=offset)
+
+    return Struct(name=name, size=size, members=members)
+
+
 @execute_write
 def structs():
-    _structs = {}
-    for struct_item in idautils.Structs():
-        idx, sid, name = struct_item[:]
-        sptr = ida_struct.get_struc(sid)
-        size = ida_struct.get_struc_size(sptr)
-        _structs[name] = Struct(name, size, {})
-        
+    dec_version = get_decompiler_version()
+    if dec_version < Version("8.4"):
+        # TODO: in IDA 9, we will deprecate this block of code
+        _structs = {}
+        for struct_item in idautils.Structs():
+            idx, sid, name = struct_item[:]
+            sptr = ida_struct.get_struc(sid)
+            size = ida_struct.get_struc_size(sptr)
+            _structs[name] = Struct(name, size, {})
+    else:
+        _structs = get_types(structs=True, enums=False, typedefs=False)
+
     return _structs
+
 
 @execute_write
 def struct(name):
@@ -1194,6 +1300,7 @@ def get_decompiler_version() -> typing.Optional[Version]:
         return None
 
     return vers
+
 
 def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
     form_type = idaapi.get_widget_type(view)

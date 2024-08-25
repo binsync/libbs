@@ -691,6 +691,18 @@ class DecompilerInterface:
 
         return lifted_enum
 
+    def typedef_changed(self, typedef: Typedef, deleted=False, **kwargs) -> Typedef:
+        kwargs["deleted"] = deleted
+        lifted_typedef = self.art_lifter.lift(typedef)
+        for callback_func in self.artifact_change_callbacks[Typedef]:
+            args = (lifted_typedef,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
+
+        return lifted_typedef
+
     def global_variable_changed(self, gvar: GlobalVariable, **kwargs) -> GlobalVariable:
         lifted_gvar = self.art_lifter.lift(gvar)
         for callback_func in self.artifact_change_callbacks[GlobalVariable]:

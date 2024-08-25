@@ -32,6 +32,7 @@ class IDAInterface(DecompilerInterface):
         self._artifact_watcher_hooks = []
         self._gui_active_context = None
         self._deleted_artifacts = defaultdict(set)
+        self.cached_ord_to_type_names = {}
 
         super().__init__(
             name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self),
@@ -60,6 +61,13 @@ class IDAInterface(DecompilerInterface):
 
     def _init_gui_plugin(self, *args, **kwargs):
         return compat.GenericIDAPlugin(*args, name=self._plugin_name, interface=self, **kwargs)
+
+    @property
+    def dec_version(self):
+        if self._dec_version is None:
+            self._dec_version = compat.get_decompiler_version()
+
+        return self._dec_version
 
     #
     # GUI
@@ -198,8 +206,16 @@ class IDAInterface(DecompilerInterface):
 
     def start_artifact_watchers(self):
         super().start_artifact_watchers()
+        # TODO: this is a hack for backwards compatibility and should be removed in IDA 9
+        idb_hook = IDBHooks(self)
+        if self.dec_version < Version("8.4"):
+            idb_hook.local_types_changed = lambda: 0
+        else:
+            # this code in this block must exist in 9.0, so don't delete it!
+            self.cached_ord_to_type_names = compat.get_ord_to_type_names()
+
         self._artifact_watcher_hooks = [
-            IDBHooks(self),
+            idb_hook,
             # this hook is special because it relies on the decompiler being present, which can only be checked
             # after the plugin loading phase. this means the user will need to manually init this hook in the UI
             # either through scripting or a UI.
@@ -290,9 +306,8 @@ class IDAInterface(DecompilerInterface):
 
     # structs
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
-        self._dec_version = compat.get_decompiler_version() if self._dec_version is None else self._dec_version
         data_changed = False
-        if (self._dec_version is not None and self._dec_version < Version("8.3")) and "gcc_va_list" in struct.name:
+        if (self.dec_version < Version("8.3")) and "gcc_va_list" in struct.name:
             _l.critical(f"Syncing the struct {struct.name} in IDA Pro 8.2 <= will cause a crash. Skipping...")
             return False
 
