@@ -272,7 +272,6 @@ class IDBHooks(ida_idp.IDB_Hooks):
             ida_struct.get_struc_size(struct_ptr),
             {},
         )
-        print("Initial bs_struct: ", bs_struct)
 
         for mptr in struct_ptr.members:
             m_name = ida_struct.get_member_name(mptr.id)
@@ -281,7 +280,6 @@ class IDBHooks(ida_idp.IDB_Hooks):
             m_size = ida_struct.get_member_size(mptr)
             bs_struct.add_struct_member(m_name, m_off, m_type, m_size)
 
-        print("Final bs_struct: ", bs_struct)
         self.interface.struct_changed(bs_struct, deleted=False)
         return 0
 
