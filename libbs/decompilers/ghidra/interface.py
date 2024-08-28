@@ -207,7 +207,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def gui_goto(self, func_addr) -> None:
         func_addr = self.art_lifter.lower_addr(func_addr)
-        self.flat_api.goTo(self.flat_api.toAddr(func_addr))
+        self.flat_api.goTo(self._to_gaddr(func_addr))
 
     #
     # Mandatory API
@@ -592,7 +592,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if comment.comment:
             # TODO: check if comment already exists, and append?
             return SetCommentCmd(
-                self.flat_api.toAddr(comment.addr), cmt_type, comment.comment
+                self._to_gaddr(comment.addr), cmt_type, comment.comment
             ).applyTo(self.currentProgram)
         return True
 
@@ -810,10 +810,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return f"[{level}] | {log_path} | {msg}"
 
-
     #
     # Ghidra Specific API
     #
+
+    def _to_gaddr(self, addr: int):
+        return self.flat_api.toAddr(hex(addr))
 
     @property
     def currentProgram(self):
@@ -845,7 +847,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def _get_nearest_function(self, addr: int) -> "GhidraFunction":
         func_manager = self.currentProgram.getFunctionManager()
-        return func_manager.getFunctionContaining(self.flat_api.toAddr(addr))
+        return func_manager.getFunctionContaining(self._to_gaddr(addr))
 
     def _gstack_var_to_bsvar(self, gstack_var: "LocalVariableDB"):
         if gstack_var is None:
@@ -1004,7 +1006,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ui_remote_eval
     def __fast_function(self, lowered_addr: int) -> List["GhidraFunction"]:
         return [
-            self.currentProgram.getFunctionManager().getFunctionContaining(self.flat_api.toAddr(lowered_addr))
+            self.currentProgram.getFunctionManager().getFunctionContaining(self.flat_api.toAddr(hex(lowered_addr)))
         ]
 
     @ui_remote_eval
