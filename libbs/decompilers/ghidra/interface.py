@@ -63,6 +63,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             name="ghidra",
             artifact_lifter=GhidraArtifactLifter(self),
             supports_undo=True,
+            default_func_prefix="FUN_",
             **kwargs
         )
 
