@@ -43,6 +43,7 @@ class DecompilerInterface:
         # these flags should mostly be unchanged when passed through subclasses
         name: str = "generic",
         qt_version: str = "PySide6",
+        default_func_prefix: str = "sub_",
         artifact_lifter: Optional[ArtifactLifter] = None,
         error_on_artifact_duplicates: bool = False,
         decompiler_available: bool = True,
@@ -68,6 +69,7 @@ class DecompilerInterface:
         self.type_parser = CTypeParser()
         self.supports_undo = supports_undo
         self.qt_version = qt_version
+        self.default_func_prefix = default_func_prefix
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
 
         self.headless = headless
