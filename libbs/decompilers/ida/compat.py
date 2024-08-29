@@ -836,7 +836,7 @@ def structs():
 @execute_write
 def struct(name):
     sid = ida_struct.get_struc_id(name)
-    if sid == 0xffffffffffffffff:
+    if sid == idaapi.BADADDR:
         return None
     
     sptr = ida_struct.get_struc(sid)
@@ -855,7 +855,7 @@ def struct(name):
 @execute_write
 def del_ida_struct(name) -> bool:
     sid = ida_struct.get_struc_id(name)
-    if sid == 0xffffffffffffffff:
+    if sid == idaapi.BADADDR:
         return False
 
     sptr = ida_struct.get_struc(sid)
@@ -869,7 +869,7 @@ def set_struct_member_name(ida_struct, frame, offset, name):
 def set_ida_struct(struct: Struct) -> bool:
     # first, delete any struct by the same name if it exists
     sid = ida_struct.get_struc_id(struct.name)
-    if sid != 0xffffffffffffffff:
+    if sid != idaapi.BADADDR:
         sptr = ida_struct.get_struc(sid)
         ida_struct.del_struc(sptr)
 
@@ -997,14 +997,20 @@ def get_enum_members(_enum) -> typing.Dict[str, int]:
     enum_members[member_name] = member
     
     member = ida_enum.get_next_enum_member(_enum, member, 0)
-    while member:
-        if member == 0xffffffffffffffff: break
+    max_iters = 100
+    for _ in range(max_iters):
+        if member == idaapi.BADADDR:
+            break
+
         member_addr = ida_enum.get_enum_member(_enum, member, 0, 0)
         member_name = ida_enum.get_enum_member_name(member_addr)
         if member_name:
             enum_members[member_name] = member
 
         member = ida_enum.get_next_enum_member(_enum, member, 0)
+    else:
+        _l.critical(f"IDA failed to iterate all enum members for enum %s", _enum)
+
     return enum_members
 
 
