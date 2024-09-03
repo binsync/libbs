@@ -43,7 +43,7 @@ jobs:
     - name: Install Ghidra
       uses: er28-0652/setup-ghidra@master
       with:
-        version: "10.4"
+        version: "11.1"
     - name: Pytest
       run: |
         # these two test must be run in separate python environments, due to the way ghidra bridge works

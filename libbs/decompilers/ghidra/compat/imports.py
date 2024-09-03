@@ -29,7 +29,7 @@ if HEADLESS:
     from ghidra.program.model.data import (
         DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath, TypedefDataType
     )
-    from ghidra.program.util import ChangeManager, ProgramChangeRecord
+    from ghidra.program.util import ChangeManager, ProgramChangeRecord, FunctionChangeRecord
     from ghidra.program.database.function import VariableDB, FunctionDB
     from ghidra.program.database.symbol import CodeSymbol, FunctionSymbol
     from ghidra.program.model.listing import CodeUnit
@@ -56,7 +56,7 @@ else:
         "ghidra.program.model.data",
         ("DataTypeConflictHandler", "StructureDataType", "ByteDataType", "EnumDataType", "CategoryPath", "TypedefDataType")
     )
-    ChangeManager, ProgramChangeRecord = import_objs("ghidra.program.util", ("ChangeManager", "ProgramChangeRecord"))
+    ChangeManager, ProgramChangeRecord, FunctionChangeRecord = import_objs("ghidra.program.util", ("ChangeManager", "ProgramChangeRecord", "FunctionChangeRecord"))
     VariableDB, FunctionDB = import_objs("ghidra.program.database.function", ("VariableDB", "FunctionDB"))
     CodeSymbol, FunctionSymbol = import_objs("ghidra.program.database.symbol", ("CodeSymbol", "FunctionSymbol"))
     CodeUnit = import_objs("ghidra.program.model.listing", ("CodeUnit",))
@@ -82,6 +82,7 @@ __all__ = [
     "SourceType",
     "ChangeManager",
     "ProgramChangeRecord",
+    "FunctionChangeRecord",
     "VariableDB",
     "FunctionDB",
     "CodeSymbol",

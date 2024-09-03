@@ -66,9 +66,15 @@ class TestRemoteGhidra(unittest.TestCase):
             # function return type
             main.header.type = 'long'
             deci.functions[func_addr] = main
+            time.sleep(5)
 
             main.header.type = 'double'
             deci.functions[func_addr] = main
+            time.sleep(5)
+
+            # confirm the final type is correct
+            new_main = deci.functions[func_addr]
+            assert new_main.header.type == main.header.type
 
             assert len(hits[FunctionHeader]) >= old_header_hits + 2
 

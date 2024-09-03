@@ -506,7 +506,12 @@ class GhidraDecompilerInterface(DecompilerInterface):
             params = ghidra_func.getParameters()
             if len(params) == 0:
                 with Transaction(self.flat_api, msg="BS::set_function_header::update_params"):
-                    HighFunctionDBUtil.commitParamsToDatabase(decompilation.highFunction, True, SourceType.USER_DEFINED)
+                    HighFunctionDBUtil.commitParamsToDatabase(
+                        decompilation.highFunction,
+                        True,
+                        HighFunctionDBUtil.ReturnCommitOption.COMMIT_NO_VOID,
+                        SourceType.USER_DEFINED
+                    )
 
             with Transaction(self.flat_api, msg="BS::set_function_header::set_arguments"):
                 for offset, param in zip(fheader.args, params):
