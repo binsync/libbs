@@ -140,7 +140,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
         elif old_type == Enum:
             self.interface.enum_changed(Enum(old_name, members={}), deleted=True)
         elif old_type == Typedef:
-            self.interface.typedef_changed(Typedef(nam=old_name), deleted=True)
+            self.interface.typedef_changed(Typedef(name=old_name), deleted=True)
 
         del self.interface.cached_ord_to_type_names[ordinal]
 
@@ -170,7 +170,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
         is_typedef, name, type_name = compat.typedef_info(tif, use_new_check=True)
         new_type_type = None
         if is_typedef:
-            self.interface.typedef_changed(Typedef(nam=name, type_=type_name))
+            self.interface.typedef_changed(Typedef(name=name, type_=type_name))
             new_type_type = Typedef
         elif tif.is_struct():
             bs_struct = compat.bs_struct_from_tif(tif)
