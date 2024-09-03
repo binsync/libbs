@@ -66,6 +66,7 @@ class TestRemoteGhidra(unittest.TestCase):
             # function return type
             main.header.type = 'long'
             deci.functions[func_addr] = main
+            time.sleep(0.5)
 
             main.header.type = 'double'
             deci.functions[func_addr] = main
