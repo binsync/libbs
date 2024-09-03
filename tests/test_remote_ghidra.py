@@ -70,6 +70,10 @@ class TestRemoteGhidra(unittest.TestCase):
             main.header.type = 'double'
             deci.functions[func_addr] = main
 
+            # confirm the final type is correct
+            new_main = deci.functions[func_addr]
+            assert new_main.header.type == main.header.type
+
             assert len(hits[FunctionHeader]) >= old_header_hits + 2
 
             # global var names
