@@ -217,7 +217,7 @@ class DecompilerInterface:
 
         @return:
         """
-        self.info("Starting BinSync artifact watchers...")
+        self.debug("Starting BinSync artifact watchers...")
         self._artifact_watchers_started = True
 
     def stop_artifact_watchers(self):
@@ -227,7 +227,7 @@ class DecompilerInterface:
         decompiler. This is useful for plugins that want to watch for changes in the decompiler and
         react to them.
         """
-        self.info("Stopping BinSync artifact watchers...")
+        self.debug("Stopping BinSync artifact watchers...")
         self._artifact_watchers_started = False
 
     @property

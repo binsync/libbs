@@ -38,7 +38,8 @@ FORM_TYPE_TO_NAME = {
     idaapi.BWN_FUNCS: "functions",
     idaapi.BWN_STRUCTS: "structs",
     idaapi.BWN_ENUMS: "enums",
-    idaapi.BWN_TILIST: "types",
+    # this is idaapi.BWN_TILIST, but made into a constant for 8.3 compatibility
+    0x3c: "types",
 }
 
 FUNC_FORMS = {"decompilation", "disassembly"}
@@ -1390,8 +1391,8 @@ def ask_choice(question, choices, title="Choose an option"):
         def __init__(self, options):
             self.dropdown = idaapi.Form.DropdownListControl(items=options)
             form_string = ("STARTITEM 0\n"
-                           f"{title}\n\n"
-                           f"{question}:\n"
+                           f"{title}\n"
+                           f"{question}\n"
                            "<Options:{dropdown}>")
             idaapi.Form.__init__(self, form_string, {'dropdown': self.dropdown})
 
