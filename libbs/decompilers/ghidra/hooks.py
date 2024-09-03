@@ -14,7 +14,7 @@ _l = logging.getLogger(__name__)
 def create_data_monitor(deci: "GhidraDecompilerInterface"):
     from .compat.imports import (
         DomainObjectListener, ChangeManager, ProgramChangeRecord, VariableDB, FunctionDB, CodeSymbol,
-        FunctionSymbol
+        FunctionSymbol, FunctionChangeRecord
     )
 
     class DataMonitor(DomainObjectListener):
@@ -76,8 +76,8 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
                 new_value = record.getNewValue()
                 obj = record.getObject()
                 if changeType in self.funcEvents:
-                    subType = record.getSubEventType()
-                    if subType == ChangeManager.FUNCTION_CHANGED_RETURN:
+                    func_change_type = record.getSpecificChangeType()
+                    if func_change_type == FunctionChangeRecord.FunctionChangeType.RETURN_TYPE_CHANGED:
                         # Function return type changed
                         header = FunctionHeader(
                             name=None, addr=obj.getEntryPoint().getOffset(), type_=str(obj.getReturnType())
