@@ -17,7 +17,7 @@ import logging
 from packaging.version import Version
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
-    ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum, ida_kernwin, ida_segment
+    ida_bytes, ida_idaapi, ida_typeinf, idautils, ida_kernwin, ida_segment
 
 import libbs
 from libbs.artifacts import (
@@ -34,8 +34,10 @@ FORM_TYPE_TO_NAME = {
     idaapi.BWN_PSEUDOCODE: "decompilation",
     idaapi.BWN_DISASM: "disassembly",
     idaapi.BWN_FUNCS: "functions",
-    idaapi.BWN_STRUCTS: "structs",
-    idaapi.BWN_ENUMS: "enums",
+    # idaapi.BWN_STRINGS
+    0x1c: "structs",
+    # idaapi.BWN_ENUMS
+    0x1b: "enums",
     # this is idaapi.BWN_TILIST, but made into a constant for 8.3 compatibility
     0x3c: "types",
 }
@@ -155,12 +157,20 @@ def set_func_ret_type(ea, return_type_str):
 #
 
 
+def get_ordinal_count():
+    dec_version = get_decompiler_version()
+    if dec_version < Version("9.0"):
+        return ida_typeinf.get_ordinal_qty(idaapi.get_idati())
+    else:
+        return ida_typeinf.get_ordinal_count(idaapi.get_idati())
+
+
 @execute_write
 def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artifact]:
     types = {}
     idati = idaapi.get_idati()
 
-    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+    for ord_num in range(get_ordinal_count()):
         tif = ida_typeinf.tinfo_t()
         success = tif.get_numbered_type(idati, ord_num)
         if not success:
@@ -177,8 +187,8 @@ def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artif
             bs_struct = bs_struct_from_tif(tif)
             types[bs_struct.name] = bs_struct
         elif enums and tif.is_enum():
-            # TODO: implement this for 9.0
-            _l.warning("Enums are not supported in this API until IDA 9.0")
+            bs_enum = enum_from_tif(tif)
+            types[bs_enum.name] = bs_enum
 
     return types
 
@@ -187,7 +197,7 @@ def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artif
 def get_ord_to_type_names() -> typing.Dict[int, typing.Tuple[str, typing.Type[Artifact]]]:
     idati = idaapi.get_idati()
     ord_to_name = {}
-    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+    for ord_num in range(get_ordinal_count()):
         tif = ida_typeinf.tinfo_t()
         success = tif.get_numbered_type(idati, ord_num)
         if not success:
@@ -314,7 +324,8 @@ def get_func_size(ea):
 def set_ida_func_name(func_addr, new_name):
     idaapi.set_name(func_addr, new_name, idaapi.SN_FORCE)
     ida_kernwin.request_refresh(ida_kernwin.IWID_DISASMS)
-    ida_kernwin.request_refresh(ida_kernwin.IWID_STRUCTS)
+    # XXX: why was this here?!?!?
+    #ida_kernwin.request_refresh(ida_kernwin.IWID_STRUCTS)
     ida_kernwin.request_refresh(ida_kernwin.IWID_STKVIEW)
 
 def get_segment_range(segment_name) -> typing.Tuple[bool, int, int]:
@@ -653,7 +664,7 @@ def set_stack_variable(svar: StackVariable, decompiler_available=True, **kwargs)
             ida_code_view.cfunc.refresh_func_ctext()
 
     frame = idaapi.get_frame(svar.addr)
-    if svar.name and ida_struct.set_member_name(frame, svar.offset, svar.name):
+    if svar.name and idc.set_member_name(frame, svar.offset, svar.name):
         changes |= True
 
     return changes
@@ -859,8 +870,8 @@ def structs():
         _structs = {}
         for struct_item in idautils.Structs():
             idx, sid, name = struct_item[:]
-            sptr = ida_struct.get_struc(sid)
-            size = ida_struct.get_struc_size(sptr)
+            sptr = idc.get_struc(sid)
+            size = idc.get_struc_size(sptr)
             _structs[name] = Struct(name, size, {})
     else:
         _structs = get_types(structs=True, enums=False, typedefs=False)
@@ -870,52 +881,52 @@ def structs():
 
 @execute_write
 def struct(name):
-    sid = ida_struct.get_struc_id(name)
+    sid = idc.get_struc_id(name)
     if sid == idaapi.BADADDR:
         return None
     
-    sptr = ida_struct.get_struc(sid)
-    size = ida_struct.get_struc_size(sptr)
+    sptr = idc.get_struc(sid)
+    size = idc.get_struc_size(sptr)
     _struct = Struct(name, size, {}, last_change=datetime.datetime.now(tz=datetime.timezone.utc))
     for mptr in sptr.members:
         mid = mptr.id
-        m_name = ida_struct.get_member_name(mid)
+        m_name = idc.get_member_name(mid)
         m_off = mptr.soff
         m_type = ida_typeinf.idc_get_type(mptr.id) if mptr.has_ti() else ""
-        m_size = ida_struct.get_member_size(mptr)
+        m_size = idc.get_member_size(mptr)
         _struct.add_struct_member(m_name, m_off, m_type, m_size)
 
     return _struct
 
 @execute_write
 def del_ida_struct(name) -> bool:
-    sid = ida_struct.get_struc_id(name)
+    sid = idc.get_struc_id(name)
     if sid == idaapi.BADADDR:
         return False
 
-    sptr = ida_struct.get_struc(sid)
-    return ida_struct.del_struc(sptr)
+    sptr = idc.get_struc(sid)
+    return idc.del_struc(sptr)
 
 @execute_write
 def set_struct_member_name(ida_struct, frame, offset, name):
-    ida_struct.set_member_name(frame, offset, name)
+    idc.set_member_name(frame, offset, name)
 
 @execute_write
 def set_ida_struct(struct: Struct) -> bool:
     # first, delete any struct by the same name if it exists
-    sid = ida_struct.get_struc_id(struct.name)
+    sid = idc.get_struc_id(struct.name)
     if sid != idaapi.BADADDR:
-        sptr = ida_struct.get_struc(sid)
-        ida_struct.del_struc(sptr)
+        sptr = idc.get_struc(sid)
+        idc.del_struc(sptr)
 
     # now make a struct header
-    ida_struct.add_struc(ida_idaapi.BADADDR, struct.name, False)
-    sid = ida_struct.get_struc_id(struct.name)
-    sptr = ida_struct.get_struc(sid)
+    idc.add_struc(ida_idaapi.BADADDR, struct.name, False)
+    sid = idc.get_struc_id(struct.name)
+    sptr = idc.get_struc(sid)
 
     # expand the struct to the desired size
     # XXX: do not increment API here, why? Not sure, but you cant do it here.
-    ida_struct.expand_struc(sptr, 0, struct.size)
+    idc.expand_struc(sptr, 0, struct.size)
 
     # add every member of the struct
     for off, member in struct.members.items():
@@ -923,7 +934,7 @@ def set_ida_struct(struct: Struct) -> bool:
         mflag = convert_size_to_flag(member.size)
 
         # create the new member
-        ida_struct.add_struc_member(
+        idc.add_struc_member(
             sptr,
             member.name,
             member.offset,
@@ -937,8 +948,8 @@ def set_ida_struct(struct: Struct) -> bool:
 @execute_write
 def set_ida_struct_member_types(struct: Struct) -> bool:
     # find the specific struct
-    sid = ida_struct.get_struc_id(struct.name)
-    sptr = ida_struct.get_struc(sid)
+    sid = idc.get_struc_id(struct.name)
+    sptr = idc.get_struc(sid)
     data_changed = False
 
     for idx, member in enumerate(struct.members.values()):
@@ -953,7 +964,7 @@ def set_ida_struct_member_types(struct: Struct) -> bool:
 
         # set the type
         mptr = sptr.get_member(idx)
-        was_set = ida_struct.set_member_tinfo(
+        was_set = idc.set_member_tinfo(
             sptr,
             mptr,
             0,
@@ -1023,68 +1034,69 @@ def ida_type_from_serialized(typ: bytes, fields: bytes):
 def get_enum_members(_enum) -> typing.Dict[str, int]:
     enum_members = {}
 
-    member = ida_enum.get_first_enum_member(_enum)
-    member_addr = ida_enum.get_enum_member(_enum, member, 0, 0)
-    member_name = ida_enum.get_enum_member_name(member_addr)
+    member = idc.get_first_enum_member(_enum)
+    member_addr = idc.get_enum_member(_enum, member, 0, 0)
+    member_name = idc.get_enum_member_name(member_addr)
     if member_name is None:
         return enum_members
 
     enum_members[member_name] = member
     
-    member = ida_enum.get_next_enum_member(_enum, member, 0)
+    member = idc.get_next_enum_member(_enum, member, 0)
     max_iters = 100
     for _ in range(max_iters):
         if member == idaapi.BADADDR:
             break
 
-        member_addr = ida_enum.get_enum_member(_enum, member, 0, 0)
-        member_name = ida_enum.get_enum_member_name(member_addr)
+        member_addr = idc.get_enum_member(_enum, member, 0, 0)
+        member_name = idc.get_enum_member_name(member_addr)
         if member_name:
             enum_members[member_name] = member
 
-        member = ida_enum.get_next_enum_member(_enum, member, 0)
+        member = idc.get_next_enum_member(_enum, member, 0)
     else:
         _l.critical(f"IDA failed to iterate all enum members for enum %s", _enum)
 
     return enum_members
 
 
+def enum_from_tif(tif):
+    enum_name = tif.get_type_name()
+    enum_members = get_enum_members(tif)
+    return Enum(enum_name, enum_members)
+
+
 @execute_write
 def enums() -> typing.Dict[str, Enum]:
-    _enums: typing.Dict[str, Enum] = {}
-    for i in range(ida_enum.get_enum_qty()):
-        _enum = ida_enum.getn_enum(i)
-        enum_name = ida_enum.get_enum_name(_enum)
-        enum_members = get_enum_members(_enum)
-        _enums[enum_name] = Enum(enum_name, enum_members)
-    return _enums
+    return get_types(structs=False, enums=True, typedefs=False)
 
 
 @execute_write
 def enum(name) -> typing.Optional[Enum]:
-    _enum = ida_enum.get_enum(name)
+    _enum = idc.get_enum(name)
     if not _enum:
         return None
-    enum_name = ida_enum.get_enum_name(_enum)
+    enum_name = idc.get_enum_name(_enum)
     enum_members = get_enum_members(_enum)
     return Enum(enum_name, enum_members)
 
 
 @execute_write
 def set_enum(bs_enum: Enum):
-    _enum = ida_enum.get_enum(bs_enum.name)
+    _enum = idc.get_enum(bs_enum.name)
     if not _enum:
         return False
 
-    ida_enum.del_enum(_enum)
-    enum_id = ida_enum.add_enum(ida_enum.get_enum_qty(), bs_enum.name, 0)
+    idc.del_enum(_enum)
+    ords = get_ordinal_count()
+    enum_id = idc.add_enum(ords, bs_enum.name, 0)
 
     if enum_id is None:
         _l.warning(f"IDA failed to create a new enum with {bs_enum.name}")
         return False
 
     for member_name, value in bs_enum.members.items():
-        ida_enum.add_enum_member(enum_id, member_name, value)
+        idc.add_enum_member(enum_id, member_name, value)
 
     return True
 
@@ -1130,7 +1142,7 @@ def typedefs() -> typing.Dict[str, Typedef]:
     typedefs = {}
     idati = idaapi.get_idati()
     use_new_check = use_new_typedef_check()
-    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+    for ord_num in range(get_ordinal_count()):
         tif = ida_typeinf.tinfo_t()
         success = tif.get_numbered_type(idati, ord_num)
         if not success:

@@ -33,9 +33,7 @@ import ida_funcs
 import ida_hexrays
 import ida_idp
 import ida_kernwin
-import ida_struct
 import ida_typeinf
-import ida_enum
 import idaapi
 import idc
 
@@ -207,7 +205,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
     @while_should_watch
     def ida_enum_changed(self, enum_id, new_name=None, deleted=False, member_deleted=False):
-        name = ida_enum.get_enum_name(enum_id)
+        name = idc.get_enum_name(enum_id)
         _enum = compat.enum(name) if not deleted else Enum(name, {})
         if name in self.interface._deleted_artifacts[Enum]:
             if member_deleted:
@@ -240,7 +238,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     def renaming_enum(self, id, is_enum, newname):
         enum_id = id
         if not is_enum:
-            enum_id = ida_enum.get_enum_member_enum(id)
+            enum_id = idc.get_enum_member_enum(id)
 
         # delete it
         self.ida_enum_changed(enum_id, deleted=True)
@@ -273,7 +271,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
     def ida_struct_changed(self, sid: int, new_name=None, deleted=False, member_deleted=False):
         # parse the info of the current struct
-        struct_name = new_name if new_name else ida_struct.get_struc_name(sid)
+        struct_name = new_name if new_name else idc.get_struc_name(sid)
 
         if struct_name in self.interface._deleted_artifacts[Struct]:
             if member_deleted:
@@ -293,18 +291,18 @@ class IDBHooks(ida_idp.IDB_Hooks):
             self.interface.struct_changed(Struct(struct_name, -1, {}), deleted=True)
             return 0
 
-        struct_ptr = ida_struct.get_struc(sid)
+        struct_ptr = idc.get_struc(sid)
         bs_struct = Struct(
             struct_name,
-            ida_struct.get_struc_size(struct_ptr),
+            idc.get_struc_size(struct_ptr),
             {},
         )
 
         for mptr in struct_ptr.members:
-            m_name = ida_struct.get_member_name(mptr.id)
+            m_name = idc.get_member_name(mptr.id)
             m_off = mptr.soff
             m_type = ida_typeinf.idc_get_type(mptr.id) if mptr.has_ti() else ""
-            m_size = ida_struct.get_member_size(mptr)
+            m_size = idc.get_member_size(mptr)
             bs_struct.add_struct_member(m_name, m_off, m_type, m_size)
 
         self.interface.struct_changed(bs_struct, deleted=False)
@@ -326,14 +324,14 @@ class IDBHooks(ida_idp.IDB_Hooks):
         type_str = stack_var_info.type
 
         # TODO: correct this fix in the get_func_stack_var_info
-        new_name = ida_struct.get_member_name(mptr.id)
+        new_name = idc.get_member_name(mptr.id)
         self.interface.stack_variable_changed(
             StackVariable(bs_offset, new_name, type_str, size, func_addr)
         )
 
     @while_should_watch
     def struc_created(self, tid):
-        sptr = ida_struct.get_struc(tid)
+        sptr = idc.get_struc(tid)
         if not sptr.is_frame():
             self.ida_struct_changed(tid)
 
@@ -357,7 +355,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     # XXX - use struc_renamed(self, sptr) instead?
     @while_should_watch
     def renaming_struc(self, id, oldname, newname):
-        sptr = ida_struct.get_struc(id)
+        sptr = idc.get_struc(id)
         if not sptr.is_frame():
             # delete it
             self.ida_struct_changed(id, deleted=True)
@@ -407,7 +405,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     @while_should_watch
     def renamed(self, ea, new_name, local_name):
         # ignore any changes landing here for structs and stack vars
-        if ida_struct.is_member_id(ea) or ida_struct.get_struc(ea) or ida_enum.get_enum_name(ea):
+        if idc.is_member_id(ea) or idc.get_struc(ea) or idc.get_enum_name(ea):
             return 0
 
         ida_func = idaapi.get_func(ea)
@@ -473,13 +471,13 @@ class IDBHooks(ida_idp.IDB_Hooks):
     @while_should_watch
     def struc_cmt_changed(self, id, repeatable_cmt):
         """
-        fullname = ida_struct.get_struc_name(id)
+        fullname = idc.get_struc_name(id)
         if "." in fullname:
             sname, smname = fullname.split(".", 1)
         else:
             sname = fullname
             smname = ""
-        cmt = ida_struct.get_struc_cmt(id, repeatable_cmt)
+        cmt = idc.get_struc_cmt(id, repeatable_cmt)
         """
         return 0
 
