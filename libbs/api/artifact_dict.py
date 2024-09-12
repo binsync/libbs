@@ -134,3 +134,8 @@ class ArtifactDict(dict):
 
     def items(self):
         return self._lifted_art_lister().items()
+
+    def get(self, key, default=None):
+        if key in self:
+            return self[key]
+        return default

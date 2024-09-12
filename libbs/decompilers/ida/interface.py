@@ -386,8 +386,12 @@ class IDAInterface(DecompilerInterface):
         return compat.set_ida_comment(comment.addr, comment.comment, decompiled=comment.decompiled)
 
     def _get_comment(self, addr) -> Optional[Comment]:
-        # TODO: implement me!
-        return None
+        ida_cmt = compat.get_ida_comment(addr)
+        if ida_cmt is None:
+            return None
+
+        # TODO: need to be better implemented!
+        return Comment(addr=addr, comment=str(ida_cmt), decompiled=True)
 
     def _comments(self) -> Dict[int, Comment]:
         # TODO: implement me!

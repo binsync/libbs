@@ -697,6 +697,21 @@ def set_ida_comment(addr, cmt, decompiled=False):
         return True
 
 
+def get_ida_comment(addr, decompiled=True):
+    # TODO: support more than just functions
+    # TODO: support more than just function headers
+    if decompiled and not ida_hexrays.init_hexrays_plugin():
+        raise ValueError("Decompiler is not available, but you are requesting a decompiled comment")
+
+    func = idaapi.get_func(addr)
+    if func is None:
+        return None
+
+    if func.start_ea == addr:
+        cmt = idc.get_func_cmt(addr, 1)
+        return cmt if cmt else None
+
+
 @execute_write
 def set_decomp_comments(func_addr, cmt_dict: typing.Dict[int, str]):
     for addr in cmt_dict:
