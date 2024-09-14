@@ -3,6 +3,7 @@ import logging
 from libbs.api import ArtifactLifter
 
 l = logging.getLogger(name=__name__)
+from . import compat
 
 
 class IDAArtifactLifter(ArtifactLifter):
@@ -23,10 +24,11 @@ class IDAArtifactLifter(ArtifactLifter):
         return type_str
 
     def lift_stack_offset(self, offset: int, func_addr: int) -> int:
-        return offset
+        return compat.ida_to_bs_stack_offset(func_addr, offset)
 
     def lower_type(self, type_str: str) -> str:
         return type_str
 
     def lower_stack_offset(self, offset: int, func_addr: int) -> int:
+        # TODO: this needs to be updated
         return abs(offset) #compat.ida_to_angr_stack_offset(func_addr, offset)

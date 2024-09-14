@@ -29,6 +29,7 @@ if typing.TYPE_CHECKING:
     from .interface import IDAInterface
 
 _l = logging.getLogger(__name__)
+_IDA_VERSION = None
 
 FORM_TYPE_TO_NAME = {
     idaapi.BWN_PSEUDOCODE: "decompilation",
@@ -157,12 +158,23 @@ def set_func_ret_type(ea, return_type_str):
 #
 
 
+def get_ida_version():
+    global _IDA_VERSION
+    if _IDA_VERSION is None:
+        _IDA_VERSION = Version(idaapi.get_kernel_version())
+
+    return _IDA_VERSION
+
+
+def new_ida_typing_system():
+    return get_ida_version() >= Version("9.0")
+
+
 def get_ordinal_count():
-    dec_version = get_decompiler_version()
-    if dec_version < Version("9.0"):
-        return ida_typeinf.get_ordinal_qty(idaapi.get_idati())
-    else:
+    if new_ida_typing_system():
         return ida_typeinf.get_ordinal_count(idaapi.get_idati())
+    else:
+        return ida_typeinf.get_ordinal_qty(idaapi.get_idati())
 
 
 @execute_write
@@ -252,18 +264,6 @@ def convert_type_str_to_ida_type(type_str) -> typing.Optional['ida_typeinf']:
         valid_parse = ida_typeinf.parse_decl(tif, None, ida_type_str, 1)
 
     return tif if valid_parse is not None else None
-
-@execute_write
-def ida_to_bs_stack_offset(func_addr, ida_stack_off):
-    frame = idaapi.get_frame(func_addr)
-    if not frame:
-        return ida_stack_off
-
-    frame_size = idc.get_struc_size(frame)
-    last_member_size = idaapi.get_member_size(frame.get_member(frame.memqty - 1))
-    bs_soff = ida_stack_off - frame_size + last_member_size
-    return bs_soff
-
 
 @execute_write
 def convert_size_to_flag(size):
@@ -599,23 +599,57 @@ def bs_header_from_tif(tif, name=None, addr=None):
 #
 
 
-def lvar_to_bs_var(lvar, vdui=None, var_name=None) -> typing.Optional[FunctionArgument]:
-    # only func args are supported right now
-    if lvar is None or vdui is None or not lvar.is_arg_var or vdui.cfunc is None or not vdui.cfunc.lvars:
-        return None
+def lvars_to_bs(lvars: list, vdui=None, var_names: list = None, recover_offset=False) -> list[typing.Union[FunctionArgument, StackVariable]]:
+    bs_vars = []
+    arg_name_to_off = {}
+    if var_names and len(var_names) == len(lvars):
+        if recover_offset:
+            for offset, _lvar in enumerate(vdui.cfunc.lvars):
+                if _lvar.is_arg_var:
+                    arg_name_to_off[_lvar.name] = offset
 
-    # find the offset
-    var_name = var_name or lvar.name
-    for offset, _lvar in enumerate(vdui.cfunc.lvars):
-        if _lvar.name == var_name:
-            break
-    else:
-        return None
+    for lvar_off, lvar in enumerate(lvars):
+        if lvar is None:
+            # this should really never happen
+            continue
 
-    # construct the type
-    type_ = str(_lvar.type())
-    size = _lvar.width
-    return FunctionArgument(offset, var_name, type_, size)
+        if vdui is None:
+            _l.warning("Cannot gather local variables from decompilation that does not exist!")
+            return bs_vars
+
+        if lvar.is_arg_var:
+            if recover_offset:
+                offset = arg_name_to_off.get(lvar.name, None)
+                if offset is None:
+                    continue
+            else:
+                offset = lvar_off
+            bs_cls = FunctionArgument
+        elif lvar.is_stk_var():
+            offset = lvar.location.stkoff()
+            bs_cls = StackVariable
+        elif lvar.is_reg_var():
+            # TODO: implement register variables
+            continue
+        else:
+            continue
+
+        name = None
+        if var_names:
+            name = var_names[lvar_off]
+        if not name:
+            name = lvar.name
+        type_ = str(lvar.type())
+        size = lvar.width
+
+        var = bs_cls(name=name, type_=type_, size=size)
+        var.offset = offset
+        if isinstance(var, StackVariable):
+            var.addr = vdui.cfunc.entry_ea
+
+        bs_vars.append(var)
+
+    return bs_vars
 
 
 @execute_write
@@ -643,31 +677,174 @@ def rename_local_variables_by_names(func: Function, name_map: typing.Dict[str, s
 # Stack Vars
 #
 
+def _deprecated_ida_to_bs_offset(func_addr, ida_stack_off):
+    frame = idaapi.get_frame(func_addr)
+    if not frame:
+        return ida_stack_off
+
+    frame_size = idc.get_struc_size(frame)
+    last_member_size = idaapi.get_member_size(frame.get_member(frame.memqty - 1))
+    bs_soff = ida_stack_off - frame_size + last_member_size
+    return bs_soff
+
+
+def get_func_stack_tif(func):
+    if isinstance(func, int):
+        func = idaapi.get_func(func)
+
+    if func is None:
+        return None
+
+    tif = ida_typeinf.tinfo_t()
+    if not tif.get_func_frame(func):
+        return None
+
+    return tif
+
+
+def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
+    if not new_ida_typing_system():
+        return _deprecated_ida_to_bs_offset(func_addr, ida_stack_off)
+
+    func = idaapi.get_func(func_addr)
+    if not func:
+        raise ValueError(f"Function {hex(func_addr)} does not exist.")
+
+    stack_tif = get_func_stack_tif(func)
+    if stack_tif is None:
+        _l.warning(f"Function {hex(func_addr)} does not have a stack frame.")
+        return ida_stack_off
+
+    frame_size = stack_tif.get_size()
+    if frame_size == 0:
+        _l.warning(f"Function {hex(func_addr)} has a stack frame size of 0.")
+        return ida_stack_off
+
+    # get the last member size
+    udt_data = ida_typeinf.udt_type_data_t()
+    stack_tif.get_udt_details(udt_data)
+    membs = [m for m in udt_data]
+    if not membs:
+        _l.warning(f"Function {hex(func_addr)} has a stack frame with no members.")
+        return ida_stack_off
+
+    last_member_type = membs[-1].type
+    if not last_member_type:
+        _l.warning(f"Function {hex(func_addr)} has a stack frame with a member with no type.")
+        return ida_stack_off
+
+    last_member_size = last_member_type.get_size()
+    bs_soff = ida_stack_off - frame_size + last_member_size
+    return bs_soff
+
+
 @execute_write
 @requires_decompilation
 def set_stack_variable(svar: StackVariable, decompiler_available=True, **kwargs):
     ida_code_view = kwargs.get('ida_code_view', None)
-    frame = idaapi.get_frame(svar.addr)
     changes = False
-    if frame is None or frame.memqty <= 0:
-        _l.warning(f"Function {svar.addr:x} does not have an associated function frame. Stopping sync here!")
-        return False
+    # if we have a decompiler, we can set the type and name ind decompilation
+    if ida_code_view is not None:
+        if svar.type:
+            ida_type = convert_type_str_to_ida_type(svar.type)
+            if ida_type is None:
+                _l.warning(f"IDA Failed to parse type for stack var {svar}")
+                return changes
 
-    if svar.type:
-        ida_type = convert_type_str_to_ida_type(svar.type)
-        if ida_type is None:
-            _l.warning(f"IDA Failed to parse type for stack var {svar}")
+            changes |= set_stack_vars_types({svar.offset: ida_type}, ida_code_view)
+            if changes:
+                ida_code_view.cfunc.refresh_func_ctext()
+
+        lvars = [v for v in ida_code_view.cfunc.lvars if v.is_stk_var()]
+        if not lvars:
             return changes
 
-        changes |= set_stack_vars_types({svar.offset: ida_type}, ida_code_view)
-        if changes:
-            ida_code_view.cfunc.refresh_func_ctext()
+        if svar.name:
+            for lvar in lvars:
+                if lvar.location.stkoff() == svar.offset:
+                    print(f"Renaming {lvar.name} to {svar.name}")
+                    lvar.name = svar.name
+                    changes |= True
+                    break
 
-    frame = idaapi.get_frame(svar.addr)
-    if svar.name and idc.set_member_name(frame, svar.offset, svar.name):
-        changes |= True
+            if changes:
+                ida_code_view.cfunc.refresh_func_ctext()
+    else:
+        # TODO: support stack vars without a decompiler available
+        _l.warning("Setting stack variables without a decompiler is not supported yet.")
 
     return changes
+
+
+@execute_write
+def get_func_stack_var_info(func_addr) -> typing.Dict[int, StackVariable]:
+    try:
+        decompilation = ida_hexrays.decompile(func_addr)
+    except ida_hexrays.DecompilationFailure:
+        _l.debug("Decompiling too many functions too fast! Slow down and try that operation again.")
+        return {}
+
+    if decompilation is None:
+        _l.warning("Decompiled something that gave no decompilation")
+        return {}
+
+    stack_var_info = {}
+
+    for var in decompilation.lvars:
+        if not var.is_stk_var():
+            continue
+
+        size = var.width
+        name = var.name
+
+        ida_offset = var.location.stkoff() - decompilation.get_stkoff_delta()
+        bs_offset = ida_to_bs_stack_offset(func_addr, ida_offset)
+        type_str = str(var.type())
+        stack_var_info[bs_offset] = StackVariable(
+            ida_offset, name, type_str, size, func_addr
+        )
+
+    return stack_var_info
+
+
+@execute_write
+def set_stack_vars_types(var_type_dict, ida_code_view) -> bool:
+    """
+    Sets the type of a stack variable, which should be a local variable.
+    Take special note of the types of first two parameters used here:
+    var_type_dict is a dictionary of the offsets and the new proposed type info for each offset.
+    This typeinfo should be gotten either by manully making a new typeinfo object or using the
+    parse_decl function. code_view is a _instance of vdui_t, which should be gotten through
+    open_pseudocode() from ida_hexrays.
+
+    This function also is special since it needs to iterate all of the stack variables an unknown amount
+    of times until a fixed point of variables types not changing is met.
+
+
+    @param var_type_dict:       Dict[stack_offset, ida_typeinf_t]
+    @param ida_code_view:           A pointer to a vdui_t screen
+    @param deci:          The libbs deci to do operations on
+    @return:
+    """
+
+    data_changed = False
+    fixed_point = False
+    func_addr = ida_code_view.cfunc.entry_ea
+    while not fixed_point:
+        fixed_point = True
+        for lvar in ida_code_view.cfunc.lvars:
+            if lvar.is_stk_var():
+                # TODO: this algorithm may need be corrected for programs with func args on the stack
+                cur_off = abs(ida_to_bs_stack_offset(func_addr, lvar.location.stkoff()))
+                if cur_off in var_type_dict:
+                    if str(lvar.type()) != str(var_type_dict[cur_off]):
+                        data_changed |= ida_code_view.set_lvar_type(lvar, var_type_dict.pop(cur_off))
+                        fixed_point = False
+                        # make sure to break, in case the size of lvars array has now changed
+                        break
+
+    return data_changed
+
 
 #
 #   IDA Comment r/w
@@ -758,84 +935,6 @@ def set_decomp_comments(func_addr, cmt_dict: typing.Dict[int, str]):
 
 
 #
-#   IDA Stack Var r/w
-#
-
-@execute_write
-def get_func_stack_var_info(func_addr) -> typing.Dict[int, StackVariable]:
-    try:
-        decompilation = ida_hexrays.decompile(func_addr)
-    except ida_hexrays.DecompilationFailure:
-        _l.debug("Decompiling too many functions too fast! Slow down and try that operation again.")
-        return {}
-
-    if decompilation is None:
-        _l.warning("Decompiled something that gave no decompilation")
-        return {}
-
-    stack_var_info = {}
-
-    for var in decompilation.lvars:
-        if not var.is_stk_var():
-            continue
-
-        size = var.width
-        name = var.name
-        
-        ida_offset = var.location.stkoff() - decompilation.get_stkoff_delta()
-        bs_offset = ida_to_bs_stack_offset(func_addr, ida_offset)
-        type_str = str(var.type())
-        stack_var_info[bs_offset] = StackVariable(
-            ida_offset, name, type_str, size, func_addr
-        )
-
-    return stack_var_info
-
-
-@execute_write
-def set_stack_vars_types(var_type_dict, ida_code_view) -> bool:
-    """
-    Sets the type of a stack variable, which should be a local variable.
-    Take special note of the types of first two parameters used here:
-    var_type_dict is a dictionary of the offsets and the new proposed type info for each offset.
-    This typeinfo should be gotten either by manully making a new typeinfo object or using the
-    parse_decl function. code_view is a _instance of vdui_t, which should be gotten through
-    open_pseudocode() from ida_hexrays.
-
-    This function also is special since it needs to iterate all of the stack variables an unknown amount
-    of times until a fixed point of variables types not changing is met.
-
-
-    @param var_type_dict:       Dict[stack_offset, ida_typeinf_t]
-    @param ida_code_view:           A pointer to a vdui_t screen
-    @param deci:          The libbs deci to do operations on
-    @return:
-    """
-
-    data_changed = False
-    fixed_point = False
-    func_addr = ida_code_view.cfunc.entry_ea
-    while not fixed_point:
-        fixed_point = True
-        for lvar in ida_code_view.cfunc.lvars:
-            if lvar.is_stk_var():
-                # TODO: this algorithm may need be corrected for programs with func args on the stack
-                cur_off = abs(ida_to_bs_stack_offset(func_addr, lvar.location.stkoff()))
-                if cur_off in var_type_dict:
-                    if str(lvar.type()) != str(var_type_dict[cur_off]):
-                        data_changed |= ida_code_view.set_lvar_type(lvar, var_type_dict.pop(cur_off))
-                        fixed_point = False
-                        # make sure to break, in case the size of lvars array has now changed
-                        break
-
-    return data_changed
-
-@execute_write
-def ida_get_frame(func_addr):
-    return idaapi.get_frame(func_addr)
-
-
-#
 #   IDA Struct r/w
 #
 
@@ -864,17 +963,16 @@ def bs_struct_from_tif(tif):
 
 @execute_write
 def structs():
-    dec_version = get_decompiler_version()
-    if dec_version < Version("8.4"):
-        # TODO: in IDA 9, we will deprecate this block of code
+    if new_ida_typing_system():
+        _structs = get_types(structs=True, enums=False, typedefs=False)
+    else:
+        _l.warning("You are using an old IDA, this will be deprecated in the future!")
         _structs = {}
         for struct_item in idautils.Structs():
             idx, sid, name = struct_item[:]
             sptr = idc.get_struc(sid)
             size = idc.get_struc_size(sptr)
             _structs[name] = Struct(name, size, {})
-    else:
-        _structs = get_types(structs=True, enums=False, typedefs=False)
 
     return _structs
 
@@ -906,10 +1004,6 @@ def del_ida_struct(name) -> bool:
 
     sptr = idc.get_struc(sid)
     return idc.del_struc(sptr)
-
-@execute_write
-def set_struct_member_name(ida_struct, frame, offset, name):
-    idc.set_member_name(frame, offset, name)
 
 @execute_write
 def set_ida_struct(struct: Struct) -> bool:
@@ -1106,8 +1200,7 @@ def set_enum(bs_enum: Enum):
 
 
 def use_new_typedef_check():
-    dec_version = get_decompiler_version()
-    return dec_version >= Version("8.4") if dec_version is not None else False
+    return get_ida_version() >= Version("8.4")
 
 
 def typedef_info(tif, use_new_check=False) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:

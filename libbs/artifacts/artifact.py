@@ -21,7 +21,7 @@ class Artifact:
         ATTR_ATTR_IGNORE_SET
     )
 
-    def __init__(self, last_change: Optional[datetime.datetime] = None, **kwargs):
+    def __init__(self, last_change: Optional[datetime.datetime] = None):
         self.last_change = last_change
         self._attr_ignore_set = set()
 
