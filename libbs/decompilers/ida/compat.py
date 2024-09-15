@@ -251,6 +251,13 @@ def get_ida_type(ida_ord=None, name=None):
 # Type Converters
 #
 
+def type_str_to_size(type_str) -> typing.Optional[int]:
+    ida_type = convert_type_str_to_ida_type(type_str)
+    if ida_type is None:
+        return None
+
+    return ida_type.get_size()
+
 @execute_write
 def convert_type_str_to_ida_type(type_str) -> typing.Optional['ida_typeinf']:
     if type_str is None or not isinstance(type_str, str):
@@ -762,7 +769,6 @@ def set_stack_variable(svar: StackVariable, decompiler_available=True, **kwargs)
         if svar.name:
             for lvar in lvars:
                 if lvar.location.stkoff() == svar.offset:
-                    print(f"Renaming {lvar.name} to {svar.name}")
                     lvar.name = svar.name
                     changes |= True
                     break
@@ -1005,8 +1011,28 @@ def del_ida_struct(name) -> bool:
     sptr = idc.get_struc(sid)
     return idc.del_struc(sptr)
 
+
+def expand_ida_struct(sid, new_size):
+    """
+    Only works in IDA 9 and up
+    """
+    tif = ida_typeinf.tinfo_t()
+    if tif.get_type_by_tid(sid) and tif.is_udt():
+        if tif.get_size() == new_size:
+            return True
+
+        udm = ida_typeinf.udm_t()
+        udm.offset = 0
+        idx = tif.find_udm(udm, ida_typeinf.STRMEM_LOWBND|ida_typeinf.STRMEM_SKIP_GAPS)
+        if idx != -1:
+            return tif.expand_udt(idx, new_size)
+
+    return False
+
+
 @execute_write
 def set_ida_struct(struct: Struct) -> bool:
+    new_struct_system = new_ida_typing_system()
     # first, delete any struct by the same name if it exists
     sid = idc.get_struc_id(struct.name)
     if sid != idaapi.BADADDR:
@@ -1016,31 +1042,48 @@ def set_ida_struct(struct: Struct) -> bool:
     # now make a struct header
     idc.add_struc(ida_idaapi.BADADDR, struct.name, False)
     sid = idc.get_struc_id(struct.name)
-    sptr = idc.get_struc(sid)
+
+    struct_identifier = sid if new_struct_system else idc.get_struc(sid)
 
     # expand the struct to the desired size
     # XXX: do not increment API here, why? Not sure, but you cant do it here.
-    idc.expand_struc(sptr, 0, struct.size)
+    if new_struct_system:
+        expand_ida_struct(sid, struct.size)
+    else:
+        idc.expand_struc(struct_identifier, 0, struct.size)
 
     # add every member of the struct
     for off, member in struct.members.items():
+        if member.size is None:
+            if member.type is None:
+                raise ValueError("Member size and type cannot both be None when setting a struct!")
+
+            type_size = type_str_to_size(member.type)
+            if type_size is None:
+                _l.warning(f"Failed to get size for member %s of struct %s, assuming 8!", member.name, struct.name)
+                type_size = 8
+
+            member.size = type_size
+
+        if member.offset is None:
+            member.offset = off
+
         # convert to ida's flag system
         mflag = convert_size_to_flag(member.size)
 
         # create the new member
         idc.add_struc_member(
-            sptr,
+            struct_identifier,
             member.name,
             member.offset,
             mflag,
-            None,
+            -1,
             member.size,
         )
 
     return True
 
-@execute_write
-def set_ida_struct_member_types(struct: Struct) -> bool:
+def _depreacated_set_ida_struct_member_types(struct: Struct) -> bool:
     # find the specific struct
     sid = idc.get_struc_id(struct.name)
     sptr = idc.get_struc(sid)
@@ -1066,6 +1109,38 @@ def set_ida_struct_member_types(struct: Struct) -> bool:
             mptr.flag
         )
         data_changed |= was_set == 1
+
+    return data_changed
+
+
+@execute_write
+def set_ida_struct_member_types(bs_struct: Struct):
+    if not new_ida_typing_system():
+        return _depreacated_set_ida_struct_member_types(bs_struct)
+
+    struct_tif = get_ida_type(name=bs_struct.name)
+    if struct_tif is None:
+        return False
+
+    udt_data = ida_typeinf.udt_type_data_t()
+    if not struct_tif.get_udt_details(udt_data):
+        return False
+
+    data_changed = False
+    for udt_memb in udt_data:
+        offset = udt_memb.offset
+        bs_member = bs_struct.members.get(offset, None)
+        if bs_member is None:
+            continue
+
+        tif = convert_type_str_to_ida_type(bs_member.type)
+        if tif is None:
+            _l.warning(f"Failed to convert type %s for struct member %s", bs_member.type, bs_member.name)
+            continue
+
+        # TODO: investigate why this does not always work
+        udt_memb.type = tif
+        data_changed |= True
 
     return data_changed
 
