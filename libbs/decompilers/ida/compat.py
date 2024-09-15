@@ -182,7 +182,7 @@ def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artif
     types = {}
     idati = idaapi.get_idati()
 
-    for ord_num in range(get_ordinal_count()):
+    for ord_num in range(1, get_ordinal_count()+1):
         tif = ida_typeinf.tinfo_t()
         success = tif.get_numbered_type(idati, ord_num)
         if not success:
@@ -209,7 +209,7 @@ def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artif
 def get_ord_to_type_names() -> typing.Dict[int, typing.Tuple[str, typing.Type[Artifact]]]:
     idati = idaapi.get_idati()
     ord_to_name = {}
-    for ord_num in range(get_ordinal_count()):
+    for ord_num in range(1, get_ordinal_count()+1):
         tif = ida_typeinf.tinfo_t()
         success = tif.get_numbered_type(idati, ord_num)
         if not success:
@@ -1232,22 +1232,7 @@ def typedef_info(tif, use_new_check=False) -> typing.Tuple[bool, typing.Optional
 
 @execute_write
 def typedefs() -> typing.Dict[str, Typedef]:
-    typedefs = {}
-    idati = idaapi.get_idati()
-    use_new_check = use_new_typedef_check()
-    for ord_num in range(get_ordinal_count()):
-        tif = ida_typeinf.tinfo_t()
-        success = tif.get_numbered_type(idati, ord_num)
-        if not success:
-            continue
-
-        is_typedef, name, type_name = typedef_info(tif, use_new_check=use_new_check)
-        if not is_typedef:
-            continue
-
-        typedefs[name] = Typedef(name=name, type_=type_name)
-
-    return typedefs
+    return get_types(structs=False, enums=False, typedefs=True)
 
 
 @execute_write
