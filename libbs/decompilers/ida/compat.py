@@ -1125,38 +1125,72 @@ def ida_type_from_serialized(typ: bytes, fields: bytes):
 # Enums
 #
 
-def get_enum_members(_enum) -> typing.Dict[str, int]:
+
+def _deprecated_get_enum_mmebers(_enum_id, max_size=100) -> typing.Dict[str, int]:
     enum_members = {}
 
-    member = idc.get_first_enum_member(_enum)
-    member_addr = idc.get_enum_member(_enum, member, 0, 0)
+    member = idc.get_first_enum_member(_enum_id)
+    member_addr = idc.get_enum_member(_enum_id, member, 0, 0)
     member_name = idc.get_enum_member_name(member_addr)
     if member_name is None:
         return enum_members
 
     enum_members[member_name] = member
     
-    member = idc.get_next_enum_member(_enum, member, 0)
-    max_iters = 100
-    for _ in range(max_iters):
+    member = idc.get_next_enum_member(_enum_id, member, 0)
+    for _ in range(max_size):
         if member == idaapi.BADADDR:
             break
 
-        member_addr = idc.get_enum_member(_enum, member, 0, 0)
+        member_addr = idc.get_enum_member(_enum_id, member, 0, 0)
         member_name = idc.get_enum_member_name(member_addr)
         if member_name:
             enum_members[member_name] = member
 
-        member = idc.get_next_enum_member(_enum, member, 0)
+        member = idc.get_next_enum_member(_enum_id, member, 0)
     else:
-        _l.critical(f"IDA failed to iterate all enum members for enum %s", _enum)
+        _l.critical(f"IDA failed to iterate all enum members for enum %s", _enum_id)
+
+    return enum_members
+
+
+def get_enum_members(_enum_id, max_size=100) -> typing.Dict[str, int]:
+    if not new_ida_typing_system():
+        return _deprecated_get_enum_mmebers(_enum_id, max_size=max_size)
+
+    member_val = None
+    enum_members = {}
+    for i in range(max_size):
+        if i == 0:
+            member_val = idc.get_first_enum_member(_enum_id)
+        else:
+            member_val = idc.get_next_enum_member(_enum_id, member_val)
+
+        if member_val == -1:
+            break
+
+        member_name = idc.get_enum_member_name(idc.get_enum_member(_enum_id, member_val, 0, 0))
+        if member_name is None:
+            _l.warning(f"IDA failed to get enum member name for %s in %s", member_val, _enum_id)
+            continue
+
+        enum_members[member_name] = member_val
+    else:
+        _l.critical(f"IDA failed to iterate all enum members for enum %s", _enum_id)
 
     return enum_members
 
 
 def enum_from_tif(tif):
     enum_name = tif.get_type_name()
-    enum_members = get_enum_members(tif)
+    if not enum_name:
+        return None
+
+    _enum = idc.get_enum(enum_name)
+    if not _enum:
+        return None
+
+    enum_members = get_enum_members(_enum)
     return Enum(enum_name, enum_members)
 
 
