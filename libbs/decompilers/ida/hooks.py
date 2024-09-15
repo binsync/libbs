@@ -175,8 +175,9 @@ class IDBHooks(ida_idp.IDB_Hooks):
             self.interface.struct_changed(bs_struct)
             new_type_type = Struct
         elif tif.is_enum():
-            # TODO: handle enum changes in IDA 9
-            pass
+            bs_enum = compat.enum_from_tif(tif)
+            self.interface.enum_changed(bs_enum)
+            new_type_type = Enum
 
         self.interface.cached_ord_to_type_names[ordinal] = (name, new_type_type)
         return 0

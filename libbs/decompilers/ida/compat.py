@@ -1154,29 +1154,35 @@ def _deprecated_get_enum_mmebers(_enum_id, max_size=100) -> typing.Dict[str, int
     return enum_members
 
 
-def get_enum_members(_enum_id, max_size=100) -> typing.Dict[str, int]:
+def get_enum_members(_enum: typing.Union["ida_typeinf.tinfo_t", int], max_size=100) -> typing.Dict[str, int]:
+    """
+    _enum can either be an ida_typeinf.tinfo_t or an int (the old enum id system)
+
+    """
     if not new_ida_typing_system():
+        _enum_id: int = _enum
         return _deprecated_get_enum_mmebers(_enum_id, max_size=max_size)
 
-    member_val = None
-    enum_members = {}
-    for i in range(max_size):
-        if i == 0:
-            member_val = idc.get_first_enum_member(_enum_id)
-        else:
-            member_val = idc.get_next_enum_member(_enum_id, member_val)
+    # this is an enum tif if we are here
+    enum_tif: "ida_typeinf.tinfo_t" = _enum
+    ei = ida_typeinf.enum_type_data_t()
+    if not enum_tif.get_enum_details(ei):
+        _l.error(f"IDA failed to get enum details for %s", enum_tif)
+        return {}
 
-        if member_val == -1:
+    enum_members = {}
+    for e_memb in ei:
+        val = e_memb.value
+        if val == -1:
+            _l.warning(f"IDA failed to get enum member value for %s", e_memb)
             break
 
-        member_name = idc.get_enum_member_name(idc.get_enum_member(_enum_id, member_val, 0, 0))
-        if member_name is None:
-            _l.warning(f"IDA failed to get enum member name for %s in %s", member_val, _enum_id)
-            continue
+        name = e_memb.name
+        if name is None:
+            _l.warning(f"IDA failed to get enum member name for %s", e_memb)
+            break
 
-        enum_members[member_name] = member_val
-    else:
-        _l.critical(f"IDA failed to iterate all enum members for enum %s", _enum_id)
+        enum_members[name] = val
 
     return enum_members
 
@@ -1186,11 +1192,7 @@ def enum_from_tif(tif):
     if not enum_name:
         return None
 
-    _enum = idc.get_enum(enum_name)
-    if not _enum:
-        return None
-
-    enum_members = get_enum_members(_enum)
+    enum_members = get_enum_members(tif)
     return Enum(enum_name, enum_members)
 
 
@@ -1201,10 +1203,12 @@ def enums() -> typing.Dict[str, Enum]:
 
 @execute_write
 def enum(name) -> typing.Optional[Enum]:
-    _enum = idc.get_enum(name)
-    if not _enum:
+    new_enums = new_ida_typing_system()
+    _enum = get_ida_type(name=name) if new_enums else idc.get_enum(name)
+    if _enum is None or _enum == idaapi.BADADDR:
         return None
-    enum_name = idc.get_enum_name(_enum)
+
+    enum_name = str(_enum.get_type_name()) if new_enums else idc.get_enum_name(_enum)
     enum_members = get_enum_members(_enum)
     return Enum(enum_name, enum_members)
 
