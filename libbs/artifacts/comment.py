@@ -1,3 +1,4 @@
+import textwrap
 from typing import Optional
 
 from .artifact import Artifact
@@ -31,22 +32,8 @@ class Comment(Artifact):
 
     @staticmethod
     def linewrap_comment(comment: str, width=80):
-        lines = comment.splitlines()
-        final_comment = ""
-
-        for line in lines:
-            if len(line) < width:
-                final_comment += line + "\n"
-                continue
-
-            for i, c in enumerate(line):
-                if i % width == 0 and i != 0:
-                    final_comment += "\n"
-                final_comment += c
-
-            final_comment += "\n"
-
-        return final_comment
+        wrapped_text = textwrap.fill(comment, width=width)
+        return wrapped_text
 
     def nonconflict_merge(self, obj2: "Comment", **kwargs) -> "Comment":
         obj1: "Comment" = self.copy()
