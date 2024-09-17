@@ -31,8 +31,13 @@ class Comment(Artifact):
         return f"<Comment: @{hex(self.addr)} len={cmt_len}>"
 
     @staticmethod
-    def linewrap_comment(comment: str, width=80):
-        wrapped_text = textwrap.fill(comment, width=width)
+    def linewrap_comment(comment: str, width=100) -> str:
+        # Split the comment into lines based on existing newlines
+        lines = comment.split('\n')
+        # Wrap each line individually and preserve newlines
+        wrapped_lines = [textwrap.fill(line, width=width) for line in lines]
+        # Join the wrapped lines with newline characters
+        wrapped_text = '\n'.join(wrapped_lines)
         return wrapped_text
 
     def nonconflict_merge(self, obj2: "Comment", **kwargs) -> "Comment":

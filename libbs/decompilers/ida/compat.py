@@ -1343,6 +1343,7 @@ def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
                     lvar = vu.item.get_lvar()
                     if lvar:
                         ctx.variable = lvar.name
+                    ctx.line_number = vu.cpos.lnnum if vu.cpos else None
 
     return ctx
 
@@ -1388,6 +1389,7 @@ class GenericAction(idaapi.action_handler_t):
         if bs_ctx is None:
             return
 
+        bs_ctx = self.deci.art_lifter.lift(bs_ctx)
         dec_view = ida_hexrays.get_widget_vdui(ctx.widget)
         self.action_function(bs_ctx, deci=self.deci)
 
