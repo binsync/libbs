@@ -1391,7 +1391,7 @@ class GenericAction(idaapi.action_handler_t):
 
         bs_ctx = self.deci.art_lifter.lift(bs_ctx)
         dec_view = ida_hexrays.get_widget_vdui(ctx.widget)
-        self.action_function(bs_ctx, deci=self.deci)
+        self.action_function(bs_ctx, deci=self.deci, context=bs_ctx)
 
         if dec_view is not None:
             dec_view.refresh_view(False)
