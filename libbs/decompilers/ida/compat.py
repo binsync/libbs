@@ -17,7 +17,7 @@ import logging
 from packaging.version import Version
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
-    ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum, ida_kernwin
+    ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum, ida_kernwin, ida_segment
 
 import libbs
 from libbs.artifacts import (
@@ -319,19 +319,40 @@ def set_ida_func_name(func_addr, new_name):
     ida_kernwin.request_refresh(ida_kernwin.IWID_STRUCTS)
     ida_kernwin.request_refresh(ida_kernwin.IWID_STKVIEW)
 
+def get_segment_range(segment_name) -> typing.Tuple[bool, int, int]:
+    # Find the segment by name
+    seg = ida_segment.get_segm_by_name(segment_name)
+    if seg is None:
+        return False, None, None
+
+    start_ea = seg.start_ea
+    end_ea = seg.end_ea
+    return True, start_ea, end_ea
+
 
 @execute_write
 def functions():
     blacklisted_segs = ["extern", ".plt", ".plt.sec"]
-    func_addrs = list(idautils.Functions())
+    seg_to_range = {}
+    for seg in blacklisted_segs:
+        success, start, end = get_segment_range(seg)
+        if success:
+            seg_to_range[seg] = (start, end)
+
     funcs = {}
-    for func_addr in func_addrs:
-        # skip non-text segments
-        if idc.get_segm_name(func_addr) in blacklisted_segs:
+    for func_addr in idautils.Functions():
+        in_bad_seg = False
+        for seg, (start, end) in seg_to_range.items():
+            if start <= func_addr < end:
+                in_bad_seg = True
+                break
+
+        if in_bad_seg:
             continue
 
-        func_name = get_func_name(func_addr)
-        func_size = get_func_size(func_addr)
+        ida_func = idaapi.get_func(func_addr)
+        func_name = idc.get_func_name(func_addr)
+        func_size = ida_func.size()
         func = Function(addr=func_addr, size=func_size)
         func.name = func_name
         funcs[func_addr] = func

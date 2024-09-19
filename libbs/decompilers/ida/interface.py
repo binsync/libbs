@@ -5,6 +5,7 @@ from collections import OrderedDict, defaultdict
 import idc
 import idaapi
 import ida_hexrays
+import ida_auto
 from packaging.version import Version
 
 import libbs
@@ -243,7 +244,8 @@ class IDAInterface(DecompilerInterface):
         compat.jumpto(func_addr)
 
     def should_watch_artifacts(self) -> bool:
-        return self._artifact_watchers_started
+        # never do hooks while IDA is in initial startup phase
+        return self._artifact_watchers_started and ida_auto.auto_is_ok()
 
     #
     # Optional API
