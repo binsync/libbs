@@ -25,8 +25,6 @@ from libbs.artifacts import (
     StructMember
 )
 
-from PyQt5.Qt import QObject
-
 if typing.TYPE_CHECKING:
     from .interface import IDAInterface
 
@@ -1373,26 +1371,45 @@ def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
 # IDA Classes
 #
 
-class GenericIDAPlugin(QObject, idaapi.plugin_t):
-    """Plugin entry point. Does most of the skinning magic."""
-    flags = idaapi.PLUGIN_FIX
+def generate_generic_ida_plugic_cls(cls_name=None):
+    """
+    This code is pretty complicated, but the gist is that we need to dynamically create this IDA Plugin entry point
+    for two main reasons:
+    1. We can't import PyQt5 until load time, which means this class can't be in the import
+    2. Plugins are not allowed to share the same name in IDA Pro plugin init, but we want many downstream people
+        to be able to import this class and modify it
 
-    def __init__(self, *args, name=None, comment=None, interface=None, **kwargs):
-        QObject.__init__(self, *args, **kwargs)
-        idaapi.plugin_t.__init__(self)
-        self.wanted_name = name or "generic_libbs_plugin"
-        self.comment = comment or "A generic LibBS plugin"
-        self.interface: "IDAInterface" = interface
+    Below the class gets dynamically created and, if you provide a name, we copy the direct contents of that class
+    into a new Python type, essentially making a new class of the exact same contents
+    """
+    from PyQt5.Qt import QObject
 
-    def init(self):
-        self.interface._init_gui_hooks()
-        return idaapi.PLUGIN_KEEP
+    class GenericIDAPlugin(QObject, idaapi.plugin_t):
+        """Plugin entry point. Does most of the skinning magic."""
+        flags = idaapi.PLUGIN_FIX
 
-    def run(self, arg):
-        pass
+        def __init__(self, *args, name=None, comment=None, interface=None, **kwargs):
+            QObject.__init__(self, *args, **kwargs)
+            idaapi.plugin_t.__init__(self)
+            self.wanted_name = name or "generic_libbs_plugin"
+            self.comment = comment or "A generic LibBS plugin"
+            self.interface: "IDAInterface" = interface
 
-    def term(self):
-        del self.interface
+        def init(self):
+            self.interface._init_gui_hooks()
+            return idaapi.PLUGIN_KEEP
+
+        def run(self, arg):
+            pass
+
+        def term(self):
+            del self.interface
+
+    cls = GenericIDAPlugin
+    if cls_name is not None:
+        cls = type(cls_name, (QObject, idaapi.plugin_t), dict(GenericIDAPlugin.__dict__))
+
+    return cls
 
 
 class GenericAction(idaapi.action_handler_t):
