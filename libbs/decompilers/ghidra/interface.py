@@ -58,6 +58,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._active_ctx = None
         self._binary_base_addr = None
         self._default_pointer_size = None
+        self._gsym_size = None
+        self._max_gsym_size = 50_000
 
         super().__init__(
             name="ghidra",
@@ -734,12 +736,22 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return typedefs
 
+    def _gsyms_too_large(self):
+        if self._gsym_size is None:
+            self._gsym_size = self.currentProgram.getSymbolTable().getNumSymbols()
+
+        return self._gsym_size > self._max_gsym_size
+
     @ghidra_transaction
     def _set_global_variable(self, gvar: GlobalVariable, **kwargs):
         from .compat.imports import RenameLabelCmd, SourceType
 
         changes = False
+        if self._gsyms_too_large():
+            self.warning("There are too many global symbols in your binary to accurately set. Skipping!")
+
         g_gvars_info = self.__g_global_variables()
+
         for addr, name, sym_data, sym in g_gvars_info:
             if addr != gvar.addr:
                 continue
@@ -750,7 +762,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 cmd.applyTo(self.currentProgram)
                 changes = True
 
-            type_str = str(sym_data.getDataType())
+            type_str = str(sym_data.getDataType()) if sym_data is not None else None
             if gvar.type and gvar.type != type_str:
                 # TODO: set type
                 pass
@@ -762,6 +774,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return gvars.get(addr, None)
 
     def _global_vars(self, match_single_offset=None, **kwargs) -> Dict[int, GlobalVariable]:
+        if self._gsyms_too_large():
+            self.warning("There are too many global symbols in your binary to get all global symbols!")
+            return {}
+
         g_gvars_info = self.__g_global_variables()
         gvars = {}
         for addr, name, sym_data, sym in g_gvars_info:
@@ -1095,6 +1111,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ui_remote_eval
     def __g_global_variables(self):
         # TODO: this could be optimized more both in use and in implementation
+        # TODO: this just does not work for bigger than 50k syms
         from .compat.imports import SymbolType
 
         return [
