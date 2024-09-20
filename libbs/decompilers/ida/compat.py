@@ -84,7 +84,7 @@ def execute_write(f):
 
 class DummyIDACodeView:
     def __init__(self, addr):
-        self.cfunc = idaapi.decompile(addr)
+        self.cfunc = ida_hexrays.decompile(addr)
         self.addr = addr
 
 
