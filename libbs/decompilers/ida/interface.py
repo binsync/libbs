@@ -159,6 +159,8 @@ class IDAInterface(DecompilerInterface):
     def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
         try:
             cfunc = ida_hexrays.decompile(function.addr)
+            if cfunc is None:
+                return None
         except Exception:
             return None
 
