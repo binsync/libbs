@@ -61,7 +61,9 @@ class IDAInterface(DecompilerInterface):
             hook.hook()
 
     def _init_gui_plugin(self, *args, **kwargs):
-        return compat.GenericIDAPlugin(*args, name=self._plugin_name, interface=self, **kwargs)
+        plugin_cls_name = self._plugin_name + "_cls"
+        IDAPluginCls = compat.generate_generic_ida_plugic_cls(cls_name=plugin_cls_name)
+        return IDAPluginCls(*args, name=self._plugin_name, interface=self, **kwargs)
 
     @property
     def dec_version(self):
