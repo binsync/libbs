@@ -25,6 +25,7 @@ from libbs.artifacts import (
     StructMember
 )
 
+from .artifact_lifter import IDAArtifactLifter
 if typing.TYPE_CHECKING:
     from .interface import IDAInterface
 
@@ -441,10 +442,7 @@ def set_function(func: Function, decompiler_available=True, **kwargs):
 
     # stack vars
     if func.stack_vars and ida_code_view is not None:
-        for svar in func.stack_vars.values():
-            changes |= set_stack_variable(
-                svar, decompiler_available=decompiler_available, ida_code_view=ida_code_view, **kwargs
-            )
+        changes |= set_stack_variables(func.stack_vars, ida_code_view=ida_code_view)
 
     if changes and ida_code_view is not None:
         ida_code_view.refresh_view(changes)
@@ -708,11 +706,7 @@ def get_func_stack_tif(func):
 
     return tif
 
-
-def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
-    if not new_ida_typing_system():
-        return _deprecated_ida_to_bs_offset(func_addr, ida_stack_off)
-
+def get_frame_info(func_addr) -> typing.Tuple[int, int]:
     func = idaapi.get_func(func_addr)
     if not func:
         raise ValueError(f"Function {hex(func_addr)} does not exist.")
@@ -720,12 +714,12 @@ def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
     stack_tif = get_func_stack_tif(func)
     if stack_tif is None:
         _l.warning(f"Function {hex(func_addr)} does not have a stack frame.")
-        return ida_stack_off
+        return None, None
 
     frame_size = stack_tif.get_size()
     if frame_size == 0:
         _l.warning(f"Function {hex(func_addr)} has a stack frame size of 0.")
-        return ida_stack_off
+        return None, None
 
     # get the last member size
     udt_data = ida_typeinf.udt_type_data_t()
@@ -733,51 +727,88 @@ def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
     membs = [m for m in udt_data]
     if not membs:
         _l.warning(f"Function {hex(func_addr)} has a stack frame with no members.")
-        return ida_stack_off
+        return None, None
 
     last_member_type = membs[-1].type
     if not last_member_type:
         _l.warning(f"Function {hex(func_addr)} has a stack frame with a member with no type.")
-        return ida_stack_off
+        return None, None
 
     last_member_size = last_member_type.get_size()
+    return frame_size, last_member_size
+
+def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
+    if not new_ida_typing_system():
+        return _deprecated_ida_to_bs_offset(func_addr, ida_stack_off)
+
+    frame_size, last_member_size = get_frame_info(func_addr)
+    if frame_size is None or last_member_size is None:
+        return ida_stack_off
+
     bs_soff = ida_stack_off - frame_size + last_member_size
     return bs_soff
 
+def bs_to_ida_stack_offset(func_addr: int, bs_stack_off: int):
+    if not new_ida_typing_system():
+        # maintain backwards compatibility
+        return bs_stack_off
 
-@execute_write
-@requires_decompilation
-def set_stack_variable(svar: StackVariable, decompiler_available=True, **kwargs):
+    frame_size, last_member_size = get_frame_info(func_addr)
+    if frame_size is None or last_member_size is None:
+        return ida_stack_off
+
+    ida_soff = bs_stack_off + frame_size - last_member_size
+    return ida_soff
+
+def set_stack_variables(svars: list[StackVariable], decompiler_available=True, **kwargs) -> bool:
+    """
+    This function should only be called in a function that is already used in main-thread.
+    This should also mean decompilation is passed in.
+    """
     ida_code_view = kwargs.get('ida_code_view', None)
     changes = False
-    # if we have a decompiler, we can set the type and name ind decompilation
-    if ida_code_view is not None:
-        if svar.type:
-            ida_type = convert_type_str_to_ida_type(svar.type)
-            if ida_type is None:
-                _l.warning(f"IDA Failed to parse type for stack var {svar}")
-                return changes
+    if ida_code_view is None:
+        # TODO: support decompilation-less stack var setting
+        _l.warning("Cannot set stack variables without a decompiler.")
+        return changes
 
-            changes |= set_stack_vars_types({svar.offset: ida_type}, ida_code_view)
-            if changes:
-                ida_code_view.cfunc.refresh_func_ctext()
+    lvars = {v.location.stkoff(): v for v in ida_code_view.cfunc.lvars if v.is_stk_var()}
+    if not lvars:
+        _l.warning("No stack variables found in decompilation to set. Making new ones is not supported")
+        return changes
 
-        lvars = [v for v in ida_code_view.cfunc.lvars if v.is_stk_var()]
-        if not lvars:
-            return changes
+    for bs_off, bs_var in svars.items():
+        if bs_off not in lvars:
+            _l.warning(f"Stack variable at offset {bs_off} not found in decompilation.")
+            continue
 
-        if svar.name:
-            for lvar in lvars:
-                if lvar.location.stkoff() == svar.offset:
-                    lvar.name = svar.name
+        lvar = lvars[bs_off]
+
+        # naming:
+        if bs_var.name and bs_var.name != lvar.name:
+            ida_code_view.rename_lvar(lvar, bs_var.name, 1)
+            changes |= True
+            ida_code_view.cfunc.refresh_func_ctext()
+            lvars = {v.location.stkoff(): v for v in ida_code_view.cfunc.lvars if v.is_stk_var()}
+
+        # typing
+        if bs_var.type:
+            curr_ida_type_str = str(lvar.type()) if lvar.type() else None
+            curr_ida_type = IDAArtifactLifter.lift_ida_type(curr_ida_type_str) if curr_ida_type_str else None
+            if curr_ida_type and bs_var.type != curr_ida_type:
+                new_type = convert_type_str_to_ida_type(bs_var.type)
+                if new_type is None:
+                    _l.warning(f"Failed to convert type string {bs_var.type} to ida type.")
+                    continue
+
+                updated_type = ida_code_view.set_lvar_type(lvar, new_type)
+                if updated_type:
                     changes |= True
-                    break
+                    ida_code_view.cfunc.refresh_func_ctext()
+                    lvars = {v.location.stkoff(): v for v in ida_code_view.cfunc.lvars if v.is_stk_var()}
 
-            if changes:
-                ida_code_view.cfunc.refresh_func_ctext()
-    else:
-        # TODO: support stack vars without a decompiler available
-        _l.warning("Setting stack variables without a decompiler is not supported yet.")
+    if changes:
+        ida_code_view.refresh_view(True)
 
     return changes
 
@@ -814,7 +845,7 @@ def get_func_stack_var_info(func_addr) -> typing.Dict[int, StackVariable]:
 
 
 @execute_write
-def set_stack_vars_types(var_type_dict, ida_code_view) -> bool:
+def _deprecated_set_stack_vars_types(var_type_dict, ida_code_view) -> bool:
     """
     Sets the type of a stack variable, which should be a local variable.
     Take special note of the types of first two parameters used here:

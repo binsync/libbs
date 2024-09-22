@@ -287,7 +287,8 @@ class IDAInterface(DecompilerInterface):
 
     # stack vars
     def _set_stack_variable(self, svar: StackVariable, **kwargs) -> bool:
-        return compat.set_stack_variable(svar, headless=self.headless, decompiler_available=self.decompiler_available, **kwargs)
+        _l.warning("Setting stack vars using this API is deprecared. Use _set_function instead.")
+        return False
 
     # global variables
     def _set_global_variable(self, gvar: GlobalVariable, **kwargs) -> bool:

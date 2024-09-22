@@ -1,7 +1,7 @@
 import logging
 import typing
 
-from libbs.artifacts import StackVariable, Artifact
+from libbs.artifacts import StackVariable, Artifact, FunctionArgument, StructMember
 from libbs.api.type_parser import CTypeParser
 
 if typing.TYPE_CHECKING:
@@ -105,9 +105,10 @@ class ArtifactLifter:
                 setattr(lifted_art, attr, self._lift_or_lower_artifact(attr_val, mode))
             # nested args, stack_vars, or struct_members
             elif isinstance(attr_val, dict):
-                nested_arts = {
-                    k: self._lift_or_lower_artifact(v, mode) for k, v in attr_val.items()
-                }
+                nested_arts = {}
+                for k, v in attr_val.items():
+                    nested_art = self._lift_or_lower_artifact(v, mode)
+                    nested_arts[nested_art.offset if isinstance(nested_art, (StackVariable, FunctionArgument, StructMember)) else k] = nested_art
                 setattr(lifted_art, attr, nested_arts)
 
         return lifted_art
