@@ -84,7 +84,7 @@ def execute_write(f):
 
 class DummyIDACodeView:
     def __init__(self, addr):
-        self.cfunc = idaapi.decompile(addr)
+        self.cfunc = ida_hexrays.decompile(addr)
         self.addr = addr
 
 
@@ -1213,7 +1213,9 @@ def acquire_pseudocode_vdui(addr):
         vu = ida_hexrays.open_pseudocode(func.start_ea, False)
 
     if func.start_ea != vu.cfunc.entry_ea:
-        target_cfunc = idaapi.decompile(func.start_ea)
+        target_cfunc = ida_hexrays.decompile(func.start_ea)
+        if target_cfunc is None:
+            return None
         vu.switch_to(target_cfunc, False)
     else:
         vu.refresh_view(True)
@@ -1252,6 +1254,8 @@ class IDAViewCTX:
 
     @execute_write
     def close_pseudocode_view(self, ida_vdui_t):
+        if ida_vdui_t is None:
+            return
         widget = ida_vdui_t.toplevel
         idaapi.close_pseudocode(widget)
 

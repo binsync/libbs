@@ -150,7 +150,7 @@ class IDAInterface(DecompilerInterface):
 
     def get_decompilation_object(self, function: Function, do_lower=True, **kwargs) -> Optional[object]:
         function = self.art_lifter.lower(function) if do_lower else function
-        dec = idaapi.decompile(function.addr)
+        dec = ida_hexrays.decompile(function.addr)
         if dec is None:
             return None
 
@@ -159,6 +159,8 @@ class IDAInterface(DecompilerInterface):
     def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
         try:
             cfunc = ida_hexrays.decompile(function.addr)
+            if cfunc is None:
+                return None
         except Exception:
             return None
 
