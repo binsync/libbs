@@ -13,6 +13,12 @@ pip install libbs
 The minimum Python version is **3.10**. **If you plan on using libbs alone (without installing some other plugin), 
 you must do `libbs --install` after pip install**. This will copy the appropriate files to your decompiler. 
 
+## Supported Decompilers
+- IDA Pro: **8.4 >= V >= 7.3**
+- Binary Ninja: **>= 2.4**
+- angr-management: **>= 9.0**
+- Ghidra: **>= 11.1**
+
 ## Usage
 LibBS exposes all decompiler API through the abstract class `DecompilerInterface`. The `DecompilerInterface` 
 can be used in either the default mode, which assumes a GUI, or `headless` mode. In `headless` mode, the interface will 
