@@ -10,7 +10,7 @@ for all BinSync based plugins.
 pip install libbs
 ```
 
-The minimum Python version is **3.8**. **If you plan on using libbs alone (without installing some other plugin), 
+The minimum Python version is **3.10**. **If you plan on using libbs alone (without installing some other plugin), 
 you must do `libbs --install` after pip install**. This will copy the appropriate files to your decompiler. 
 
 ## Usage
