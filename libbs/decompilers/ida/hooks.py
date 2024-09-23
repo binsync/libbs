@@ -130,6 +130,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
         ida_idp.IDB_Hooks.__init__(self)
         self.interface: "IDAInterface" = interface
         self._seen_function_prototypes = {}
+        self._ver_9_or_higher = compat.get_ida_version() >= Version("9.0")
 
     def bs_type_deleted(self, ordinal):
         old_name, old_type = self.interface.cached_ord_to_type_names[ordinal]
@@ -423,8 +424,20 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
         return 0
 
+    def _valid_rename_event(self, ea):
+        if not self._ver_9_or_higher:
+            # ignore any changes landing here for structs and stack vars
+            import ida_struct, ida_enum
+            return not (ida_struct.is_member_id(ea) or ida_struct.get_struc(ea) or ida_enum.get_enum_name(ea))
+
+        # in version 9 and above, this event is not triggered by structs
+        return True
+
     @while_should_watch
     def renamed(self, ea, new_name, local_name):
+        if not self._valid_rename_event(ea):
+            return 0
+
         ida_func = idaapi.get_func(ea)
         # symbols changing without any corresponding func is assumed to be global var
         if ida_func is None:
@@ -553,8 +566,8 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
         return 0
 
     @while_should_watch
-    def lvar_type_changed(self, vdui, lvar, *args):
-        self.local_var_changed(vdui, lvar, reset_name=True)
+    def lvar_type_changed(self, vu: "vdui_t", v: "lvar_t", *args) -> int:
+        self.local_var_changed(vu, v, reset_name=True)
         return 0
 
     @while_should_watch

@@ -43,6 +43,7 @@ class IDAInterface(DecompilerInterface):
         self._max_patch_size = 0xff
         self._decompiler_available = None
         self._dec_version = None
+        self._ida_analysis_finished = False
 
         # GUI properties
         self._updated_ctx = None
@@ -249,7 +250,10 @@ class IDAInterface(DecompilerInterface):
 
     def should_watch_artifacts(self) -> bool:
         # never do hooks while IDA is in initial startup phase
-        return self._artifact_watchers_started and ida_auto.auto_is_ok()
+        if not self._ida_analysis_finished:
+            self._ida_analysis_finished = ida_auto.auto_is_ok()
+
+        return self._ida_analysis_finished and self._artifact_watchers_started
 
     #
     # Optional API

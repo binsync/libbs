@@ -32,19 +32,31 @@ if typing.TYPE_CHECKING:
 _l = logging.getLogger(__name__)
 _IDA_VERSION = None
 
-FORM_TYPE_TO_NAME = {
-    idaapi.BWN_PSEUDOCODE: "decompilation",
-    idaapi.BWN_DISASM: "disassembly",
-    idaapi.BWN_FUNCS: "functions",
-    # idaapi.BWN_STRINGS
-    0x1c: "structs",
-    # idaapi.BWN_ENUMS
-    0x1b: "enums",
-    # this is idaapi.BWN_TILIST, but made into a constant for 8.3 compatibility
-    0x3c: "types",
-}
-
+FORM_TYPE_TO_NAME = None
 FUNC_FORMS = {"decompilation", "disassembly"}
+
+def get_form_to_type_name():
+    global FORM_TYPE_TO_NAME
+    if FORM_TYPE_TO_NAME is None:
+        mapping = {
+            idaapi.BWN_PSEUDOCODE: "decompilation",
+            idaapi.BWN_DISASM: "disassembly",
+            idaapi.BWN_FUNCS: "functions",
+            idaapi.BWN_STRINGS: "strings"
+        }
+        if get_ida_version() >= Version("9.0"):
+            mapping.update({
+                idaapi.BWN_TILIST: "types"
+            })
+        else:
+            mapping.update({
+                idaapi.BWN_STRINGS: "structs",
+                idaapi.BWN_ENUMS: "enums",
+                0x3c: "types"
+            })
+        FORM_TYPE_TO_NAME = mapping
+
+    return FORM_TYPE_TO_NAME
 
 #
 # Wrappers for IDA Main thread r/w operations
@@ -168,7 +180,7 @@ def get_ida_version():
 
 
 def new_ida_typing_system():
-    return get_ida_version() >= Version("9.0")
+    return get_ida_version() >= Version("8.4")
 
 
 def get_ordinal_count():
@@ -692,6 +704,16 @@ def _deprecated_ida_to_bs_offset(func_addr, ida_stack_off):
     bs_soff = ida_stack_off - frame_size + last_member_size
     return bs_soff
 
+def _deprecated_bs_to_ida_offset(func_addr, bs_stack_off):
+    frame = idaapi.get_frame(func_addr)
+    if not frame:
+        return bs_stack_off
+
+    frame_size = idc.get_struc_size(frame)
+    last_member_size = idaapi.get_member_size(frame.get_member(frame.memqty - 1))
+    ida_soff = bs_stack_off + frame_size - last_member_size
+    return ida_soff
+
 
 def get_func_stack_tif(func):
     if isinstance(func, int):
@@ -738,7 +760,7 @@ def get_frame_info(func_addr) -> typing.Tuple[int, int]:
     return frame_size, last_member_size
 
 def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
-    if not new_ida_typing_system():
+    if get_ida_version() < Version("9.0"):
         return _deprecated_ida_to_bs_offset(func_addr, ida_stack_off)
 
     frame_size, last_member_size = get_frame_info(func_addr)
@@ -749,9 +771,9 @@ def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
     return bs_soff
 
 def bs_to_ida_stack_offset(func_addr: int, bs_stack_off: int):
-    if not new_ida_typing_system():
+    if get_ida_version() < Version("9.0"):
         # maintain backwards compatibility
-        return bs_stack_off
+        return _deprecated_bs_to_ida_offset(func_addr, bs_stack_off)
 
     frame_size, last_member_size = get_frame_info(func_addr)
     if frame_size is None or last_member_size is None:
@@ -1078,10 +1100,10 @@ def set_ida_struct(struct: Struct) -> bool:
 
     # expand the struct to the desired size
     # XXX: do not increment API here, why? Not sure, but you cant do it here.
-    if new_struct_system:
+    if get_ida_version() >= Version("9.0"):
         expand_ida_struct(sid, struct.size)
     else:
-        idc.expand_struc(struct_identifier, 0, struct.size)
+        idc.expand_struc(struct_identifier, 0, struct.size, False)
 
     # add every member of the struct
     for off, member in struct.members.items():
@@ -1586,7 +1608,8 @@ def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
     if form_type is None:
         return None
 
-    view_name = FORM_TYPE_TO_NAME.get(form_type, "unknown")
+    form_to_type_name = get_form_to_type_name()
+    view_name = form_to_type_name.get(form_type, "unknown")
     ctx = Context(screen_name=view_name)
     if view_name in FUNC_FORMS:
         ctx.addr = idaapi.get_screen_ea()
