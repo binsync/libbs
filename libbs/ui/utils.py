@@ -2,8 +2,21 @@ import sys
 
 from .qt_objects import (
     QDialog, QVBoxLayout, QProgressBar, QLabel, QPushButton, Qt, QThread, QApplication, Signal, QLineEdit,
-    QComboBox, QFontMetrics
+    QComboBox, QFontMetrics, QMessageBox
 )
+
+
+def gui_popup_text(text, title="Plugin Info") -> bool:
+    message_box = QMessageBox()
+    message_box.setIcon(QMessageBox.Information)
+    message_box.setWindowTitle(title)
+    message_box.setText(text)
+    message_box.setStandardButtons(QMessageBox.Ok)
+
+    if message_box.exec() == QMessageBox.Ok:
+        return True
+    else:
+        return False
 
 
 def gui_ask_for_string(question, title="Plugin Question") -> str:

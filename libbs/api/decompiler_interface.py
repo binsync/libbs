@@ -204,6 +204,14 @@ class DecompilerInterface:
         from libbs.ui.utils import gui_ask_for_choice
         return gui_ask_for_choice(question, choices, title=title)
 
+    def gui_popup_text(self, text: str, title: str = "Plugin Message") -> bool:
+        """
+        Opens a GUI dialog box that displays a message. If not overriden by the decompiler interface,
+        this will default to a Qt dialog box that is based on the decompilers Qt version.
+        """
+        from libbs.ui.utils import gui_popup_text
+        return gui_popup_text(text, title=title)
+
     #
     # Override Mandatory API
     #
