@@ -14,7 +14,7 @@ The minimum Python version is **3.10**. **If you plan on using libbs alone (with
 you must do `libbs --install` after pip install**. This will copy the appropriate files to your decompiler. 
 
 ## Supported Decompilers
-- IDA Pro: **8.4 >= V >= 7.3**
+- IDA Pro: **>= 8.4** (if you have an older version, use `v1.26.0`)
 - Binary Ninja: **>= 2.4**
 - angr-management: **>= 9.0**
 - Ghidra: **>= 11.1**
