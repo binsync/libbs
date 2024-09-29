@@ -792,7 +792,7 @@ class DecompilerInterface:
         elif isinstance(artifact, FunctionArgument):
             # TODO: add addr to function arguments
             return (artifact.offset,)
-        elif isinstance(artifact, (Struct, Enum)):
+        elif isinstance(artifact, (Struct, Enum, Typedef)):
             return (artifact.name,)
 
     def get_defined_type(self, type_str) -> Optional[Artifact]:

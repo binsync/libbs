@@ -17,7 +17,7 @@ import logging
 from packaging.version import Version
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
-    ida_bytes, ida_struct, ida_idaapi, ida_typeinf, idautils, ida_enum, ida_kernwin, ida_segment
+    ida_bytes, ida_idaapi, ida_typeinf, idautils, ida_kernwin, ida_segment
 
 import libbs
 from libbs.artifacts import (
@@ -25,22 +25,38 @@ from libbs.artifacts import (
     StructMember
 )
 
+from .artifact_lifter import IDAArtifactLifter
 if typing.TYPE_CHECKING:
     from .interface import IDAInterface
 
 _l = logging.getLogger(__name__)
+_IDA_VERSION = None
 
-FORM_TYPE_TO_NAME = {
-    idaapi.BWN_PSEUDOCODE: "decompilation",
-    idaapi.BWN_DISASM: "disassembly",
-    idaapi.BWN_FUNCS: "functions",
-    idaapi.BWN_STRUCTS: "structs",
-    idaapi.BWN_ENUMS: "enums",
-    # this is idaapi.BWN_TILIST, but made into a constant for 8.3 compatibility
-    0x3c: "types",
-}
-
+FORM_TYPE_TO_NAME = None
 FUNC_FORMS = {"decompilation", "disassembly"}
+
+def get_form_to_type_name():
+    global FORM_TYPE_TO_NAME
+    if FORM_TYPE_TO_NAME is None:
+        mapping = {
+            idaapi.BWN_PSEUDOCODE: "decompilation",
+            idaapi.BWN_DISASM: "disassembly",
+            idaapi.BWN_FUNCS: "functions",
+            idaapi.BWN_STRINGS: "strings"
+        }
+        if get_ida_version() >= Version("9.0"):
+            mapping.update({
+                idaapi.BWN_TILIST: "types"
+            })
+        else:
+            mapping.update({
+                idaapi.BWN_STRINGS: "structs",
+                idaapi.BWN_ENUMS: "enums",
+                0x3c: "types"
+            })
+        FORM_TYPE_TO_NAME = mapping
+
+    return FORM_TYPE_TO_NAME
 
 #
 # Wrappers for IDA Main thread r/w operations
@@ -155,12 +171,31 @@ def set_func_ret_type(ea, return_type_str):
 #
 
 
+def get_ida_version():
+    global _IDA_VERSION
+    if _IDA_VERSION is None:
+        _IDA_VERSION = Version(idaapi.get_kernel_version())
+
+    return _IDA_VERSION
+
+
+def new_ida_typing_system():
+    return get_ida_version() >= Version("8.4")
+
+
+def get_ordinal_count():
+    if new_ida_typing_system():
+        return ida_typeinf.get_ordinal_count(idaapi.get_idati())
+    else:
+        return ida_typeinf.get_ordinal_qty(idaapi.get_idati())
+
+
 @execute_write
 def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artifact]:
     types = {}
     idati = idaapi.get_idati()
 
-    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+    for ord_num in range(1, get_ordinal_count()+1):
         tif = ida_typeinf.tinfo_t()
         success = tif.get_numbered_type(idati, ord_num)
         if not success:
@@ -177,8 +212,8 @@ def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artif
             bs_struct = bs_struct_from_tif(tif)
             types[bs_struct.name] = bs_struct
         elif enums and tif.is_enum():
-            # TODO: implement this for 9.0
-            _l.warning("Enums are not supported in this API until IDA 9.0")
+            bs_enum = enum_from_tif(tif)
+            types[bs_enum.name] = bs_enum
 
     return types
 
@@ -187,7 +222,7 @@ def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artif
 def get_ord_to_type_names() -> typing.Dict[int, typing.Tuple[str, typing.Type[Artifact]]]:
     idati = idaapi.get_idati()
     ord_to_name = {}
-    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
+    for ord_num in range(1, get_ordinal_count()+1):
         tif = ida_typeinf.tinfo_t()
         success = tif.get_numbered_type(idati, ord_num)
         if not success:
@@ -229,6 +264,13 @@ def get_ida_type(ida_ord=None, name=None):
 # Type Converters
 #
 
+def type_str_to_size(type_str) -> typing.Optional[int]:
+    ida_type = convert_type_str_to_ida_type(type_str)
+    if ida_type is None:
+        return None
+
+    return ida_type.get_size()
+
 @execute_write
 def convert_type_str_to_ida_type(type_str) -> typing.Optional['ida_typeinf']:
     if type_str is None or not isinstance(type_str, str):
@@ -242,18 +284,6 @@ def convert_type_str_to_ida_type(type_str) -> typing.Optional['ida_typeinf']:
         valid_parse = ida_typeinf.parse_decl(tif, None, ida_type_str, 1)
 
     return tif if valid_parse is not None else None
-
-@execute_write
-def ida_to_bs_stack_offset(func_addr, ida_stack_off):
-    frame = idaapi.get_frame(func_addr)
-    if not frame:
-        return ida_stack_off
-
-    frame_size = idc.get_struc_size(frame)
-    last_member_size = idaapi.get_member_size(frame.get_member(frame.memqty - 1))
-    bs_soff = ida_stack_off - frame_size + last_member_size
-    return bs_soff
-
 
 @execute_write
 def convert_size_to_flag(size):
@@ -314,7 +344,8 @@ def get_func_size(ea):
 def set_ida_func_name(func_addr, new_name):
     idaapi.set_name(func_addr, new_name, idaapi.SN_FORCE)
     ida_kernwin.request_refresh(ida_kernwin.IWID_DISASMS)
-    ida_kernwin.request_refresh(ida_kernwin.IWID_STRUCTS)
+    # XXX: why was this here?!?!?
+    #ida_kernwin.request_refresh(ida_kernwin.IWID_STRUCTS)
     ida_kernwin.request_refresh(ida_kernwin.IWID_STKVIEW)
 
 def get_segment_range(segment_name) -> typing.Tuple[bool, int, int]:
@@ -423,10 +454,7 @@ def set_function(func: Function, decompiler_available=True, **kwargs):
 
     # stack vars
     if func.stack_vars and ida_code_view is not None:
-        for svar in func.stack_vars.values():
-            changes |= set_stack_variable(
-                svar, decompiler_available=decompiler_available, ida_code_view=ida_code_view, **kwargs
-            )
+        changes |= set_stack_variables(func.stack_vars, ida_code_view=ida_code_view)
 
     if changes and ida_code_view is not None:
         ida_code_view.refresh_view(changes)
@@ -588,23 +616,57 @@ def bs_header_from_tif(tif, name=None, addr=None):
 #
 
 
-def lvar_to_bs_var(lvar, vdui=None, var_name=None) -> typing.Optional[FunctionArgument]:
-    # only func args are supported right now
-    if lvar is None or vdui is None or not lvar.is_arg_var or vdui.cfunc is None or not vdui.cfunc.lvars:
-        return None
+def lvars_to_bs(lvars: list, vdui=None, var_names: list = None, recover_offset=False) -> list[typing.Union[FunctionArgument, StackVariable]]:
+    bs_vars = []
+    arg_name_to_off = {}
+    if var_names and len(var_names) == len(lvars):
+        if recover_offset:
+            for offset, _lvar in enumerate(vdui.cfunc.lvars):
+                if _lvar.is_arg_var:
+                    arg_name_to_off[_lvar.name] = offset
 
-    # find the offset
-    var_name = var_name or lvar.name
-    for offset, _lvar in enumerate(vdui.cfunc.lvars):
-        if _lvar.name == var_name:
-            break
-    else:
-        return None
+    for lvar_off, lvar in enumerate(lvars):
+        if lvar is None:
+            # this should really never happen
+            continue
 
-    # construct the type
-    type_ = str(_lvar.type())
-    size = _lvar.width
-    return FunctionArgument(offset, var_name, type_, size)
+        if vdui is None:
+            _l.warning("Cannot gather local variables from decompilation that does not exist!")
+            return bs_vars
+
+        if lvar.is_arg_var:
+            if recover_offset:
+                offset = arg_name_to_off.get(lvar.name, None)
+                if offset is None:
+                    continue
+            else:
+                offset = lvar_off
+            bs_cls = FunctionArgument
+        elif lvar.is_stk_var():
+            offset = lvar.location.stkoff()
+            bs_cls = StackVariable
+        elif lvar.is_reg_var():
+            # TODO: implement register variables
+            continue
+        else:
+            continue
+
+        name = None
+        if var_names:
+            name = var_names[lvar_off]
+        if not name:
+            name = lvar.name
+        type_ = str(lvar.type())
+        size = lvar.width
+
+        var = bs_cls(name=name, type_=type_, size=size)
+        var.offset = offset
+        if isinstance(var, StackVariable):
+            var.addr = vdui.cfunc.entry_ea
+
+        bs_vars.append(var)
+
+    return bs_vars
 
 
 @execute_write
@@ -632,31 +694,216 @@ def rename_local_variables_by_names(func: Function, name_map: typing.Dict[str, s
 # Stack Vars
 #
 
-@execute_write
-@requires_decompilation
-def set_stack_variable(svar: StackVariable, decompiler_available=True, **kwargs):
+def _deprecated_ida_to_bs_offset(func_addr, ida_stack_off):
+    frame = idaapi.get_frame(func_addr)
+    if not frame:
+        return ida_stack_off
+
+    frame_size = idc.get_struc_size(frame)
+    last_member_size = idaapi.get_member_size(frame.get_member(frame.memqty - 1))
+    bs_soff = ida_stack_off - frame_size + last_member_size
+    return bs_soff
+
+def _deprecated_bs_to_ida_offset(func_addr, bs_stack_off):
+    frame = idaapi.get_frame(func_addr)
+    if not frame:
+        return bs_stack_off
+
+    frame_size = idc.get_struc_size(frame)
+    last_member_size = idaapi.get_member_size(frame.get_member(frame.memqty - 1))
+    ida_soff = bs_stack_off + frame_size - last_member_size
+    return ida_soff
+
+
+def get_func_stack_tif(func):
+    if isinstance(func, int):
+        func = idaapi.get_func(func)
+
+    if func is None:
+        return None
+
+    tif = ida_typeinf.tinfo_t()
+    if not tif.get_func_frame(func):
+        return None
+
+    return tif
+
+def get_frame_info(func_addr) -> typing.Tuple[int, int]:
+    func = idaapi.get_func(func_addr)
+    if not func:
+        raise ValueError(f"Function {hex(func_addr)} does not exist.")
+
+    stack_tif = get_func_stack_tif(func)
+    if stack_tif is None:
+        _l.warning(f"Function {hex(func_addr)} does not have a stack frame.")
+        return None, None
+
+    frame_size = stack_tif.get_size()
+    if frame_size == 0:
+        _l.warning(f"Function {hex(func_addr)} has a stack frame size of 0.")
+        return None, None
+
+    # get the last member size
+    udt_data = ida_typeinf.udt_type_data_t()
+    stack_tif.get_udt_details(udt_data)
+    membs = [m for m in udt_data]
+    if not membs:
+        _l.warning(f"Function {hex(func_addr)} has a stack frame with no members.")
+        return None, None
+
+    last_member_type = membs[-1].type
+    if not last_member_type:
+        _l.warning(f"Function {hex(func_addr)} has a stack frame with a member with no type.")
+        return None, None
+
+    last_member_size = last_member_type.get_size()
+    return frame_size, last_member_size
+
+def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
+    if get_ida_version() < Version("9.0"):
+        return _deprecated_ida_to_bs_offset(func_addr, ida_stack_off)
+
+    frame_size, last_member_size = get_frame_info(func_addr)
+    if frame_size is None or last_member_size is None:
+        return ida_stack_off
+
+    bs_soff = ida_stack_off - frame_size + last_member_size
+    return bs_soff
+
+def bs_to_ida_stack_offset(func_addr: int, bs_stack_off: int):
+    if get_ida_version() < Version("9.0"):
+        # maintain backwards compatibility
+        return _deprecated_bs_to_ida_offset(func_addr, bs_stack_off)
+
+    frame_size, last_member_size = get_frame_info(func_addr)
+    if frame_size is None or last_member_size is None:
+        return ida_stack_off
+
+    ida_soff = bs_stack_off + frame_size - last_member_size
+    return ida_soff
+
+def set_stack_variables(svars: list[StackVariable], decompiler_available=True, **kwargs) -> bool:
+    """
+    This function should only be called in a function that is already used in main-thread.
+    This should also mean decompilation is passed in.
+    """
     ida_code_view = kwargs.get('ida_code_view', None)
-    frame = idaapi.get_frame(svar.addr)
     changes = False
-    if frame is None or frame.memqty <= 0:
-        _l.warning(f"Function {svar.addr:x} does not have an associated function frame. Stopping sync here!")
-        return False
+    if ida_code_view is None:
+        # TODO: support decompilation-less stack var setting
+        _l.warning("Cannot set stack variables without a decompiler.")
+        return changes
 
-    if svar.type:
-        ida_type = convert_type_str_to_ida_type(svar.type)
-        if ida_type is None:
-            _l.warning(f"IDA Failed to parse type for stack var {svar}")
-            return changes
+    lvars = {v.location.stkoff(): v for v in ida_code_view.cfunc.lvars if v.is_stk_var()}
+    if not lvars:
+        _l.warning("No stack variables found in decompilation to set. Making new ones is not supported")
+        return changes
 
-        changes |= set_stack_vars_types({svar.offset: ida_type}, ida_code_view)
-        if changes:
+    for bs_off, bs_var in svars.items():
+        if bs_off not in lvars:
+            _l.warning(f"Stack variable at offset {bs_off} not found in decompilation.")
+            continue
+
+        lvar = lvars[bs_off]
+
+        # naming:
+        if bs_var.name and bs_var.name != lvar.name:
+            ida_code_view.rename_lvar(lvar, bs_var.name, 1)
+            changes |= True
             ida_code_view.cfunc.refresh_func_ctext()
+            lvars = {v.location.stkoff(): v for v in ida_code_view.cfunc.lvars if v.is_stk_var()}
 
-    frame = idaapi.get_frame(svar.addr)
-    if svar.name and ida_struct.set_member_name(frame, svar.offset, svar.name):
-        changes |= True
+        # typing
+        if bs_var.type:
+            curr_ida_type_str = str(lvar.type()) if lvar.type() else None
+            curr_ida_type = IDAArtifactLifter.lift_ida_type(curr_ida_type_str) if curr_ida_type_str else None
+            if curr_ida_type and bs_var.type != curr_ida_type:
+                new_type = convert_type_str_to_ida_type(bs_var.type)
+                if new_type is None:
+                    _l.warning(f"Failed to convert type string {bs_var.type} to ida type.")
+                    continue
+
+                updated_type = ida_code_view.set_lvar_type(lvar, new_type)
+                if updated_type:
+                    changes |= True
+                    ida_code_view.cfunc.refresh_func_ctext()
+                    lvars = {v.location.stkoff(): v for v in ida_code_view.cfunc.lvars if v.is_stk_var()}
+
+    if changes:
+        ida_code_view.refresh_view(True)
 
     return changes
+
+
+@execute_write
+def get_func_stack_var_info(func_addr) -> typing.Dict[int, StackVariable]:
+    try:
+        decompilation = ida_hexrays.decompile(func_addr)
+    except ida_hexrays.DecompilationFailure:
+        _l.debug("Decompiling too many functions too fast! Slow down and try that operation again.")
+        return {}
+
+    if decompilation is None:
+        _l.warning("Decompiled something that gave no decompilation")
+        return {}
+
+    stack_var_info = {}
+
+    for var in decompilation.lvars:
+        if not var.is_stk_var():
+            continue
+
+        size = var.width
+        name = var.name
+
+        ida_offset = var.location.stkoff() - decompilation.get_stkoff_delta()
+        bs_offset = ida_to_bs_stack_offset(func_addr, ida_offset)
+        type_str = str(var.type())
+        stack_var_info[bs_offset] = StackVariable(
+            ida_offset, name, type_str, size, func_addr
+        )
+
+    return stack_var_info
+
+
+@execute_write
+def _deprecated_set_stack_vars_types(var_type_dict, ida_code_view) -> bool:
+    """
+    Sets the type of a stack variable, which should be a local variable.
+    Take special note of the types of first two parameters used here:
+    var_type_dict is a dictionary of the offsets and the new proposed type info for each offset.
+    This typeinfo should be gotten either by manully making a new typeinfo object or using the
+    parse_decl function. code_view is a _instance of vdui_t, which should be gotten through
+    open_pseudocode() from ida_hexrays.
+
+    This function also is special since it needs to iterate all of the stack variables an unknown amount
+    of times until a fixed point of variables types not changing is met.
+
+
+    @param var_type_dict:       Dict[stack_offset, ida_typeinf_t]
+    @param ida_code_view:           A pointer to a vdui_t screen
+    @param deci:          The libbs deci to do operations on
+    @return:
+    """
+
+    data_changed = False
+    fixed_point = False
+    func_addr = ida_code_view.cfunc.entry_ea
+    while not fixed_point:
+        fixed_point = True
+        for lvar in ida_code_view.cfunc.lvars:
+            if lvar.is_stk_var():
+                # TODO: this algorithm may need be corrected for programs with func args on the stack
+                cur_off = abs(ida_to_bs_stack_offset(func_addr, lvar.location.stkoff()))
+                if cur_off in var_type_dict:
+                    if str(lvar.type()) != str(var_type_dict[cur_off]):
+                        data_changed |= ida_code_view.set_lvar_type(lvar, var_type_dict.pop(cur_off))
+                        fixed_point = False
+                        # make sure to break, in case the size of lvars array has now changed
+                        break
+
+    return data_changed
+
 
 #
 #   IDA Comment r/w
@@ -747,84 +994,6 @@ def set_decomp_comments(func_addr, cmt_dict: typing.Dict[int, str]):
 
 
 #
-#   IDA Stack Var r/w
-#
-
-@execute_write
-def get_func_stack_var_info(func_addr) -> typing.Dict[int, StackVariable]:
-    try:
-        decompilation = ida_hexrays.decompile(func_addr)
-    except ida_hexrays.DecompilationFailure:
-        _l.debug("Decompiling too many functions too fast! Slow down and try that operation again.")
-        return {}
-
-    if decompilation is None:
-        _l.warning("Decompiled something that gave no decompilation")
-        return {}
-
-    stack_var_info = {}
-
-    for var in decompilation.lvars:
-        if not var.is_stk_var():
-            continue
-
-        size = var.width
-        name = var.name
-        
-        ida_offset = var.location.stkoff() - decompilation.get_stkoff_delta()
-        bs_offset = ida_to_bs_stack_offset(func_addr, ida_offset)
-        type_str = str(var.type())
-        stack_var_info[bs_offset] = StackVariable(
-            ida_offset, name, type_str, size, func_addr
-        )
-
-    return stack_var_info
-
-
-@execute_write
-def set_stack_vars_types(var_type_dict, ida_code_view) -> bool:
-    """
-    Sets the type of a stack variable, which should be a local variable.
-    Take special note of the types of first two parameters used here:
-    var_type_dict is a dictionary of the offsets and the new proposed type info for each offset.
-    This typeinfo should be gotten either by manully making a new typeinfo object or using the
-    parse_decl function. code_view is a _instance of vdui_t, which should be gotten through
-    open_pseudocode() from ida_hexrays.
-
-    This function also is special since it needs to iterate all of the stack variables an unknown amount
-    of times until a fixed point of variables types not changing is met.
-
-
-    @param var_type_dict:       Dict[stack_offset, ida_typeinf_t]
-    @param ida_code_view:           A pointer to a vdui_t screen
-    @param deci:          The libbs deci to do operations on
-    @return:
-    """
-
-    data_changed = False
-    fixed_point = False
-    func_addr = ida_code_view.cfunc.entry_ea
-    while not fixed_point:
-        fixed_point = True
-        for lvar in ida_code_view.cfunc.lvars:
-            if lvar.is_stk_var():
-                # TODO: this algorithm may need be corrected for programs with func args on the stack
-                cur_off = abs(ida_to_bs_stack_offset(func_addr, lvar.location.stkoff()))
-                if cur_off in var_type_dict:
-                    if str(lvar.type()) != str(var_type_dict[cur_off]):
-                        data_changed |= ida_code_view.set_lvar_type(lvar, var_type_dict.pop(cur_off))
-                        fixed_point = False
-                        # make sure to break, in case the size of lvars array has now changed
-                        break
-
-    return data_changed
-
-@execute_write
-def ida_get_frame(func_addr):
-    return idaapi.get_frame(func_addr)
-
-
-#
 #   IDA Struct r/w
 #
 
@@ -853,92 +1022,135 @@ def bs_struct_from_tif(tif):
 
 @execute_write
 def structs():
-    dec_version = get_decompiler_version()
-    if dec_version < Version("8.4"):
-        # TODO: in IDA 9, we will deprecate this block of code
+    if new_ida_typing_system():
+        _structs = get_types(structs=True, enums=False, typedefs=False)
+    else:
+        _l.warning("You are using an old IDA, this will be deprecated in the future!")
         _structs = {}
         for struct_item in idautils.Structs():
             idx, sid, name = struct_item[:]
-            sptr = ida_struct.get_struc(sid)
-            size = ida_struct.get_struc_size(sptr)
+            sptr = idc.get_struc(sid)
+            size = idc.get_struc_size(sptr)
             _structs[name] = Struct(name, size, {})
-    else:
-        _structs = get_types(structs=True, enums=False, typedefs=False)
 
     return _structs
 
+def _deprecated_get_struct(name):
 
-@execute_write
-def struct(name):
-    sid = ida_struct.get_struc_id(name)
+    sid = idc.get_struc_id(name)
     if sid == idaapi.BADADDR:
         return None
     
-    sptr = ida_struct.get_struc(sid)
-    size = ida_struct.get_struc_size(sptr)
+    sptr = idc.get_struc(sid)
+    size = idc.get_struc_size(sptr)
     _struct = Struct(name, size, {}, last_change=datetime.datetime.now(tz=datetime.timezone.utc))
     for mptr in sptr.members:
         mid = mptr.id
-        m_name = ida_struct.get_member_name(mid)
+        m_name = idc.get_member_name(mid)
         m_off = mptr.soff
         m_type = ida_typeinf.idc_get_type(mptr.id) if mptr.has_ti() else ""
-        m_size = ida_struct.get_member_size(mptr)
+        m_size = idc.get_member_size(mptr)
         _struct.add_struct_member(m_name, m_off, m_type, m_size)
 
     return _struct
 
 @execute_write
+def struct(name):
+    if not new_ida_typing_system():
+        return _deprecated_get_struct(name)
+
+    tid = ida_typeinf.get_named_type_tid(name)
+    tif = ida_typeinf.tinfo_t()
+    if tid != idaapi.BADADDR and tif.get_type_by_tid(tid) and tif.is_udt():
+        return bs_struct_from_tif(tif)
+
+    return None
+
+@execute_write
 def del_ida_struct(name) -> bool:
-    sid = ida_struct.get_struc_id(name)
+    sid = idc.get_struc_id(name)
     if sid == idaapi.BADADDR:
         return False
 
-    sptr = ida_struct.get_struc(sid)
-    return ida_struct.del_struc(sptr)
+    sptr = sid if new_ida_typing_system() else idc.get_struc(sid)
+    return idc.del_struc(sptr)
 
-@execute_write
-def set_struct_member_name(ida_struct, frame, offset, name):
-    ida_struct.set_member_name(frame, offset, name)
+
+def expand_ida_struct(sid, new_size):
+    """
+    Only works in IDA 9 and up
+    """
+    tif = ida_typeinf.tinfo_t()
+    if tif.get_type_by_tid(sid) and tif.is_udt():
+        if tif.get_size() == new_size:
+            return True
+
+        udm = ida_typeinf.udm_t()
+        udm.offset = 0
+        idx = tif.find_udm(udm, ida_typeinf.STRMEM_LOWBND|ida_typeinf.STRMEM_SKIP_GAPS)
+        if idx != -1:
+            return tif.expand_udt(idx, new_size)
+
+    return False
+
 
 @execute_write
 def set_ida_struct(struct: Struct) -> bool:
+    new_struct_system = new_ida_typing_system()
     # first, delete any struct by the same name if it exists
-    sid = ida_struct.get_struc_id(struct.name)
+    sid = idc.get_struc_id(struct.name)
     if sid != idaapi.BADADDR:
-        sptr = ida_struct.get_struc(sid)
-        ida_struct.del_struc(sptr)
+        sptr = sid if new_struct_system else idc.get_struc(sid)
+        idc.del_struc(sptr)
 
     # now make a struct header
-    ida_struct.add_struc(ida_idaapi.BADADDR, struct.name, False)
-    sid = ida_struct.get_struc_id(struct.name)
-    sptr = ida_struct.get_struc(sid)
+    idc.add_struc(ida_idaapi.BADADDR, struct.name, False)
+    sid = idc.get_struc_id(struct.name)
+
+    struct_identifier = sid if new_struct_system else idc.get_struc(sid)
 
     # expand the struct to the desired size
     # XXX: do not increment API here, why? Not sure, but you cant do it here.
-    ida_struct.expand_struc(sptr, 0, struct.size)
+    if get_ida_version() >= Version("9.0"):
+        expand_ida_struct(sid, struct.size)
+    else:
+        idc.expand_struc(struct_identifier, 0, struct.size, False)
 
     # add every member of the struct
     for off, member in struct.members.items():
+        if member.size is None:
+            if member.type is None:
+                raise ValueError("Member size and type cannot both be None when setting a struct!")
+
+            type_size = type_str_to_size(member.type)
+            if type_size is None:
+                _l.warning(f"Failed to get size for member %s of struct %s, assuming 8!", member.name, struct.name)
+                type_size = 8
+
+            member.size = type_size
+
+        if member.offset is None:
+            member.offset = off
+
         # convert to ida's flag system
         mflag = convert_size_to_flag(member.size)
 
         # create the new member
-        ida_struct.add_struc_member(
-            sptr,
+        idc.add_struc_member(
+            struct_identifier,
             member.name,
             member.offset,
             mflag,
-            None,
+            -1,
             member.size,
         )
 
     return True
 
-@execute_write
-def set_ida_struct_member_types(struct: Struct) -> bool:
+def _depreacated_set_ida_struct_member_types(struct: Struct) -> bool:
     # find the specific struct
-    sid = ida_struct.get_struc_id(struct.name)
-    sptr = ida_struct.get_struc(sid)
+    sid = idc.get_struc_id(struct.name)
+    sptr = idc.get_struc(sid)
     data_changed = False
 
     for idx, member in enumerate(struct.members.values()):
@@ -953,7 +1165,7 @@ def set_ida_struct_member_types(struct: Struct) -> bool:
 
         # set the type
         mptr = sptr.get_member(idx)
-        was_set = ida_struct.set_member_tinfo(
+        was_set = idc.set_member_tinfo(
             sptr,
             mptr,
             0,
@@ -961,6 +1173,38 @@ def set_ida_struct_member_types(struct: Struct) -> bool:
             mptr.flag
         )
         data_changed |= was_set == 1
+
+    return data_changed
+
+
+@execute_write
+def set_ida_struct_member_types(bs_struct: Struct):
+    if not new_ida_typing_system():
+        return _depreacated_set_ida_struct_member_types(bs_struct)
+
+    struct_tif = get_ida_type(name=bs_struct.name)
+    if struct_tif is None:
+        return False
+
+    udt_data = ida_typeinf.udt_type_data_t()
+    if not struct_tif.get_udt_details(udt_data):
+        return False
+
+    data_changed = False
+    for udt_memb in udt_data:
+        offset = udt_memb.offset
+        bs_member = bs_struct.members.get(offset, None)
+        if bs_member is None:
+            continue
+
+        tif = convert_type_str_to_ida_type(bs_member.type)
+        if tif is None:
+            _l.warning(f"Failed to convert type %s for struct member %s", bs_member.type, bs_member.name)
+            continue
+
+        # TODO: investigate why this does not always work
+        udt_memb.type = tif
+        data_changed |= True
 
     return data_changed
 
@@ -1020,71 +1264,110 @@ def ida_type_from_serialized(typ: bytes, fields: bytes):
 # Enums
 #
 
-def get_enum_members(_enum) -> typing.Dict[str, int]:
+
+def _deprecated_get_enum_mmebers(_enum_id, max_size=100) -> typing.Dict[str, int]:
     enum_members = {}
 
-    member = ida_enum.get_first_enum_member(_enum)
-    member_addr = ida_enum.get_enum_member(_enum, member, 0, 0)
-    member_name = ida_enum.get_enum_member_name(member_addr)
+    member = idc.get_first_enum_member(_enum_id)
+    member_addr = idc.get_enum_member(_enum_id, member, 0, 0)
+    member_name = idc.get_enum_member_name(member_addr)
     if member_name is None:
         return enum_members
 
     enum_members[member_name] = member
     
-    member = ida_enum.get_next_enum_member(_enum, member, 0)
-    max_iters = 100
-    for _ in range(max_iters):
+    member = idc.get_next_enum_member(_enum_id, member, 0)
+    for _ in range(max_size):
         if member == idaapi.BADADDR:
             break
 
-        member_addr = ida_enum.get_enum_member(_enum, member, 0, 0)
-        member_name = ida_enum.get_enum_member_name(member_addr)
+        member_addr = idc.get_enum_member(_enum_id, member, 0, 0)
+        member_name = idc.get_enum_member_name(member_addr)
         if member_name:
             enum_members[member_name] = member
 
-        member = ida_enum.get_next_enum_member(_enum, member, 0)
+        member = idc.get_next_enum_member(_enum_id, member, 0)
     else:
-        _l.critical(f"IDA failed to iterate all enum members for enum %s", _enum)
+        _l.critical(f"IDA failed to iterate all enum members for enum %s", _enum_id)
 
     return enum_members
 
 
+def get_enum_members(_enum: typing.Union["ida_typeinf.tinfo_t", int], max_size=100) -> typing.Dict[str, int]:
+    """
+    _enum can either be an ida_typeinf.tinfo_t or an int (the old enum id system)
+
+    """
+    if not new_ida_typing_system():
+        _enum_id: int = _enum
+        return _deprecated_get_enum_mmebers(_enum_id, max_size=max_size)
+
+    # this is an enum tif if we are here
+    enum_tif: "ida_typeinf.tinfo_t" = _enum
+    ei = ida_typeinf.enum_type_data_t()
+    if not enum_tif.get_enum_details(ei):
+        _l.error(f"IDA failed to get enum details for %s", enum_tif)
+        return {}
+
+    enum_members = {}
+    for e_memb in ei:
+        val = e_memb.value
+        if val == -1:
+            _l.warning(f"IDA failed to get enum member value for %s", e_memb)
+            break
+
+        name = e_memb.name
+        if name is None:
+            _l.warning(f"IDA failed to get enum member name for %s", e_memb)
+            break
+
+        enum_members[name] = val
+
+    return enum_members
+
+
+def enum_from_tif(tif):
+    enum_name = tif.get_type_name()
+    if not enum_name:
+        return None
+
+    enum_members = get_enum_members(tif)
+    return Enum(enum_name, enum_members)
+
+
 @execute_write
 def enums() -> typing.Dict[str, Enum]:
-    _enums: typing.Dict[str, Enum] = {}
-    for i in range(ida_enum.get_enum_qty()):
-        _enum = ida_enum.getn_enum(i)
-        enum_name = ida_enum.get_enum_name(_enum)
-        enum_members = get_enum_members(_enum)
-        _enums[enum_name] = Enum(enum_name, enum_members)
-    return _enums
+    return get_types(structs=False, enums=True, typedefs=False)
 
 
 @execute_write
 def enum(name) -> typing.Optional[Enum]:
-    _enum = ida_enum.get_enum(name)
-    if not _enum:
+    new_enums = new_ida_typing_system()
+    _enum = get_ida_type(name=name) if new_enums else idc.get_enum(name)
+    if _enum is None or _enum == idaapi.BADADDR:
         return None
-    enum_name = ida_enum.get_enum_name(_enum)
+
+    enum_name = str(_enum.get_type_name()) if new_enums else idc.get_enum_name(_enum)
     enum_members = get_enum_members(_enum)
     return Enum(enum_name, enum_members)
 
 
 @execute_write
 def set_enum(bs_enum: Enum):
-    _enum = ida_enum.get_enum(bs_enum.name)
+    _enum = idc.get_enum(bs_enum.name)
     if not _enum:
         return False
 
-    ida_enum.del_enum(_enum)
-    enum_id = ida_enum.add_enum(ida_enum.get_enum_qty(), bs_enum.name, 0)
+    idc.del_enum(_enum)
+    ords = get_ordinal_count()
+    enum_id = idc.add_enum(ords, bs_enum.name, 0)
 
     if enum_id is None:
         _l.warning(f"IDA failed to create a new enum with {bs_enum.name}")
         return False
 
     for member_name, value in bs_enum.members.items():
-        ida_enum.add_enum_member(enum_id, member_name, value)
+        idc.add_enum_member(enum_id, member_name, value)
 
     return True
 
@@ -1094,8 +1377,7 @@ def set_enum(bs_enum: Enum):
 
 
 def use_new_typedef_check():
-    dec_version = get_decompiler_version()
-    return dec_version >= Version("8.4") if dec_version is not None else False
+    return get_ida_version() >= Version("8.4")
 
 
 def typedef_info(tif, use_new_check=False) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
@@ -1127,22 +1409,7 @@ def typedef_info(tif, use_new_check=False) -> typing.Tuple[bool, typing.Optional
 
 @execute_write
 def typedefs() -> typing.Dict[str, Typedef]:
-    typedefs = {}
-    idati = idaapi.get_idati()
-    use_new_check = use_new_typedef_check()
-    for ord_num in range(ida_typeinf.get_ordinal_qty(idati)):
-        tif = ida_typeinf.tinfo_t()
-        success = tif.get_numbered_type(idati, ord_num)
-        if not success:
-            continue
-
-        is_typedef, name, type_name = typedef_info(tif, use_new_check=use_new_check)
-        if not is_typedef:
-            continue
-
-        typedefs[name] = Typedef(name=name, type_=type_name)
-
-    return typedefs
+    return get_types(structs=False, enums=False, typedefs=True)
 
 
 @execute_write
@@ -1352,7 +1619,8 @@ def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
     if form_type is None:
         return None
 
-    view_name = FORM_TYPE_TO_NAME.get(form_type, "unknown")
+    form_to_type_name = get_form_to_type_name()
+    view_name = form_to_type_name.get(form_type, "unknown")
     ctx = Context(screen_name=view_name)
     if view_name in FUNC_FORMS:
         ctx.addr = idaapi.get_screen_ea()

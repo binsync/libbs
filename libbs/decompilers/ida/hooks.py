@@ -33,9 +33,7 @@ import ida_funcs
 import ida_hexrays
 import ida_idp
 import ida_kernwin
-import ida_struct
 import ida_typeinf
-import ida_enum
 import idaapi
 import idc
 
@@ -132,6 +130,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
         ida_idp.IDB_Hooks.__init__(self)
         self.interface: "IDAInterface" = interface
         self._seen_function_prototypes = {}
+        self._ver_9_or_higher = compat.get_ida_version() >= Version("9.0")
 
     def bs_type_deleted(self, ordinal):
         old_name, old_type = self.interface.cached_ord_to_type_names[ordinal]
@@ -177,8 +176,9 @@ class IDBHooks(ida_idp.IDB_Hooks):
             self.interface.struct_changed(bs_struct)
             new_type_type = Struct
         elif tif.is_enum():
-            # TODO: handle enum changes in IDA 9
-            pass
+            bs_enum = compat.enum_from_tif(tif)
+            self.interface.enum_changed(bs_enum)
+            new_type_type = Enum
 
         self.interface.cached_ord_to_type_names[ordinal] = (name, new_type_type)
         return 0
@@ -207,7 +207,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
     @while_should_watch
     def ida_enum_changed(self, enum_id, new_name=None, deleted=False, member_deleted=False):
-        name = ida_enum.get_enum_name(enum_id)
+        name = idc.get_enum_name(enum_id)
         _enum = compat.enum(name) if not deleted else Enum(name, {})
         if name in self.interface._deleted_artifacts[Enum]:
             if member_deleted:
@@ -240,7 +240,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     def renaming_enum(self, id, is_enum, newname):
         enum_id = id
         if not is_enum:
-            enum_id = ida_enum.get_enum_member_enum(id)
+            enum_id = idc.get_enum_member_enum(id)
 
         # delete it
         self.ida_enum_changed(enum_id, deleted=True)
@@ -268,12 +268,51 @@ class IDBHooks(ida_idp.IDB_Hooks):
         return 0
 
     #
+    # Stack Variable
+    #
+
+    @while_should_watch
+    def frame_udm_renamed(self, func_ea, udm, oldname):
+        self._ida_stack_var_changed(func_ea, udm)
+        return 0
+
+    @while_should_watch
+    def frame_udm_changed(self, func_ea, udm_tid, udm_old, udm_new):
+        self._ida_stack_var_changed(func_ea, udm_new)
+        return 0
+
+    def _ida_stack_var_changed(self, func_ea, udm):
+        # TODO: implement stack var support when there is no decompiler available
+        return
+
+    def _deprecated_ida_stack_var_changed(self, sptr, mptr):
+        # XXX: This is a deprecated function that will be removed in the future
+        func_addr = idaapi.get_func_by_frame(sptr.id)
+        try:
+            stack_var_info = compat.get_func_stack_var_info(func_addr)[
+                compat.ida_to_bs_stack_offset(func_addr, mptr.soff)
+            ]
+        except KeyError:
+            _l.debug(f"Failed to track an internal changing stack var: {mptr.id}.")
+            return 0
+
+        # find the properties of the changed stack var
+        bs_offset = compat.ida_to_bs_stack_offset(func_addr, stack_var_info.offset)
+        size = stack_var_info.size
+        type_str = stack_var_info.type
+
+        new_name = idc.get_member_name(mptr.id)
+        self.interface.stack_variable_changed(
+            StackVariable(bs_offset, new_name, type_str, size, func_addr)
+        )
+
+    #
     # Struct & Stack Var Hooks
     #
 
     def ida_struct_changed(self, sid: int, new_name=None, deleted=False, member_deleted=False):
         # parse the info of the current struct
-        struct_name = new_name if new_name else ida_struct.get_struc_name(sid)
+        struct_name = new_name if new_name else idc.get_struc_name(sid)
 
         if struct_name in self.interface._deleted_artifacts[Struct]:
             if member_deleted:
@@ -293,47 +332,26 @@ class IDBHooks(ida_idp.IDB_Hooks):
             self.interface.struct_changed(Struct(struct_name, -1, {}), deleted=True)
             return 0
 
-        struct_ptr = ida_struct.get_struc(sid)
+        struct_ptr = idc.get_struc(sid)
         bs_struct = Struct(
             struct_name,
-            ida_struct.get_struc_size(struct_ptr),
+            idc.get_struc_size(struct_ptr),
             {},
         )
 
         for mptr in struct_ptr.members:
-            m_name = ida_struct.get_member_name(mptr.id)
+            m_name = idc.get_member_name(mptr.id)
             m_off = mptr.soff
             m_type = ida_typeinf.idc_get_type(mptr.id) if mptr.has_ti() else ""
-            m_size = ida_struct.get_member_size(mptr)
+            m_size = idc.get_member_size(mptr)
             bs_struct.add_struct_member(m_name, m_off, m_type, m_size)
 
         self.interface.struct_changed(bs_struct, deleted=False)
         return 0
 
-    def ida_stack_var_changed(self, sptr, mptr):
-        func_addr = idaapi.get_func_by_frame(sptr.id)
-        try:
-            stack_var_info = compat.get_func_stack_var_info(func_addr)[
-                compat.ida_to_bs_stack_offset(func_addr, mptr.soff)
-            ]
-        except KeyError:
-            _l.debug(f"Failed to track an internal changing stack var: {mptr.id}.")
-            return 0
-
-        # find the properties of the changed stack var
-        bs_offset = compat.ida_to_bs_stack_offset(func_addr, stack_var_info.offset)
-        size = stack_var_info.size
-        type_str = stack_var_info.type
-
-        # TODO: correct this fix in the get_func_stack_var_info
-        new_name = ida_struct.get_member_name(mptr.id)
-        self.interface.stack_variable_changed(
-            StackVariable(bs_offset, new_name, type_str, size, func_addr)
-        )
-
     @while_should_watch
     def struc_created(self, tid):
-        sptr = ida_struct.get_struc(tid)
+        sptr = idc.get_struc(tid)
         if not sptr.is_frame():
             self.ida_struct_changed(tid)
 
@@ -357,7 +375,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     # XXX - use struc_renamed(self, sptr) instead?
     @while_should_watch
     def renaming_struc(self, id, oldname, newname):
-        sptr = ida_struct.get_struc(id)
+        sptr = idc.get_struc(id)
         if not sptr.is_frame():
             # delete it
             self.ida_struct_changed(id, deleted=True)
@@ -388,8 +406,9 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
     @while_should_watch
     def struc_member_renamed(self, sptr, mptr):
-        if sptr.is_frame():
-            self.ida_stack_var_changed(sptr, mptr)
+        if sptr.is_frame() and not compat.new_ida_typing_system():
+            # TODO: this will be deprecated in the future
+            self._deprecated_ida_stack_var_changed(sptr, mptr)
         else:
             self.ida_struct_changed(sptr.id)
 
@@ -397,17 +416,26 @@ class IDBHooks(ida_idp.IDB_Hooks):
 
     @while_should_watch
     def struc_member_changed(self, sptr, mptr):
-        if sptr.is_frame():
-            self.ida_stack_var_changed(sptr, mptr)
+        if sptr.is_frame() and not compat.new_ida_typing_system():
+            # TODO: this will be deprecated in the future
+            self._deprecated_ida_stack_var_changed(sptr, mptr)
         else:
             self.ida_struct_changed(sptr.id)
 
         return 0
 
+    def _valid_rename_event(self, ea):
+        if not self._ver_9_or_higher:
+            # ignore any changes landing here for structs and stack vars
+            import ida_struct, ida_enum
+            return not (ida_struct.is_member_id(ea) or ida_struct.get_struc(ea) or ida_enum.get_enum_name(ea))
+
+        # in version 9 and above, this event is not triggered by structs
+        return True
+
     @while_should_watch
     def renamed(self, ea, new_name, local_name):
-        # ignore any changes landing here for structs and stack vars
-        if ida_struct.is_member_id(ea) or ida_struct.get_struc(ea) or ida_enum.get_enum_name(ea):
+        if not self._valid_rename_event(ea):
             return 0
 
         ida_func = idaapi.get_func(ea)
@@ -473,13 +501,13 @@ class IDBHooks(ida_idp.IDB_Hooks):
     @while_should_watch
     def struc_cmt_changed(self, id, repeatable_cmt):
         """
-        fullname = ida_struct.get_struc_name(id)
+        fullname = idc.get_struc_name(id)
         if "." in fullname:
             sname, smname = fullname.split(".", 1)
         else:
             sname = fullname
             smname = ""
-        cmt = ida_struct.get_struc_cmt(id, repeatable_cmt)
+        cmt = idc.get_struc_cmt(id, repeatable_cmt)
         """
         return 0
 
@@ -534,12 +562,12 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
 
     @while_should_watch
     def lvar_name_changed(self, vdui, lvar, new_name, *args):
-        self.func_arg_changed(vdui, lvar, reset_type=True, var_name=new_name)
+        self.local_var_changed(vdui, lvar, reset_type=True, var_name=new_name)
         return 0
 
     @while_should_watch
-    def lvar_type_changed(self, vdui, lvar, *args):
-        self.func_arg_changed(vdui, lvar, reset_name=True)
+    def lvar_type_changed(self, vu: "vdui_t", v: "lvar_t", *args) -> int:
+        self.local_var_changed(vu, v, reset_name=True)
         return 0
 
     @while_should_watch
@@ -553,11 +581,16 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
     # helpers
     #
 
-    def func_arg_changed(self, vdui, lvar, reset_type=False, reset_name=False, var_name=None):
+    def local_var_changed(self, vdui, lvar, reset_type=False, reset_name=False, var_name=None):
         func_addr = vdui.cfunc.entry_ea
-        bs_var = compat.lvar_to_bs_var(lvar, vdui=vdui, var_name=var_name)
-        if not bs_var:
+        is_func_arg = lvar.is_arg_var
+        bs_vars = compat.lvars_to_bs(
+            [lvar], vdui=vdui, var_names=[var_name],
+            recover_offset=True if is_func_arg else False
+        )
+        if not bs_vars:
             return
+        bs_var = next(iter(bs_vars))
 
         if reset_type:
             bs_var.type = None
@@ -565,7 +598,10 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
             bs_var.name = None
 
         # proxy the change through the func header
-        self.interface.function_header_changed(
-            FunctionHeader(None, func_addr, args={bs_var.offset: bs_var}),
-            fargs={bs_var.offset: bs_var},
-        )
+        if is_func_arg:
+            self.interface.function_header_changed(
+                FunctionHeader(None, func_addr, args={bs_var.offset: bs_var}),
+                fargs={bs_var.offset: bs_var},
+            )
+        else:
+            self.interface.stack_variable_changed(bs_var)

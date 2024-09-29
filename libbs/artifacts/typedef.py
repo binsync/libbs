@@ -38,3 +38,21 @@ class Typedef(Artifact):
 
     def __str__(self):
         return f"<TypeDef: {self.name}={self.type}>"
+
+    def nonconflict_merge(self, typedef2: "Typedef", **kwargs):
+        typedef1: Typedef = self.copy()
+        if not typedef2 or typedef1 == typedef2:
+            return typedef1.copy()
+
+        master_state = kwargs.get("master_state", None)
+        local_names = {typedef1.name}
+        if master_state:
+            for _, typedef in master_state.get_typedefs().items():
+                local_names.add(typedef.name)
+        else:
+            local_names = {typedef1.name}
+
+        if typedef2.name not in local_names:
+            typedef1.name = typedef2.name
+            typedef1.type = typedef2.type
+        return typedef1

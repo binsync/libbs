@@ -5,7 +5,6 @@ from libbs.plugin_installer import LibBSPluginInstaller
 
 __version__ = "0.0.1"
 
-
 def create_plugin(*args, **kwargs):
     """
     This is the entry point that all decompilers will call in various ways. To remain agnostic,
@@ -33,11 +32,15 @@ def create_plugin(*args, **kwargs):
         )
     }
 
+    def _start_watchers(*x, **y):
+        deci.start_artifact_watchers()
+        deci.info("Artifact watchers started!")
+
     # register a menu to open when you right click on the psuedocode view
     deci.gui_register_ctx_menu(
         "StartArtifactChangeWatcher",
         "Start watching artifact changes",
-        lambda *x, **y: deci.start_artifact_watchers(),
+        _start_watchers,
         category="ArtifactChangeWatcher"
     )
 
