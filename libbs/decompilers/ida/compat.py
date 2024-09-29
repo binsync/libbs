@@ -1035,9 +1035,8 @@ def structs():
 
     return _structs
 
+def _deprecated_get_struct(name):
 
-@execute_write
-def struct(name):
     sid = idc.get_struc_id(name)
     if sid == idaapi.BADADDR:
         return None
@@ -1056,12 +1055,24 @@ def struct(name):
     return _struct
 
 @execute_write
+def struct(name):
+    if not new_ida_typing_system():
+        return _deprecated_get_struct(name)
+
+    tid = ida_typeinf.get_named_type_tid(name)
+    tif = ida_typeinf.tinfo_t()
+    if tid != idaapi.BADADDR and tif.get_type_by_tid(tid) and tif.is_udt():
+        return bs_struct_from_tif(tif)
+
+    return None
+
+@execute_write
 def del_ida_struct(name) -> bool:
     sid = idc.get_struc_id(name)
     if sid == idaapi.BADADDR:
         return False
 
-    sptr = idc.get_struc(sid)
+    sptr = sid if new_ida_typing_system() else idc.get_struc(sid)
     return idc.del_struc(sptr)
 
 
@@ -1089,7 +1100,7 @@ def set_ida_struct(struct: Struct) -> bool:
     # first, delete any struct by the same name if it exists
     sid = idc.get_struc_id(struct.name)
     if sid != idaapi.BADADDR:
-        sptr = idc.get_struc(sid)
+        sptr = sid if new_struct_system else idc.get_struc(sid)
         idc.del_struc(sptr)
 
     # now make a struct header
