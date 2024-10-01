@@ -1010,12 +1010,13 @@ def bs_struct_from_tif(tif):
         udt_data = ida_typeinf.udt_type_data_t()
         if tif.get_udt_details(udt_data):
             for udt_memb in udt_data:
-                offset = udt_memb.offset
+                # TODO: warning if offset is not a multiple of 8 (a bit offset), we are in trouble
+                byte_offset = udt_memb.offset // 8
                 m_name = udt_memb.name
                 m_type = udt_memb.type
                 type_name = m_type.get_type_name() or str(m_type)
                 m_size = m_type.get_size()
-                members[offset] = StructMember(name=m_name, type_=type_name, size=m_size, offset=offset)
+                members[byte_offset] = StructMember(name=m_name, type_=type_name, size=m_size, offset=byte_offset)
 
     return Struct(name=name, size=size, members=members)
 
@@ -1192,8 +1193,16 @@ def set_ida_struct_member_types(bs_struct: Struct):
 
     data_changed = False
     for udt_memb in udt_data:
-        offset = udt_memb.offset
-        bs_member = bs_struct.members.get(offset, None)
+        if udt_memb.offset % 8 != 0:
+            _l.warning(
+                f"Struct member %s of struct %s is not byte aligned! This is currently unsupported.",
+                udt_memb.name,
+                bs_struct.name
+            )
+            continue
+
+        byte_offset = udt_memb.offset // 8
+        bs_member = bs_struct.members.get(byte_offset, None)
         if bs_member is None:
             continue
 
