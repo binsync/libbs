@@ -777,7 +777,7 @@ def bs_to_ida_stack_offset(func_addr: int, bs_stack_off: int):
 
     frame_size, last_member_size = get_frame_info(func_addr)
     if frame_size is None or last_member_size is None:
-        return ida_stack_off
+        return bs_stack_off
 
     ida_soff = bs_stack_off + frame_size - last_member_size
     return ida_soff
