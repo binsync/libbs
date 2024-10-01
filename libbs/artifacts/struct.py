@@ -12,6 +12,7 @@ l = logging.getLogger(name=__name__)
 class StructMember(Artifact):
     """
     Describes a struct member that corresponds to a struct.
+    Offset is the byte offset of the member from the start of the struct.
     """
 
     __slots__ = Artifact.__slots__ + (
@@ -41,7 +42,8 @@ class StructMember(Artifact):
 
 class Struct(Artifact):
     """
-    Describes a struct
+    Describes a struct.
+    All members are stored by their byte offset from the start of the struct.
     """
 
     __slots__ = Artifact.__slots__ + (
