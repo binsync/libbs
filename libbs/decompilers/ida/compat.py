@@ -1192,7 +1192,7 @@ def set_ida_struct_member_types(bs_struct: Struct):
         return False
 
     data_changed = False
-    for udt_memb in udt_data:
+    for member_index, udt_memb in enumerate(udt_data):
         if udt_memb.offset % 8 != 0:
             _l.warning(
                 f"Struct member %s of struct %s is not byte aligned! This is currently unsupported.",
@@ -1206,14 +1206,14 @@ def set_ida_struct_member_types(bs_struct: Struct):
         if bs_member is None:
             continue
 
-        tif = convert_type_str_to_ida_type(bs_member.type)
-        if tif is None:
+        member_tif = convert_type_str_to_ida_type(bs_member.type)
+        if member_tif is None:
             _l.warning(f"Failed to convert type %s for struct member %s", bs_member.type, bs_member.name)
             continue
 
-        # TODO: investigate why this does not always work
-        udt_memb.type = tif
-        data_changed |= True
+        if member_tif != udt_memb.type:
+            struct_tif.set_udm_type(member_index, member_tif)
+            data_changed |= True
 
     return data_changed
 
