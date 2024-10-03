@@ -174,10 +174,12 @@ class IDBHooks(ida_idp.IDB_Hooks):
         elif tif.is_struct():
             bs_struct = compat.bs_struct_from_tif(tif)
             self.interface.struct_changed(bs_struct)
+            name = tif.get_type_name()
             new_type_type = Struct
         elif tif.is_enum():
             bs_enum = compat.enum_from_tif(tif)
             self.interface.enum_changed(bs_enum)
+            name = tif.get_type_name()
             new_type_type = Enum
 
         self.interface.cached_ord_to_type_names[ordinal] = (name, new_type_type)
