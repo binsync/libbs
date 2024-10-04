@@ -100,6 +100,18 @@ class ScreenHook(ida_kernwin.View_Hooks):
         self.interface._gui_active_context = ctx
         self.interface.gui_context_changed(ctx)
 
+    def view_activated(self, view: "TWidget *"):
+        if not self.interface._artifact_watchers_started:
+            return
+
+        ctx = compat.view_to_bs_context(view)
+        if ctx is None:
+            return
+
+        ctx = self.interface.art_lifter.lift(ctx)
+        self.interface._gui_active_context = ctx
+        self.interface.gui_context_changed(ctx)
+
 
 class IDAHotkeyHook(ida_kernwin.UI_Hooks):
     def __init__(self, keys_to_pass, uiptr):
