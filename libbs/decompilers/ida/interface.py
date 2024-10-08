@@ -248,6 +248,9 @@ class IDAInterface(DecompilerInterface):
         func_addr = self.art_lifter.lower_addr(func_addr)
         compat.jumpto(func_addr)
 
+    def gui_show_type(self, type_name: str) -> None:
+        compat.jumpto_type(type_name)
+
     def should_watch_artifacts(self) -> bool:
         # never do hooks while IDA is in initial startup phase
         if not self._ida_analysis_finished:

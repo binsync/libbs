@@ -1583,6 +1583,20 @@ def jumpto(addr):
 
 
 @execute_write
+def jumpto_type(type_name: str) -> None:
+    """
+    Changes the view to the Local Types window, focusing on the specified type.
+    Does nothing if type is not found
+
+    @param type_name: Name of the user-defined type to jump to
+    @return:
+    """
+    tif = convert_type_str_to_ida_type(type_name)
+    if tif is not None:
+        ida_kernwin.open_loctypes_window(tif.get_ordinal())
+
+
+@execute_write
 def xrefs_to(addr):
     return list(idautils.XrefsTo(addr))
 
