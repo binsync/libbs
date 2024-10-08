@@ -1261,13 +1261,29 @@ def global_var(addr):
     if not name:
         return None
 
+    type_ = idc.get_type(addr)
     size = idaapi.get_item_size(addr)
-    return GlobalVariable(addr, name, size=size, last_change=datetime.datetime.now(tz=datetime.timezone.utc))
+    return GlobalVariable(addr, name, size=size, last_change=datetime.datetime.now(tz=datetime.timezone.utc), type_=type_)
 
 
 @execute_write
 def set_global_var_name(var_addr, name):
     return idaapi.set_name(var_addr, name)
+
+@execute_write
+def set_global_var_type(var_addr, type_str):
+    """
+    To make sure the type is correctly displayed (especially for arrays of structs, or arrayy of chars, a.k.a. strings),
+    we first undefine the items where the type is going to be applied.
+    Parse the applied type string to infer its size, and thus the number of bytes to undefine.
+    """
+    tif = convert_type_str_to_ida_type(type_str)
+    if tif is None:
+        idc.del_items(var_addr, flags=idc.DELIT_SIMPLE)
+    else:
+        type_size = tif.get_size()
+        idc.del_items(var_addr, flags=idc.DELIT_SIMPLE, nbytes=type_size)
+    return idc.SetType(var_addr, type_str)
 
 
 def ida_type_from_serialized(typ: bytes, fields: bytes):

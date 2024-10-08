@@ -299,11 +299,13 @@ class IDAInterface(DecompilerInterface):
 
     # global variables
     def _set_global_variable(self, gvar: GlobalVariable, **kwargs) -> bool:
-        # TODO: needs type setting implementation!
+        modified = False
         if gvar.name:
-            return compat.set_global_var_name(gvar.addr, gvar.name)
+            modified |= compat.set_global_var_name(gvar.addr, gvar.name)
+        if gvar.type:
+            modified |= compat.set_global_var_type(gvar.addr, gvar.type)
 
-        return False
+        return modified
 
     def _get_global_var(self, addr) -> Optional[GlobalVariable]:
         return compat.global_var(addr)
