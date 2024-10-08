@@ -212,6 +212,11 @@ class IDBHooks(ida_idp.IDB_Hooks):
                 self.interface.function_header_changed(
                     FunctionHeader(None, ea, type_=curr_ret_type, args={})
                 )
+        elif not pfn:
+            # Must be a global variable type change
+            self.interface.global_variable_changed(
+                GlobalVariable(addr=ea, name=idaapi.get_name(ea), size=idaapi.get_item_size(ea), type_=idc.get_type(ea))
+            )
 
         return 0
 
@@ -456,7 +461,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
         # symbols changing without any corresponding func is assumed to be global var
         if ida_func is None:
             self.interface.global_variable_changed(
-                GlobalVariable(ea, new_name, size=idaapi.get_item_size(ea))
+                GlobalVariable(ea, new_name, size=idaapi.get_item_size(ea), type_=idc.get_type(ea))
             )
         # function name renaming
         elif ida_func.start_ea == ea:
