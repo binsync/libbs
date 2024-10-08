@@ -185,6 +185,14 @@ class DecompilerInterface:
         """
         raise NotImplementedError
 
+    def gui_show_type(self, type_name: str) -> None:
+        """
+        Relocates decompiler display to type definition
+
+        Does nothing if not implemented in a subclass
+        """
+        pass
+
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         raise NotImplementedError
 
