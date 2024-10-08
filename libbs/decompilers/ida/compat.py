@@ -700,6 +700,10 @@ def _deprecated_ida_to_bs_offset(func_addr, ida_stack_off):
         return ida_stack_off
 
     frame_size = idc.get_struc_size(frame)
+
+    if frame_size == 0:
+        return ida_stack_off
+
     last_member_size = idaapi.get_member_size(frame.get_member(frame.memqty - 1))
     bs_soff = ida_stack_off - frame_size + last_member_size
     return bs_soff
@@ -710,6 +714,10 @@ def _deprecated_bs_to_ida_offset(func_addr, bs_stack_off):
         return bs_stack_off
 
     frame_size = idc.get_struc_size(frame)
+
+    if frame_size == 0:
+        return bs_stack_off
+
     last_member_size = idaapi.get_member_size(frame.get_member(frame.memqty - 1))
     ida_soff = bs_stack_off + frame_size - last_member_size
     return ida_soff
