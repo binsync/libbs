@@ -343,7 +343,7 @@ def get_func_size(ea):
 @execute_write
 def set_ida_func_name(func_addr, new_name):
     idaapi.set_name(func_addr, new_name, idaapi.SN_FORCE)
-    ida_kernwin.request_refresh(ida_kernwin.IWID_DISASMS)
+    ida_kernwin.request_refresh(ida_kernwin.IWID_DISASM)
     # XXX: why was this here?!?!?
     #ida_kernwin.request_refresh(ida_kernwin.IWID_STRUCTS)
     ida_kernwin.request_refresh(ida_kernwin.IWID_STKVIEW)
