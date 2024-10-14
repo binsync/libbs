@@ -458,6 +458,7 @@ def set_function(func: Function, decompiler_available=True, **kwargs):
 
     if changes and ida_code_view is not None:
         ida_code_view.refresh_view(changes)
+        ida_code_view.cfunc.refresh_func_ctext()
 
     return changes
 
@@ -681,11 +682,12 @@ def rename_local_variables_by_names(func: Function, name_map: typing.Dict[str, s
         if new_name is None:
             continue
 
-        lvar.name = new_name
+        ida_hexrays.rename_lvar(func.addr, lvar.name, new_name)
         update |= True
 
-    if update:
+    if update and ida_code_view is not None:
         ida_code_view.cfunc.refresh_func_ctext()
+        ida_code_view.refresh_view(True)
 
     return update
 
