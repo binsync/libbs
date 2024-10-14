@@ -390,6 +390,13 @@ class BinjaInterface(DecompilerInterface):
 
         return updates
 
+    def _valid_var_for_bn_set(self, bs_var: StackVariable):
+        # a stopgap for issue reported in:
+        # https://github.com/binsync/libbs/issues/128
+        #
+        # the real fix is likely on the binja side.
+        return bs_var.offset is not None and bs_var.name is not None
+
     # stack vars
     def _set_stack_variable(self, svar: StackVariable, bn_func=None, **kwargs) -> bool:
         updates = False
@@ -415,11 +422,15 @@ class BinjaInterface(DecompilerInterface):
                 if bs_svar_type is not None:
                     if self.art_lifter.lift_type(str(current_bn_vars[bn_offset].type)) != bs_svar_type:
                         current_bn_vars[bn_offset].type = bs_svar_type
-                    try:
-                        bn_func.create_user_stack_var(bn_offset, bs_svar_type, svar.name)
-                        bn_func.create_auto_stack_var(bn_offset, bs_svar_type, svar.name)
-                    except Exception as e:
-                        l.warning(f"BinSync could not sync stack variable at offset {bn_offset}: {e}")
+
+                    # this can cause a binja segfault, so we need to check if the var is valid before doing
+                    # normal python try/except
+                    if self._valid_var_for_bn_set(svar):
+                        try:
+                            bn_func.create_user_stack_var(bn_offset, bs_svar_type, svar.name)
+                            bn_func.create_auto_stack_var(bn_offset, bs_svar_type, svar.name)
+                        except Exception as e:
+                            l.warning(f"BinSync could not sync stack variable at offset {bn_offset}: {e}")
 
                     updates |= True
 
