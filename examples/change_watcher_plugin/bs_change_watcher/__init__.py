@@ -17,9 +17,11 @@ def create_plugin(*args, **kwargs):
         FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment, Context
     )
 
+    decompiler_started_event_callbacks = [lambda *x, **y: print(f"[BSChangeWatcher] Started with plugin version {__version__}")]
     deci = DecompilerInterface.discover(
         plugin_name="ArtifactChangeWatcher",
         init_plugin=True,
+        decompiler_started_callbacks=decompiler_started_event_callbacks,
         gui_init_args=args,
         gui_init_kwargs=kwargs
     )

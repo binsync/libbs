@@ -62,6 +62,7 @@ class DecompilerInterface:
         # [artifact_class] = list(callback_func)
         artifact_change_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
         undo_event_callbacks: Optional[List[Callable]] = None,
+        decompiler_started_callbacks: Optional[List[Callable]] = None,
         thread_artifact_callbacks: bool = True,
     ):
         self.name = name
@@ -89,6 +90,7 @@ class DecompilerInterface:
         # callback functions, keyed by Artifact class
         self.artifact_change_callbacks = artifact_change_callbacks or defaultdict(list)
         self.undo_event_callbacks = undo_event_callbacks or []
+        self.decompiler_started_callbacks = decompiler_started_callbacks or []
         self._thread_artifact_callbacks = thread_artifact_callbacks
 
         # artifact dict aliases:
@@ -632,6 +634,13 @@ class DecompilerInterface:
     # Every callback in this group assumes the input will be decompiler-specific (lowered) and will
     # lift it ONCE inside this function. Each one will return the lifted form, for easier overriding.
     #
+
+    def decompiler_started_event(self, **kwargs):
+        for callback_func in self.decompiler_started_callbacks:
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(**kwargs)
 
     def gui_undo_event(self, **kwargs):
         for callback_func in self.undo_event_callbacks:
