@@ -62,7 +62,8 @@ class DecompilerInterface:
         # [artifact_class] = list(callback_func)
         artifact_change_callbacks: Optional[Dict[Type[Artifact], List[Callable]]] = None,
         undo_event_callbacks: Optional[List[Callable]] = None,
-        decompiler_started_callbacks: Optional[List[Callable]] = None,
+        decompiler_opened_callbacks: Optional[List[Callable]] = None,
+        decompiler_closed_callbacks: Optional[List[Callable]] = None,
         thread_artifact_callbacks: bool = True,
         force_click_recording: bool = False,
     ):
@@ -92,7 +93,8 @@ class DecompilerInterface:
         # callback functions, keyed by Artifact class
         self.artifact_change_callbacks = artifact_change_callbacks or defaultdict(list)
         self.undo_event_callbacks = undo_event_callbacks or []
-        self.decompiler_started_callbacks = decompiler_started_callbacks or []
+        self.decompiler_opened_callbacks = decompiler_opened_callbacks or []
+        self.decompiler_closed_callbacks = decompiler_closed_callbacks or []
         self._thread_artifact_callbacks = thread_artifact_callbacks
 
         # artifact dict aliases:
@@ -637,8 +639,23 @@ class DecompilerInterface:
     # lift it ONCE inside this function. Each one will return the lifted form, for easier overriding.
     #
 
-    def decompiler_started_event(self, **kwargs):
-        for callback_func in self.decompiler_started_callbacks:
+    def decompiler_opened_event(self, **kwargs):
+        """
+        This function is called when the decompiler platform this interface is running on is opened for the first time.
+        In the presence of a decompiler with multiple tabs, this function will still only be called once.
+        """
+        for callback_func in self.decompiler_opened_callbacks:
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(**kwargs)
+
+    def decompiler_closed_event(self, **kwargs):
+        """
+        This function is called when the decompiler platform this interface is running on is closing/closed.
+        In the presence of a decompiler with multiple tabs, this function will still only be called once.
+        """
+        for callback_func in self.decompiler_closed_callbacks:
             if self._thread_artifact_callbacks:
                 threading.Thread(target=callback_func, kwargs=kwargs, daemon=True).start()
             else:
