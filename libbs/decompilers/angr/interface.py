@@ -402,12 +402,12 @@ class AngrInterface(DecompilerInterface):
 
     def decompile_function(self, func, refresh_gui=False):
         # check for known decompilation
-        available = self.main_instance.project.kb.structured_code.available_flavors(func.addr)
+        available = self.main_instance.project.kb.decompilations.available_flavors(func.addr)
         should_decompile = False
         if self.headless or 'pseudocode' not in available:
             should_decompile = True
         else:
-            cached = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')]
+            cached = self.main_instance.project.kb.decompilations[(func.addr, 'pseudocode')]
             if isinstance(cached, DummyStructuredCodeGenerator):
                 should_decompile = True
 
@@ -420,7 +420,7 @@ class AngrInterface(DecompilerInterface):
 
         # grab newly cached pseudocode
         if not self.headless:
-            decomp = self.main_instance.project.kb.structured_code[(func.addr, 'pseudocode')]
+            decomp = self.main_instance.project.kb.decompilations[(func.addr, 'pseudocode')]
 
         # refresh the UI after decompiling
         if refresh_gui and not self.headless:
