@@ -1732,6 +1732,7 @@ def generate_generic_ida_plugic_cls(cls_name=None):
             pass
 
         def term(self):
+            self.interface.decompiler_closed_event()
             del self.interface
 
     cls = GenericIDAPlugin

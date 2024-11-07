@@ -17,11 +17,13 @@ def create_plugin(*args, **kwargs):
         FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment, Context
     )
 
-    decompiler_started_event_callbacks = [lambda *x, **y: print(f"[BSChangeWatcher] Started with plugin version {__version__}")]
+    decompiler_opened_callbacks = [lambda *x, **y: print(f"[BSChangeWatcher] Started with plugin version {__version__}")]
+    decompiler_closed_callbacks = [lambda *x, **y: print(f"[BSChangeWatcher] Goodbye!")]
     deci = DecompilerInterface.discover(
         plugin_name="ArtifactChangeWatcher",
         init_plugin=True,
-        decompiler_started_callbacks=decompiler_started_event_callbacks,
+        decompiler_opened_callbacks=decompiler_opened_callbacks,
+        decompiler_closed_callbacks=decompiler_closed_callbacks,
         # passing the flag below forces click recording to start on decompiler startup
         # force_click_recording = True,
         gui_init_args=args,
