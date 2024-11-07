@@ -89,29 +89,25 @@ class ScreenHook(ida_kernwin.View_Hooks):
         super(ScreenHook, self).__init__()
 
     def view_click(self, view, event):
-        if not self.interface._artifact_watchers_started:
-            return
-
-        ctx = compat.view_to_bs_context(view)
-        if ctx is None:
-            return
-
-        ctx = self.interface.art_lifter.lift(ctx)
-        self.interface._gui_active_context = ctx
-        self.interface.gui_context_changed(ctx)
+        self._handle_view_event(view, click=True)
 
     def view_activated(self, view: "TWidget *"):
-        if not self.interface._artifact_watchers_started:
-            return
+        self._handle_view_event(view)
 
-        ctx = compat.view_to_bs_context(view)
-        if ctx is None:
-            return
+    def _handle_view_event(self, view, click=False):
+        if self.interface.force_click_recording or self.interface.artifact_watchers_started:
+            # drop ctx for speed when the artifact watches have not been officially started, and we are not clicking
+            if (self.interface.force_click_recording and not self.interface.artifact_watchers_started) and not click:
+                return
 
-        ctx = self.interface.art_lifter.lift(ctx)
-        self.interface._gui_active_context = ctx
-        self.interface.gui_context_changed(ctx)
+            ctx = compat.view_to_bs_context(view)
+            if ctx is None:
+                return
 
+            ctx = self.interface.art_lifter.lift(ctx)
+            self.interface._gui_active_context = ctx
+
+            self.interface.gui_context_changed(ctx)
 
 class IDAHotkeyHook(ida_kernwin.UI_Hooks):
     def __init__(self, keys_to_pass, uiptr):

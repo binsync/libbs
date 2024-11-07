@@ -171,10 +171,15 @@ def set_func_ret_type(ea, return_type_str):
 #
 
 
+@execute_write
+def _get_ida_version():
+    return idaapi.get_kernel_version()
+
+
 def get_ida_version():
     global _IDA_VERSION
     if _IDA_VERSION is None:
-        _IDA_VERSION = Version(idaapi.get_kernel_version())
+        _IDA_VERSION = Version(_get_ida_version())
 
     return _IDA_VERSION
 
@@ -1627,6 +1632,7 @@ def xrefs_to(addr):
     return list(idautils.XrefsTo(addr))
 
 
+@execute_write
 def wait_for_idc_initialization():
     idc.auto_wait()
 
@@ -1648,11 +1654,13 @@ def has_older_hexrays_version():
     return not vers.startswith("8.2")
 
 
+@execute_write
 def get_decompiler_version() -> typing.Optional[Version]:
     wait_for_idc_initialization()
     try:
         _vers = ida_hexrays.get_hexrays_version()
-    except Exception:
+    except Exception as e:
+        _l.critical("Failed to get decompiler version: %s", e)
         return None
 
     try:

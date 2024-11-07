@@ -64,6 +64,7 @@ class DecompilerInterface:
         undo_event_callbacks: Optional[List[Callable]] = None,
         decompiler_started_callbacks: Optional[List[Callable]] = None,
         thread_artifact_callbacks: bool = True,
+        force_click_recording: bool = False,
     ):
         self.name = name
         self.art_lifter = artifact_lifter
@@ -82,7 +83,8 @@ class DecompilerInterface:
         self._gui_ctx_menu_actions = []
         self._plugin_name = plugin_name
         self.gui_plugin = None
-        self._artifact_watchers_started = False
+        self.artifact_watchers_started = False
+        self.force_click_recording = force_click_recording
 
         # locks
         self.artifact_write_lock = threading.Lock()
@@ -155,7 +157,7 @@ class DecompilerInterface:
 
     def shutdown(self):
         self.config.save()
-        if self._artifact_watchers_started:
+        if self.artifact_watchers_started:
             self.stop_artifact_watchers()
 
     #
@@ -236,7 +238,7 @@ class DecompilerInterface:
         @return:
         """
         self.debug("Starting BinSync artifact watchers...")
-        self._artifact_watchers_started = True
+        self.artifact_watchers_started = True
 
     def stop_artifact_watchers(self):
         """
@@ -246,7 +248,7 @@ class DecompilerInterface:
         react to them.
         """
         self.debug("Stopping BinSync artifact watchers...")
-        self._artifact_watchers_started = False
+        self.artifact_watchers_started = False
 
     @property
     def binary_base_addr(self) -> int:
