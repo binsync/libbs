@@ -22,8 +22,10 @@ def create_plugin(*args, **kwargs):
         plugin_name="ArtifactChangeWatcher",
         init_plugin=True,
         decompiler_started_callbacks=decompiler_started_event_callbacks,
+        # passing the flag below forces click recording to start on decompiler startup
+        # force_click_recording = True,
         gui_init_args=args,
-        gui_init_kwargs=kwargs
+        gui_init_kwargs=kwargs,
     )
     # create a function to print a string in the decompiler console
     decompiler_printer = lambda *x, **y: deci.print(f"Changed {x}")

@@ -257,7 +257,7 @@ class IDAInterface(DecompilerInterface):
         if not self._ida_analysis_finished:
             self._ida_analysis_finished = ida_auto.auto_is_ok()
 
-        return self._ida_analysis_finished and self._artifact_watchers_started
+        return self._ida_analysis_finished and self.artifact_watchers_started
 
     #
     # Optional API
