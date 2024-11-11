@@ -79,7 +79,7 @@ class DecompilerInterface:
         self._headless_dec_path = Path(headless_dec_path) if headless_dec_path else None
         self._binary_path = Path(binary_path) if binary_path else None
         self._init_plugin = init_plugin
-        self._unparsed_gui_ctx_actions = gui_ctx_menu_actions or {}
+        self._unparsed_gui_ctx_actions: dict[str, tuple[str, Callable]] = gui_ctx_menu_actions or {}
         # (category, name, action_string, callback_func)
         self._gui_ctx_menu_actions = []
         self._plugin_name = plugin_name
@@ -136,23 +136,8 @@ class DecompilerInterface:
         if self._init_plugin:
             self.gui_plugin = self._init_gui_plugin(*args, **kwargs)
 
-        # parse all context menu actions
-        for combined_name, items in self._unparsed_gui_ctx_actions.items():
-            slashes = list(re.finditer("/", combined_name))
-            if not slashes:
-                category = ""
-                name = combined_name
-            else:
-                last_slash = slashes[-1]
-                category = combined_name[:last_slash.start()]
-                name = combined_name[last_slash.start()+1:]
-
-            self._gui_ctx_menu_actions.append((category, name,) + items)
-
-        # register all context menu actions
-        for action in self._gui_ctx_menu_actions:
-            category, name, action_string, callback_func = action
-            self.gui_register_ctx_menu(name, action_string, callback_func, category=category)
+        # parse & register all context menu actions
+        self.gui_register_ctx_menu_many(self._unparsed_gui_ctx_actions)
 
     def _init_gui_plugin(self, *args, **kwargs):
         return None
@@ -225,6 +210,29 @@ class DecompilerInterface:
         """
         from libbs.ui.utils import gui_popup_text
         return gui_popup_text(text, title=title)
+
+    @staticmethod
+    def _parse_ctx_menu_actions(actions:  dict[str, tuple[str, Callable]]) -> List[Tuple[str, str, str, Callable]]:
+        gui_ctx_menu_actions = []
+        for combined_name, items in actions.items():
+            slashes = list(re.finditer("/", combined_name))
+            if not slashes:
+                category = ""
+                name = combined_name
+            else:
+                last_slash = slashes[-1]
+                category = combined_name[:last_slash.start()]
+                name = combined_name[last_slash.start()+1:]
+
+            gui_ctx_menu_actions.append((category, name,) + items)
+
+        return gui_ctx_menu_actions
+
+    def gui_register_ctx_menu_many(self, actions: dict[str, tuple[str, Callable]]):
+        parsed_actions = self._parse_ctx_menu_actions(actions)
+        for action in parsed_actions:
+            category, name, action_string, callback_func = action
+            self.gui_register_ctx_menu(name, action_string, callback_func, category=category)
 
     #
     # Override Mandatory API
