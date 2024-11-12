@@ -1671,27 +1671,33 @@ def get_decompiler_version() -> typing.Optional[Version]:
     return vers
 
 
-def view_to_bs_context(view, get_var=True) -> typing.Optional[Context]:
+def view_to_bs_context(view, get_var=True, action: str = Context.ACT_UNKNOWN) -> typing.Optional[Context]:
     form_type = idaapi.get_widget_type(view)
     if form_type is None:
         return None
 
     form_to_type_name = get_form_to_type_name()
     view_name = form_to_type_name.get(form_type, "unknown")
-    ctx = Context(screen_name=view_name)
+    ctx = Context(screen_name=view_name, action=action)
     if view_name in FUNC_FORMS:
         ctx.addr = idaapi.get_screen_ea()
         func = idaapi.get_func(ctx.addr)
         if func is not None:
             ctx.func_addr = func.start_ea
-            if get_var and view_name == "decompilation":
+            # exit early when we are still rendering the screen (no real click info)
+            if action == Context.ACT_MOUSE_MOVE:
+                return ctx
+
+            if view_name == "decompilation" and get_var:
                 # get lvar info at cursor
                 vu = idaapi.get_widget_vdui(view)
                 if vu and vu.item:
                     lvar = vu.item.get_lvar()
                     if lvar:
                         ctx.variable = lvar.name
-                    ctx.line_number = vu.cpos.lnnum if vu.cpos else None
+                    if vu.cpos is not None:
+                        ctx.line_number = vu.cpos.lnnum
+                        ctx.col_number = vu.cpos.x
 
     return ctx
 

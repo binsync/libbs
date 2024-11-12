@@ -89,25 +89,42 @@ class ScreenHook(ida_kernwin.View_Hooks):
         super(ScreenHook, self).__init__()
 
     def view_click(self, view, event):
-        self._handle_view_event(view, click=True)
+        self._handle_view_event(view, action_type=Context.ACT_MOUSE_CLICK)
 
     def view_activated(self, view: "TWidget *"):
-        self._handle_view_event(view)
+        self._handle_view_event(view, action_type=Context.ACT_VIEW_OPEN)
 
-    def _handle_view_event(self, view, click=False):
+    def view_mouse_moved(self, view: "TWidget *", event: "view_mouse_event_t"):
+        if self.interface.track_mouse_moves:
+            self._handle_view_event(view, ida_event=event, action_type=Context.ACT_MOUSE_MOVE)
+
+    def _handle_view_event(self, view, action_type=Context.ACT_UNKNOWN, ida_event=None):
         if self.interface.force_click_recording or self.interface.artifact_watchers_started:
             # drop ctx for speed when the artifact watches have not been officially started, and we are not clicking
-            if (self.interface.force_click_recording and not self.interface.artifact_watchers_started) and not click:
+            if (self.interface.force_click_recording and not self.interface.artifact_watchers_started) and \
+                    action_type != Context.ACT_MOUSE_CLICK:
                 return
 
-            ctx = compat.view_to_bs_context(view)
+            ctx = compat.view_to_bs_context(view, action=action_type)
             if ctx is None:
                 return
+
+            # handle special case of mouse move
+            if action_type == Context.ACT_MOUSE_MOVE and ida_event is not None:
+                ctx.line_number = ida_event.renderer_pos.cy
+                ctx.col_number = ida_event.renderer_pos.cx
+                if ctx.screen_name == "disassembly" and ida_event.renderer_pos.node != -1:
+                    # TODO: this is not an addr, but the node number in graph view
+                    ctx.extras['node'] = ida_event.renderer_pos.node
+                elif ctx.screen_name == "decompilation":
+                    # TODO: the address is useless here!
+                    ctx.addr = ctx.func_addr
 
             ctx = self.interface.art_lifter.lift(ctx)
             self.interface._gui_active_context = ctx
 
             self.interface.gui_context_changed(ctx)
+
 
 class IDAHotkeyHook(ida_kernwin.UI_Hooks):
     def __init__(self, keys_to_pass, uiptr):
