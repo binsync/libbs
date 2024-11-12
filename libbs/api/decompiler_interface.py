@@ -66,6 +66,7 @@ class DecompilerInterface:
         decompiler_closed_callbacks: Optional[List[Callable]] = None,
         thread_artifact_callbacks: bool = True,
         force_click_recording: bool = False,
+        track_mouse_moves: bool = False,
     ):
         self.name = name
         self.art_lifter = artifact_lifter
@@ -86,6 +87,7 @@ class DecompilerInterface:
         self.gui_plugin = None
         self.artifact_watchers_started = False
         self.force_click_recording = force_click_recording
+        self.track_mouse_moves = track_mouse_moves
 
         # locks
         self.artifact_write_lock = threading.Lock()
