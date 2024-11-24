@@ -11,10 +11,12 @@ class Artifact:
     """
     The Artifact class acts as the base for all other artifacts that can be produced by a decompiler (or decompiler
     adjacent tool). In general, the comparisons of these derived classes should only be done on the attributes in
-    __slots__, with the exception of the last_change property.
+    __slots__, except for the last_change property.
     """
     LST_CHNG_ATTR = "last_change"
     ADDR_ATTR = "addr"
+    ART_TYPE_STR = "artifact_type"
+
     ATTR_ATTR_IGNORE_SET = "_attr_ignore_set"
     __slots__ = (
         LST_CHNG_ATTR,
@@ -99,6 +101,8 @@ class Artifact:
 
     def dumps(self, fmt=ArtifactFormat.TOML) -> str:
         dict_data = self.__getstate__()
+        # encode the artifact type
+        dict_data.update({self.ART_TYPE_STR: self.__class__.__name__})
         if fmt == ArtifactFormat.TOML:
             return toml.dumps(dict_data, encoder=TomlHexEncoder())
         elif fmt == ArtifactFormat.JSON:
@@ -123,6 +127,8 @@ class Artifact:
         else:
             raise ValueError(f"Loading from format {fmt} is not yet supported.")
 
+        # remove the artifact type (if it exists)
+        dict_data.pop(Artifact.ART_TYPE_STR, None)
         art = cls()
         art.__setstate__(dict_data)
         return art
@@ -150,7 +156,7 @@ class Artifact:
             raise ValueError(f"Dumping many to format {fmt} is not yet supported.")
 
     @classmethod
-    def loads_many(cls, string, fmt=ArtifactFormat.TOML) -> List["Artifact"]:
+    def loads_many(cls, string: str, fmt=ArtifactFormat.TOML) -> List["Artifact"]:
         if fmt == ArtifactFormat.TOML:
             dict_data = toml.loads(string)
         elif fmt == ArtifactFormat.JSON:
