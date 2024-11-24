@@ -78,16 +78,12 @@ def _load_arts_from_string(art_str: str, fmt=ArtifactFormat.TOML) -> list[Artifa
     return arts
 
 
-def load_many_artifacts(art_strings: list[str] | str, fmt=ArtifactFormat.TOML) -> list[Artifact]:
+def load_many_artifacts(art_strings: list[str], fmt=ArtifactFormat.TOML) -> list[Artifact]:
     """
-    A helper function to load many dumped artifacts from either one giant string or a list of strings. If the
-    input is a single string, it is assumed that the string contains multiple dumped artifacts, which when
-    serialized would be multiple dictionaries.
+    A helper function to load many dumped artifacts from a list of strings. Each string should have been dumped
+    using the `dumps` method of an artifact.
 
     :param art_strings: A list of strings or a single string containing multiple dumped artifacts.
     :param fmt: The format of the dumped artifacts.
     """
-    if isinstance(art_strings, str):
-        return _load_arts_from_string(art_strings, fmt=fmt)
-    else:
-        return _load_arts_from_list(art_strings, fmt=fmt)
+    return _load_arts_from_list(art_strings, fmt=fmt)
