@@ -5,7 +5,8 @@ import unittest
 
 import toml
 from libbs.artifacts import (
-    FunctionHeader, StackVariable, FunctionArgument, Function, ArtifactFormat, Struct, StructMember
+    FunctionHeader, StackVariable, FunctionArgument, Function, ArtifactFormat, Struct, StructMember,
+    load_many_artifacts, Artifact
 )
 
 
@@ -169,6 +170,29 @@ class TestArtifacts(unittest.TestCase):
 
             loaded_struct = Struct.loads(serialized_struct, fmt=fmt)
             assert loaded_struct == struct
+
+    def test_many_deserialization(self):
+        func, _ = generate_test_funcs(0x400000)
+        struct = Struct(name="some_struct", size=8, members={
+            0: StructMember(offset=0, name="m0", type_="int", size=4),
+            4: StructMember(offset=4, name="m4", type_="long", size=8)
+        })
+
+        # test loading many in a list of strings
+        data_strs = [func.dumps(fmt=ArtifactFormat.JSON), struct.dumps(fmt=ArtifactFormat.JSON)]
+        for data_str in data_strs:
+            data_dict = json.loads(data_str)
+            # the ART_TYPE_STR should be in the data to tell you what type of artifact it is
+            assert Artifact.ART_TYPE_STR in data_dict
+
+        loaded_arts = load_many_artifacts(data_strs, fmt=ArtifactFormat.JSON)
+        assert len(loaded_arts) == 2
+
+        loaded_func = loaded_arts[0]
+        assert loaded_func == func
+
+        loaded_struct = loaded_arts[1]
+        assert loaded_struct == struct
 
 
 if __name__ == "__main__":
