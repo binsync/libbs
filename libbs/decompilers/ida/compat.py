@@ -453,6 +453,8 @@ def set_function(func: Function, decompiler_available=True, **kwargs):
     elif func.header:
         if func.name:
             set_ida_func_name(func.addr, func.name)
+            if ida_code_view is None and decompiler_available:
+                ida_code_view = acquire_pseudocode_vdui(func.addr) if not headless else DummyIDACodeView(func.addr)
             changes |= True
         if func.type:
             changes |= set_func_ret_type(func.addr, func.type)
