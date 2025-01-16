@@ -84,7 +84,11 @@ class AngrInterface(DecompilerInterface):
             return None
 
         func = Function(addr=_func.addr, size=_func.size, name=_func.name)
-        func.header.type = _func.prototype.returnty.c_repr() if _func.prototype.returnty else None
+        if not _func or not _func.prototype:
+            type_ = None
+        else:
+            type_ = _func.prototype.returnty.c_repr() if _func.prototype.returnty else None
+        func.header.type = type_
         return self.art_lifter.lift(func)
 
     def get_func_size(self, func_addr) -> int:
@@ -240,7 +244,10 @@ class AngrInterface(DecompilerInterface):
             return None
 
         func = Function(_func.addr, _func.size)
-        type_ = _func.prototype.returnty.c_repr() if _func.prototype.returnty else None
+        if not _func or not _func.prototype:
+            type_ = None
+        else:
+            type_ = _func.prototype.returnty.c_repr() if _func.prototype.returnty else None
         func.header = FunctionHeader(
             _func.name, _func.addr, type_=type_
         )

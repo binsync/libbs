@@ -3,7 +3,8 @@ from libbs.ui.version import ui_version
 if ui_version == "PySide6":
     from PySide6.QtCore import (
         QDir, Qt, Signal, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, QPersistentModelIndex,
-        QEvent, QThread, Slot, QObject, QPropertyAnimation, QAbstractAnimation, QParallelAnimationGroup
+        QEvent, QThread, Slot, QObject, QPropertyAnimation, QAbstractAnimation, QParallelAnimationGroup,
+        QLineF
     )
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -37,7 +38,13 @@ if ui_version == "PySide6":
         QSizePolicy,
         QScrollArea,
         QToolButton,
-        QProgressBar
+        QProgressBar,
+        QGraphicsScene,
+        QGraphicsView,
+        QGraphicsEllipseItem,
+        QGraphicsTextItem,
+        QGraphicsLineItem,
+        QGraphicsItem,
     )
     from PySide6.QtGui import (
         QFontDatabase,
@@ -47,12 +54,17 @@ if ui_version == "PySide6":
         QIntValidator,
         QAction,
         QImage,
-        QFontMetrics
+        QFontMetrics,
+        QFont,
+        QPainter,
+        QBrush,
+        QPen,
     )
 else:
     from PyQt5.QtCore import (
         QDir, Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, QPersistentModelIndex,
-        QEvent, QThread, QObject, QPropertyAnimation, QAbstractAnimation, QParallelAnimationGroup
+        QEvent, QThread, QObject, QPropertyAnimation, QAbstractAnimation, QParallelAnimationGroup,
+        QLineF
     )
     from PyQt5.QtCore import pyqtSignal as Signal
     from PyQt5.QtCore import pyqtSlot as Slot
@@ -90,6 +102,12 @@ else:
         QScrollArea,
         QToolButton,
         QProgressBar,
+        QGraphicsScene,
+        QGraphicsView,
+        QGraphicsEllipseItem,
+        QGraphicsTextItem,
+        QGraphicsLineItem,
+        QGraphicsItem,
     )
     from PyQt5.QtGui import (
         QFontDatabase,
@@ -98,5 +116,9 @@ else:
         QFocusEvent,
         QIntValidator,
         QImage,
-        QFontMetrics
+        QFontMetrics,
+        QFont,
+        QPainter,
+        QBrush,
+        QPen,
     )
