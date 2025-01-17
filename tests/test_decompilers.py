@@ -95,32 +95,42 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
     def test_ghidra_artifact_dependency_resolving(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            proj_name = "fauxware_ghidra"
+            proj_name = "fdupes_ghidra"
 
             deci = DecompilerInterface.discover(
                 force_decompiler=GHIDRA_DECOMPILER,
                 headless=True,
-                binary_path=self.FAUXWARE_PATH,
+                binary_path=TEST_BINARY_DIR / 'fdupes',
                 project_location=Path(temp_dir),
                 project_name=proj_name,
             )
             self.deci = deci
             light_funcs = {addr: func for addr, func in deci.functions.items()}
-            auth_func_addr = deci.art_lifter.lift_addr(0x400664)
-            sneaky_gvar = deci.art_lifter.lift_addr(0x601048)
+            md5_process_func = deci.art_lifter.lift_addr(0x1036f4)
 
             # dont decompile the function to test it is decompiled on demand, however
             # a normal use case would be to decompile it first
-            auth_func = light_funcs[auth_func_addr]
+            auth_func = light_funcs[md5_process_func]
             initial_deps = deci.get_dependencies(auth_func)
             for art in initial_deps:
                 assert art is not None
                 assert art.dumps(fmt=ArtifactFormat.JSON) is not None
 
-            assert len(initial_deps) == 1
-            dep = initial_deps[0]
-            assert isinstance(dep, GlobalVariable)
-            assert dep.addr == sneaky_gvar
+            assert len(initial_deps) == 4
+            # check the deps
+            struct_cnt = 0
+            typedef_cnt = 0
+            for dep in initial_deps:
+                corrected_type_name = dep.name.split("/")[-1] if isinstance(dep, (Struct, Typedef)) else None
+                if isinstance(dep, Struct):
+                    struct_cnt += 1
+                    assert corrected_type_name == "md5_state_s", "Unexpected struct"
+                    assert len(dep.members) == 3, "Unexpected number of members"
+                elif isinstance(dep, Typedef):
+                    typedef_cnt += 1
+                    assert corrected_type_name in {"md5_word_t", "md5_state_t", "md5_byte_t"}, "Unexpected typedef"
+            assert struct_cnt == 1
+            assert typedef_cnt == 3
 
             # TODO: right now in headless Ghidra you cant ever set structs to variable types.
             #   This is a limitation of the headless decompiler, not the API.
