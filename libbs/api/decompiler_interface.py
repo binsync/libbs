@@ -850,11 +850,16 @@ class DecompilerInterface:
             # it was not parseable
             return None
 
-        # type is known and parseable
-        if not type_.is_unknown:
+        # type is a primitive that returns no base type
+        base_type = type_.base_type
+        if base_type is None:
             return None
 
-        base_type_str = type_.base_type.type
+        # if we trigger here, it means it's not a user-defined type
+        if not base_type.is_unknown:
+            return None
+
+        base_type_str = base_type.type
         # use a speical handler for ghidra until a later issue is fixed
         if self.name == "ghidra":
             return self._find_ghidra_type_name_in_types(base_type_str)
