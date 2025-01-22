@@ -351,10 +351,11 @@ class DecompilerInterface:
 
         return decompilation
 
-    def xrefs_to(self, artifact: Artifact, decompile=False) -> List[Artifact]:
+    def xrefs_to(self, artifact: Artifact, decompile=False, only_code=False) -> List[Artifact]:
         """
         Returns a list of artifacts that reference the provided artifact.
         @param artifact: Artifact to find references to
+        @param decompile: If True, decompile the function before searching for xrefs
         @return: List of artifacts that reference the provided artifact
         """
         if not isinstance(artifact, Function):

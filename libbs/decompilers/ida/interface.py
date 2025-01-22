@@ -130,7 +130,7 @@ class IDAInterface(DecompilerInterface):
 
         return self._decompiler_available
 
-    def xrefs_to(self, artifact: Artifact, decompile=False) -> List[Artifact]:
+    def xrefs_to(self, artifact: Artifact, decompile=False, only_code=False) -> List[Artifact]:
         if not isinstance(artifact, Function):
             _l.warning("xrefs_to is only implemented for functions.")
             return []
@@ -143,6 +143,9 @@ class IDAInterface(DecompilerInterface):
         xrefs = []
         for ida_xref in ida_xrefs:
             from_func_addr = compat.ida_func_addr(ida_xref.frm)
+            if only_code and not ida_xref.iscode:
+                continue
+
             if from_func_addr is None:
                 continue
 

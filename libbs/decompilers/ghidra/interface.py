@@ -291,7 +291,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         lowered_addr = self.art_lifter.lower_addr(function.addr) if do_lower else function.addr
         return self._ghidra_decompile(self._get_nearest_function(lowered_addr))
 
-    def xrefs_to(self, artifact: Artifact, decompile=False) -> List[Artifact]:
+    def xrefs_to(self, artifact: Artifact, decompile=False, only_code=False) -> List[Artifact]:
         xrefs = super().xrefs_to(artifact)
         if not decompile:
             return xrefs

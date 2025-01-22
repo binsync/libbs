@@ -179,7 +179,7 @@ class BinjaInterface(DecompilerInterface):
 
         return func.highest_address - func.start
 
-    def xrefs_to(self, artifact: Artifact) -> List[Artifact]:
+    def xrefs_to(self, artifact: Artifact, decompile=False, only_code=False) -> List[Artifact]:
         if not isinstance(artifact, Function):
             l.warning("xrefs_to is only implemented for functions.")
             return []
@@ -188,7 +188,10 @@ class BinjaInterface(DecompilerInterface):
         if not function:
             return []
 
-        bn_xrefs = self.bv.get_code_refs(function.addr)
+        bn_xrefs = list(self.bv.get_code_refs(function.addr))
+        if not only_code:
+            bn_xrefs.extend(self.bv.get_data_refs(function.addr))
+
         xrefs = []
         for bn_xref in bn_xrefs:
             if bn_xref.function is None:

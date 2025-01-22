@@ -95,10 +95,12 @@ class AngrInterface(DecompilerInterface):
         except KeyError:
             return 0
 
-    def xrefs_to(self, artifact: Artifact) -> List[Artifact]:
+    def xrefs_to(self, artifact: Artifact, decompile=False, only_code=False) -> List[Artifact]:
         if not isinstance(artifact, Function):
             l.warning("xrefs_to is only implemented for functions.")
             return []
+        if only_code:
+            l.warning("only_code is not supported in angr.")
 
         function: Function = self.art_lifter.lower(artifact)
         program_cfg = self.main_instance.kb.cfgs.get_most_accurate()
