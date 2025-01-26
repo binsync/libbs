@@ -96,7 +96,7 @@ class GenericBSAngrManagementPlugin(BasePlugin):
 
         decompilation = self.interface.decompile_function(func).codegen
         stack_var = self.interface.find_stack_var_in_codegen(decompilation, offset)
-        elf.interface.stack_variable_changed(StackVariable(offset, new_name, None, stack_var.size, func.addr))
+        self.interface.stack_variable_changed(StackVariable(offset, new_name, None, stack_var.size, func.addr))
         return True
 
     # pylint: disable=unused-argument
