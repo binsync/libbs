@@ -2,11 +2,12 @@ import inspect
 import logging
 import re
 import threading
-import time
 from collections import defaultdict
 from functools import wraps
 from typing import Dict, Optional, Tuple, List, Callable, Type, Union
 from pathlib import Path
+
+import networkx as nx
 
 import libbs
 from libbs.api.artifact_lifter import ArtifactLifter
@@ -220,6 +221,13 @@ class DecompilerInterface:
         """
         return func(*args, **kwargs)
 
+    def gui_attach_qt_window(self, qt_window: type["QWidgt"], title: str, target_window=None, position=None, *args, **kwargs) -> bool:
+        """
+        Attaches a Qt window to the decompiler interface. This is useful for embedding custom Qt windows
+        into the decompiler interface.
+        """
+        raise NotImplementedError
+
     @staticmethod
     def _parse_ctx_menu_actions(actions:  dict[str, tuple[str, Callable]]) -> List[Tuple[str, str, str, Callable]]:
         gui_ctx_menu_actions = []
@@ -369,6 +377,23 @@ class DecompilerInterface:
             raise ValueError("Only functions are supported for xrefs_to")
 
         return []
+
+    def get_callgraph(self, only_names=False) -> nx.DiGraph:
+        """
+        Returns the callgraph of the binary. This is a dict of function addresses to a list of function addresses
+        that the function calls.
+        """
+        callgraph = nx.DiGraph()
+        for func in self.functions.values():
+            callers = self.xrefs_to(func)
+            for caller in callers:
+                if isinstance(caller, Function):
+                    if only_names:
+                        callgraph.add_edge(caller.name, func.name)
+                    else:
+                        callgraph.add_edge(caller, func)
+
+        return callgraph
 
     def get_dependencies(self, artifact: Artifact, decompile=True, max_resolves=50, **kwargs) -> List[Artifact]:
         if not isinstance(artifact, Function):

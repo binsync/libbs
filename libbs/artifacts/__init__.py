@@ -31,6 +31,8 @@ ART_NAME_TO_CLS = {
     Typedef.__name__: Typedef,
 }
 
+ALL_ARTIFACTS = list(ART_NAME_TO_CLS.values())
+
 
 def _dict_from_str(art_str: str, fmt=ArtifactFormat.TOML) -> dict:
     if fmt == ArtifactFormat.TOML:

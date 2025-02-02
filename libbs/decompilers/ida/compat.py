@@ -363,6 +363,22 @@ def get_segment_range(segment_name) -> typing.Tuple[bool, int, int]:
     end_ea = seg.end_ea
     return True, start_ea, end_ea
 
+@execute_write
+def fast_get_function(ea):
+    ida_func = ida_funcs.get_func(ea)
+    if ida_func is None:
+        return None
+
+    ret_type = get_func_ret_type(ea)
+    func_name = get_func_name(ea)
+    func_size = ida_func.size()
+    header = FunctionHeader(
+        addr=ea,
+        name=func_name,
+        type_=ret_type,
+    )
+    func = Function(addr=ea, size=func_size, header=header)
+    return func
 
 @execute_write
 def functions():
@@ -384,12 +400,8 @@ def functions():
         if in_bad_seg:
             continue
 
-        ida_func = idaapi.get_func(func_addr)
-        func_name = idc.get_func_name(func_addr)
-        func_size = ida_func.size()
-        func = Function(addr=func_addr, size=func_size)
-        func.name = func_name
-        funcs[func_addr] = func
+        ida_function = fast_get_function(func_addr)
+        funcs[func_addr] = ida_function
 
     return funcs
 
@@ -1778,26 +1790,4 @@ class GenericAction(idaapi.action_handler_t):
     def update(self, ctx):
         return idaapi.AST_ENABLE_ALWAYS
 
-
-def ask_choice(question, choices, title="Choose an option"):
-    class MyForm(idaapi.Form):
-        def __init__(self, options):
-            self.dropdown = idaapi.Form.DropdownListControl(items=options)
-            form_string = ("STARTITEM 0\n"
-                           f"{title}\n"
-                           f"{question}\n"
-                           "<Options:{dropdown}>")
-            idaapi.Form.__init__(self, form_string, {'dropdown': self.dropdown})
-
-    # Instantiate and display the form
-    form = MyForm(choices)
-    form.Compile()
-    ok = form.Execute()
-    if ok == 1:
-        selected_index = form.dropdown.value
-        selected_item = choices[selected_index]
-    else:
-        selected_item = ""
-    form.Free()
-    return selected_item
 
