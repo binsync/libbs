@@ -5,6 +5,7 @@ from typing import Optional
 
 from angrmanagement.plugins import BasePlugin
 from angrmanagement.ui.workspace import Workspace
+from angrmanagement.ui.views.view import BaseView
 
 from libbs.artifacts import (
     StackVariable, FunctionHeader, Enum, Struct, GlobalVariable, Comment, FunctionArgument
@@ -21,7 +22,10 @@ class GenericBSAngrManagementPlugin(BasePlugin):
         self.context_menu_items = context_menu_items or []
         if interface is None:
             from libbs.decompilers.angr.interface import AngrInterface
-            self.interface = AngrInterface(workspace)
+            self.interface = AngrInterface(
+                workspace,
+                init_plugin=True,
+            )
         else:
             self.interface = interface
 
@@ -182,3 +186,47 @@ class GenericBSAngrManagementPlugin(BasePlugin):
             Comment(addr=address, comment=new_cmt, func_addr=func_addr, decompiled=True), deleted=not new_cmt
         )
         return True
+
+class AngrWidgetWrapper(BaseView):
+    """
+    The class for the window that shows changes/info to BinSync data. This includes things like
+    changes to functions or structs.
+    """
+
+    def __init__(self, workspace, default_docking_position, qt_cls, window_name: str, *args, **kwargs):
+        # hacky imports to avoid ui
+        from libbs.ui.version import set_ui_version
+        set_ui_version("PySide6")
+        from libbs.ui.qt_objects import QVBoxLayout
+
+        super().__init__(window_name.replace(" ", "_"), workspace, default_docking_position)
+        self.base_caption = window_name
+        self.widget = qt_cls(*args, **kwargs)
+
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(self.widget)
+        self.setLayout(main_layout)
+        self.width_hint = 300
+
+    def closeEvent(self, event):
+        self.widget.close()
+
+
+def attach_qt_widget(workspace: Workspace, qt_cls, window_name: str, default_docking_position=None, *args, **kwargs):
+    from PySide6QtAds import SideBarRight, CDockWidget, CDockManager
+
+    wrapper = AngrWidgetWrapper(workspace, default_docking_position, qt_cls, window_name, *args, **kwargs)
+    if not wrapper.widget:
+        l.error(f"Failed to create widget {window_name}")
+        return False
+
+    workspace.add_view(wrapper)
+    dock = workspace.view_manager.view_to_dock[wrapper]
+    dock.setAutoHide(False, SideBarRight)
+    dock.closed.disconnect()
+    dock.setFeature(CDockWidget.DockWidgetDeleteOnClose, False)
+    # grab the dock manager by climbing up parents, probably a better way to directly grab it
+    dm = dock.parent().parent().parent()
+    assert (isinstance(dm, CDockManager))
+    dm.setAutoHideConfigFlags(CDockManager.AutoHideHasCloseButton, False)
+    return True

@@ -9,6 +9,7 @@ from libbs.ui.qt_objects import QWidget, QVBoxLayout
 
 _l = logging.getLogger(__name__)
 
+
 def ask_choice(question, choices, title="Choose an option"):
     class MyForm(idaapi.Form):
         def __init__(self, options):
@@ -32,7 +33,7 @@ def ask_choice(question, choices, title="Choose an option"):
     return selected_item
 
 
-class IDAWindowWrapper(object):
+class IDAWidgetWrapper(object):
     def __init__(self, qt_cls, window_name: str, *args, **kwargs):
         self.twidget = idaapi.create_empty_widget(window_name)
         self.widget = sip.wrapinstance(int(self.twidget), QWidget)
@@ -46,9 +47,8 @@ class IDAWindowWrapper(object):
         layout.setContentsMargins(2, 2, 2, 2)
         self.widget.setLayout(layout)
 
-
-def attach_qt_window(qt_cls, window_name: str, target_window=None, position=None, *args, **kwargs):
-    wrapper = IDAWindowWrapper(qt_cls, window_name, *args, **kwargs)
+def attach_qt_widget(qt_cls, window_name: str, target_window=None, position=None, *args, **kwargs):
+    wrapper = IDAWidgetWrapper(qt_cls, window_name, *args, **kwargs)
     if not wrapper.twidget:
         _l.error(f"Failed to create widget {window_name}")
         return False

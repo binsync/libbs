@@ -221,6 +221,14 @@ class AngrInterface(DecompilerInterface):
         context = Context(addr=None, func_addr=func.addr)
         return self.art_lifter.lift(context)
 
+    def gui_attach_qt_window(self, qt_window: type["QWidgt"], title: str, target_window=None, position=None, *args, **kwargs) -> bool:
+        from .compat import attach_qt_widget
+        if self.workspace is None:
+            l.warning("Cannot attach a Qt window without a workspace.")
+            return False
+
+        return attach_qt_widget(self.workspace, qt_window, title, *args, **kwargs)
+
 
     #
     # Artifact API

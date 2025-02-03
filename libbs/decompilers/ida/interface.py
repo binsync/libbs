@@ -105,7 +105,7 @@ class IDAInterface(DecompilerInterface):
         return True
 
     def gui_attach_qt_window(self, qt_window: type["QWidgt"], title: str, target_window=None, position=None, *args, **kwargs) -> bool:
-        return ida_ui.attach_qt_window(qt_window, title, target_window=None, position=None, *args, **kwargs)
+        return ida_ui.attach_qt_widget(qt_window, title, target_window=None, position=None, *args, **kwargs)
 
 
     #
