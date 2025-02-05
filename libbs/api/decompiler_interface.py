@@ -213,6 +213,13 @@ class DecompilerInterface:
         from libbs.ui.utils import gui_popup_text
         return gui_popup_text(text, title=title)
 
+    def gui_run_on_main_thread(self, func: Callable, *args, **kwargs):
+        """
+        Runs the provided function on the main thread of the GUI. This is useful for updating the GUI from a
+        background thread. Only in Ghidra is this useful.
+        """
+        return func(*args, **kwargs)
+
     @staticmethod
     def _parse_ctx_menu_actions(actions:  dict[str, tuple[str, Callable]]) -> List[Tuple[str, str, str, Callable]]:
         gui_ctx_menu_actions = []

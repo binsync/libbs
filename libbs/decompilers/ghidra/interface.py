@@ -5,6 +5,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Union
 import logging
+import queue
+import threading
 
 from jfx_bridge.bridge import BridgedObject
 from ghidra_bridge import GhidraBridge
@@ -17,7 +19,7 @@ from libbs.artifacts import (
 )
 
 from .artifact_lifter import GhidraArtifactLifter
-from .compat.bridge import FlatAPIWrapper, connect_to_bridge, shutdown_bridge, run_until_bridge_closed, ui_remote_eval
+from .compat.bridge import FlatAPIWrapper, connect_to_bridge, shutdown_bridge, ui_remote_eval, is_bridge_alive
 from .compat.transaction import ghidra_transaction
 
 _l = logging.getLogger(__name__)
@@ -60,6 +62,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._default_pointer_size = None
         self._gsym_size = None
         self._max_gsym_size = 50_000
+
+        # main thread queue
+        self._main_thread_queue = queue.Queue()
+        self._results_queue = queue.Queue()
 
         super().__init__(
             name="ghidra",
@@ -153,16 +159,33 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @property
     def gui_plugin(self):
         """
-        TODO: fixme
         A special property to never exit this function if the remote server is running.
         This is used to standardize plugin access across all decompilers.
+        Additionally, in Ghidra, this will allow us to take requests from other threads to make things created
+        on the main thread!
 
         WARNING: If you initialized with init_plugin=True, simply autocompleting (tab) in IPython will
         cause this to loop forever.
         """
         if self.loop_on_plugin and self._init_plugin:
-            run_until_bridge_closed(self._bridge)
+            last_bridge_check = time.time()
+            bridge_check_delta = 30
+            while True:
+                if not self._main_thread_queue.empty():
+                    func, args, kwargs = self._main_thread_queue.get()
+                    self._results_queue.put(func(*args, **kwargs))
+
+                if time.time() - last_bridge_check > bridge_check_delta:
+                    if not is_bridge_alive(self._bridge):
+                        break
+                    last_bridge_check = time.time()
+
+                time.sleep(1)
         return None
+
+    def gui_run_on_main_thread(self, func, *args, **kwargs):
+        self._main_thread_queue.put((func, args, kwargs))
+        return self._results_queue.get()
 
     @gui_plugin.setter
     def gui_plugin(self, value):
