@@ -52,12 +52,8 @@ def _ping_bridge(bridge: ghidra_bridge.GhidraBridge) -> bool:
     return connected
 
 
-def run_until_bridge_closed(bridge: ghidra_bridge.GhidraBridge, sleep_interval=30):
-    while True:
-        if not _ping_bridge(bridge):
-            break
-
-        time.sleep(sleep_interval)
+def is_bridge_alive(bridge: ghidra_bridge.GhidraBridge) -> bool:
+    return _ping_bridge(bridge)
 
 
 class FlatAPIWrapper:
