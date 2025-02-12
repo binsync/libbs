@@ -24,6 +24,7 @@ class GenericBSAngrManagementPlugin(BasePlugin):
             from libbs.decompilers.angr.interface import AngrInterface
             self.interface = AngrInterface(
                 workspace,
+                init_plugin=True,
             )
         else:
             self.interface = interface
