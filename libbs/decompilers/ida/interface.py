@@ -16,6 +16,7 @@ from libbs.artifacts import (
 )
 from libbs.api.decompiler_interface import requires_decompilation
 from . import compat
+from . import ida_ui
 from .artifact_lifter import IDAArtifactLifter
 from .hooks import ContextMenuHooks, ScreenHook, IDBHooks, IDPHooks, HexraysHooks
 
@@ -83,7 +84,7 @@ class IDAInterface(DecompilerInterface):
         return resp if resp else ""
 
     def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
-        return compat.ask_choice(question, choices, title=title)
+        return ida_ui.ask_choice(question, choices, title=title)
 
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         action = idaapi.action_desc_t(
@@ -102,6 +103,10 @@ class IDAInterface(DecompilerInterface):
         )
         self._ctx_menu_names.append((name, category or ""))
         return True
+
+    def gui_attach_qt_window(self, qt_window: type["QWidgt"], title: str, target_window=None, position=None, *args, **kwargs) -> bool:
+        return ida_ui.attach_qt_widget(qt_window, title, target_window=None, position=None, *args, **kwargs)
+
 
     #
     # Mandatory API
@@ -149,7 +154,8 @@ class IDAInterface(DecompilerInterface):
             if from_func_addr is None:
                 continue
 
-            xrefs.append(Function(from_func_addr, 0))
+            fast_func = self.fast_get_function(self.art_lifter.lift_addr(from_func_addr))
+            xrefs.append(fast_func)
 
         return xrefs
 
@@ -191,22 +197,10 @@ class IDAInterface(DecompilerInterface):
 
     def fast_get_function(self, func_addr) -> Optional[Function]:
         lowered_addr = self.art_lifter.lower_addr(func_addr)
-        ida_func = compat.get_func(lowered_addr)
-        if ida_func is None:
+        lowered_func = compat.fast_get_function(lowered_addr)
+        if lowered_func is None:
             _l.error(f"Function does not exist at {lowered_addr}")
             return None
-
-        ret_type = compat.get_func_ret_type(lowered_addr)
-        name = compat.get_func_name(lowered_addr)
-        lowered_func = Function(
-            addr=lowered_addr,
-            size=ida_func.size(),
-            header=FunctionHeader(
-                addr=lowered_addr,
-                name=name,
-                type_=ret_type
-            )
-        )
 
         return self.art_lifter.lift(lowered_func)
 
