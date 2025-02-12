@@ -152,6 +152,17 @@ class TestHeadlessInterfaces(unittest.TestCase):
             assert struct_cnt == 1
             assert typedef_cnt == 3
 
+            # test a case of dependency resolving where we have a func arg with a multi-defined type
+            # the type in this case is '__off64_t' which is defined in types.h and DWARF
+            # the correct one to be used is the one from types.h
+            func = deci.functions[0x1d66]
+            deps = deci.get_dependencies(func)
+            off64t_types = [d for d in deps if isinstance(d, Typedef) and d.name.endswith("__off64_t")]
+            assert len(off64t_types) == 1
+            off64t_type = off64t_types[0]
+            assert off64t_type.name.startswith("types.h")
+
+
             # TODO: right now in headless Ghidra you cant ever set structs to variable types.
             #   This is a limitation of the headless decompiler, not the API.
             # now create two structs that reference each other
