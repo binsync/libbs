@@ -172,6 +172,41 @@ class CTypeParser:
             if name.startswith("unsigned"):
                 self.SIZE_TO_TYPES[ctype.size] = ctype
 
+    def extract_type_name(self, type_str: str) -> str | None:
+        """
+        Normalizes types that may come in as declarations, removing any extraneous information that may be present
+        and just getting the name of that type.
+
+        In the case of:
+        "char *" that would return "char *"
+        "struct foo *" that would return "foo *"
+        "typedef int my_type" that would return "my_type"
+        """
+        # XXX: this could be subverted by a type name that contains a scope or external ref ("extern")
+        is_defined = any(type_str.strip().startswith(t) for t in ["struct", "enum", "union", "typedef"])
+        if not is_defined:
+            return type_str
+
+        parsable_type = type_str.replace(";", "").strip()
+        type_name = None
+        try:
+            node = self._type_parser_singleton.parse(text=parsable_type)
+            type_name = node.name
+        except ParseError:
+            pass
+
+        if type_name is None:
+            # do a hackish parse to get the type name, which may be inside a defined type-in-place
+            # remove "struct", "enum", "union", and "typedef" keywords, select the final type
+            if any(parsable_type.startswith(t) for t in ["struct", "enum", "union", "typedef"]):
+                final_type = type_str.split(" ")[-1]
+                final_type = final_type.replace(";", "").strip()
+                if " " not in final_type:
+                    # final sanity check that it really is just a name
+                    type_name = final_type
+
+        return type_name
+
     def parse_type(self, defn, preprocess=True, predefined_types=None, arch=None) -> Optional[CType]:  # pylint:disable=unused-argument
         """
         Parse a simple type expression into a SimType
@@ -230,6 +265,9 @@ class CTypeParser:
             return None
 
         elif isinstance(decl, pycparser.c_ast.TypeDecl):
+            return self._decl_to_type(decl.type, extra_types)
+
+        elif isinstance(decl, pycparser.c_ast.Typedef):
             return self._decl_to_type(decl.type, extra_types)
 
         elif isinstance(decl, pycparser.c_ast.PtrDecl):
