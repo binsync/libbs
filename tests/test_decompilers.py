@@ -93,6 +93,26 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
             deci.shutdown()
 
+    def test_ghidra_types(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            proj_name = "fdupes_ghidra"
+
+            deci = DecompilerInterface.discover(
+                force_decompiler=GHIDRA_DECOMPILER,
+                headless=True,
+                binary_path=TEST_BINARY_DIR / 'fdupes',
+                project_location=Path(temp_dir),
+                project_name=proj_name,
+            )
+            self.deci = deci
+
+            # get decompiled function 'getcrcsignatureuntil'
+            func = deci.functions[0x1d66]
+
+            # verify that the second argument is just a normal type name, and not a 'typedef ...'
+            assert func.header.args[1].type == "__off64_t"
+            assert "typedef" not in func.header.args[1].type
+
     def test_ghidra_artifact_dependency_resolving(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             proj_name = "fdupes_ghidra"
@@ -131,6 +151,17 @@ class TestHeadlessInterfaces(unittest.TestCase):
                     assert corrected_type_name in {"md5_word_t", "md5_state_t", "md5_byte_t"}, "Unexpected typedef"
             assert struct_cnt == 1
             assert typedef_cnt == 3
+
+            # test a case of dependency resolving where we have a func arg with a multi-defined type
+            # the type in this case is '__off64_t' which is defined in types.h and DWARF
+            # the correct one to be used is the one from types.h
+            func = deci.functions[0x1d66]
+            deps = deci.get_dependencies(func)
+            off64t_types = [d for d in deps if isinstance(d, Typedef) and d.name.endswith("__off64_t")]
+            assert len(off64t_types) == 1
+            off64t_type = off64t_types[0]
+            assert off64t_type.name.startswith("types.h")
+
 
             # TODO: right now in headless Ghidra you cant ever set structs to variable types.
             #   This is a limitation of the headless decompiler, not the API.

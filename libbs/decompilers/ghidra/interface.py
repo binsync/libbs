@@ -377,6 +377,23 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return self._update_local_variable_symbols(symbols_to_update) if symbols_to_update else False
 
+    @staticmethod
+    def _organize_scoped_types_by_name(type_dict: dict[str, object]) -> dict[str, object]:
+        all_names = list(type_dict.keys())
+        # split each name, count the '/' in it and make the least go first
+        # this creates a sorted list of types with the least scopes first
+        all_names.sort(key=lambda x: x.count('/'))
+
+        # if the string before the first '/' ends in .h, its a header and should go first
+        all_names.sort(key=lambda x: x.split('/')[0].endswith('.h'), reverse=True)
+
+        new_type_dict = {}
+        for name in all_names:
+            new_type_dict[name] = type_dict[name]
+
+        return new_type_dict
+
+
     #
     # Private Artifact API
     #
@@ -610,6 +627,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 name=name, size=gstruct.getLength(), members=self._struct_members_from_gstruct(gstruct)
             )
 
+        # XXX: should be removed when https://github.com/binsync/libbs/issues/147 is fixed
+        structs = self._organize_scoped_types_by_name(structs)
         return structs
 
     @ghidra_transaction
@@ -697,6 +716,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if members:
                 enums[enum_name] = Enum(name=enum_name, members=members)
 
+        # XXX: should be removed when https://github.com/binsync/libbs/issues/147 is fixed
+        enums = self._organize_scoped_types_by_name(enums)
         return enums
 
     @ghidra_transaction
@@ -757,6 +778,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
             typedefs[name] = Typedef(name=name, type_=type_name)
 
+        # XXX: should be removed when https://github.com/binsync/libbs/issues/147 is fixed
+        typedefs = self._organize_scoped_types_by_name(typedefs)
         return typedefs
 
     def _gsyms_too_large(self):

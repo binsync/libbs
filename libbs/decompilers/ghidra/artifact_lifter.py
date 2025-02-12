@@ -2,7 +2,7 @@ import logging
 
 from libbs.api import ArtifactLifter
 
-l = logging.getLogger(name=__name__)
+_l = logging.getLogger(name=__name__)
 
 
 class GhidraArtifactLifter(ArtifactLifter):
@@ -15,8 +15,16 @@ class GhidraArtifactLifter(ArtifactLifter):
     }
 
     def lift_type(self, type_str: str) -> str:
+        og_type_str = type_str
+        # convert to simple C when possible
         for ghidra_t, bs_t in self.lift_map.items():
             type_str = type_str.replace(ghidra_t, bs_t)
+
+        # parse out type decls if needed
+        type_str = self.type_parser.extract_type_name(type_str)
+        if type_str is None:
+            self.deci.error(f"Failed to extract type name from {og_type_str}, defaulting to void *")
+            type_str = "void *"
 
         return type_str
 
