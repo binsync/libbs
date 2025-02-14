@@ -82,3 +82,19 @@ json_str = my_func.dumps(fmt="json")
 loaded_dict = json.loads(json_str) # now loadable through normal JSON parsing
 loaded_func = Function.loads(json_str, fmt="json")
 ```
+
+## Sponsors
+BinSync and it's associated projects would not be possible without sponsorship.
+In no particular order, we'd like to thank all the organizations that have previously or are currently sponsoring
+one of the many BinSync projects.
+
+<p align="center">
+    <img src="https://github.com/binsync/binsync/blob/main/assets/images/sponsors/nsf.png?raw=true" alt="NSF" style="height: 100px; display: inline-block; vertical-align: middle; margin-right: 40px;">
+    <br>
+    <img src="https://github.com/binsync/binsync/blob/main/assets/images/sponsors/darpa.png?raw=true" alt="DARPA" style="height: 70px; display: inline-block; vertical-align: middle; margin-right: 40px;">
+    <br>
+    <img src="https://github.com/binsync/binsync/blob/main/assets/images/sponsors/arpah.svg?raw=true" alt="ARPA-H" style="height: 50px; display: inline-block; vertical-align: middle; margin-right: 40px;">
+    <br>
+    <img src="https://github.com/binsync/binsync/blob/main/assets/images/sponsors/reveng_ai.svg?raw=true" alt="RevEng AI" style="height: 50px; display: inline-block; vertical-align: middle;">
+</p>
+
