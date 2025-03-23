@@ -796,14 +796,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     #
     # Specialized print handlers
+    # TODO: refactor the below for the new ghidra changes
     #
 
     def print(self, msg, print_local=True, **kwargs):
-        if print_local:
-            print(msg)
-
-        if self._bridge:
-            self._bridge.remote_exec(f'print("{msg}")')
+        print(msg)
 
     def info(self, msg: str, **kwargs):
         _l.info(msg)
