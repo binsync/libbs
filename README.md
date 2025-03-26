@@ -4,6 +4,8 @@ The decompiler API that works everywhere!
 LibBS is an abstracted decompiler API that enables you to write plugins/scripts that work, with minimal edit, 
 in every decompiler supported by LibBS. LibBS was originally designed to work with [BinSync](https://binsync.net), and is the backbone
 for all BinSync based plugins.
+As an example, with the same script, you can [redefine the types of function variables with custom structs](./examples/struct_and_variable_use.py), all in less
+than 30 lines, in any supported decompilers.
 
 ## Install
 ```bash

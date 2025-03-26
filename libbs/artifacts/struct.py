@@ -95,6 +95,14 @@ class Struct(Artifact):
     def add_struct_member(self, mname, moff, mtype, size):
         self.members[moff] = StructMember(mname, moff, mtype, size)
 
+    def append_struct_member(self, mname, mtype, size):
+        # first, find the next available offset
+        next_offset = 0
+        for off in self.members.keys():
+            if off >= next_offset:
+                next_offset = off + self.members[off].size
+        self.members[next_offset] = StructMember(mname, next_offset, mtype, size)
+
     def diff(self, other, **kwargs) -> Dict:
         diff_dict = {}
         if not isinstance(other, Struct):
