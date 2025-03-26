@@ -1,7 +1,10 @@
 import logging
 
 import idaapi
-import sip
+try:
+    import sip
+except ImportError:
+    import PyQt5.sip as sip
 
 from libbs.ui.version import set_ui_version
 set_ui_version("PyQt5")
