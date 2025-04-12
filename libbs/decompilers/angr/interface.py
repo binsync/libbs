@@ -80,7 +80,7 @@ class AngrInterface(DecompilerInterface):
         try:
             _func = self.main_instance.project.kb.functions[lowered_addr]
         except KeyError:
-            self.warning(f"Function at {hex(func_addr)} not found.")
+            #self.warning(f"Function at {hex(func_addr)} not found.")
             return None
 
         func = Function(addr=_func.addr, size=_func.size, name=_func.name)
