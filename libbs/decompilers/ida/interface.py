@@ -197,7 +197,7 @@ class IDAInterface(DecompilerInterface):
 
     def fast_get_function(self, func_addr) -> Optional[Function]:
         lowered_addr = self.art_lifter.lower_addr(func_addr)
-        lowered_func = compat.fast_get_function(lowered_addr)
+        lowered_func = compat.fast_get_function(lowered_addr, get_rtype=False)
         if lowered_func is None:
             _l.error(f"Function does not exist at {lowered_addr}")
             return None

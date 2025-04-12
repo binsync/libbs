@@ -364,12 +364,12 @@ def get_segment_range(segment_name) -> typing.Tuple[bool, int, int]:
     return True, start_ea, end_ea
 
 @execute_write
-def fast_get_function(ea):
+def fast_get_function(ea, get_rtype=True):
     ida_func = ida_funcs.get_func(ea)
     if ida_func is None:
         return None
 
-    ret_type = get_func_ret_type(ea)
+    ret_type = get_func_ret_type(ea) if get_rtype else None
     func_name = get_func_name(ea)
     func_size = ida_func.size()
     header = FunctionHeader(
