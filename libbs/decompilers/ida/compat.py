@@ -17,7 +17,17 @@ import logging
 from packaging.version import Version
 import os
 
-IDA_IS_INTERACTIVE = bool(os.getenv("IDA_IS_INTERACTIVE", False))
+_is_interactive_env = bool(os.getenv("IDA_IS_INTERACTIVE", False))
+IDA_IS_INTERACTIVE = _is_interactive_env
+if not _is_interactive_env:
+    try:
+        import idaapi
+        IDA_IS_INTERACTIVE |= True
+    except ImportError:
+        # in older versions of IDA there may be no env var
+        # so we need to check if the module is loaded
+        pass
+
 if not IDA_IS_INTERACTIVE:
     # this will make sure all later imports work
     import ida

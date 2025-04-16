@@ -29,7 +29,7 @@ class TestRemoteGhidra(unittest.TestCase):
             self.deci.shutdown()
 
     def test_ghidra_artifact_watchers(self):
-        with HeadlessGhidraDecompiler(self.FAUXWARE_PATH):
+        with HeadlessGhidraDecompiler(self.FAUXWARE_PATH, headless_dec_path=GHIDRA_HEADLESS_PATH):
             deci: GhidraDecompilerInterface = DecompilerInterface.discover(
                 force_decompiler=GHIDRA_DECOMPILER,
                 binary_path=self.FAUXWARE_PATH,
