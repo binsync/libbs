@@ -32,8 +32,10 @@ class IDAArtifactLifter(ArtifactLifter):
         return compat.ida_to_bs_stack_offset(func_addr, offset)
 
     def lower_type(self, type_str: str) -> str:
-        # no need to lift type for IDA, since it parses normal C
-        # types by default
+        # TODO: this is a hack until https://github.com/binsync/libbs/issues/97 is solved
+        if "/" in type_str:
+            type_str = type_str.split("/")[-1]
+
         return type_str
 
     def lower_stack_offset(self, offset: int, func_addr: int) -> int:

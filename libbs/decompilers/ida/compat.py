@@ -1492,10 +1492,14 @@ def make_typedef_tif(name, type_str):
 def set_typedef(bs_typedef: Typedef):
     type_tif = convert_type_str_to_ida_type(bs_typedef.type)
     if type_tif is None:
-        _l.critical(f"Attempted to set a typedef with an invalid type: {bs_typedef.type} (does not exist)")
+        _l.critical(f"Attempted to set a typedef with an invalid type: %s (does not exist)", bs_typedef.name)
         return False
 
     typedef_tif = make_typedef_tif(bs_typedef.name, bs_typedef.type)
+    if typedef_tif is None:
+        _l.critical(f"Failed to create a typedef name=%s type=%s", bs_typedef.name, bs_typedef.type)
+        return False
+
     typedef_tif.set_named_type(idaapi.get_idati(), bs_typedef.name, ida_typeinf.NTF_TYPE)
     return True
 
