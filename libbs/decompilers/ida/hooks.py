@@ -25,8 +25,7 @@ import logging
 from typing import TYPE_CHECKING
 from packaging.version import Version
 
-from PyQt5 import QtCore
-from PyQt5.QtGui import QKeyEvent
+from .compat import IDA_IS_INTERACTIVE
 
 import ida_bytes
 import ida_funcs
@@ -42,7 +41,6 @@ from libbs.artifacts import (
     FunctionHeader, StackVariable,
     Comment, GlobalVariable, Enum, Struct, Context, Typedef, StructMember
 )
-
 
 if TYPE_CHECKING:
     from .interface import IDAInterface
@@ -65,85 +63,6 @@ def while_should_watch(func):
             return 0
 
     return wrapper
-
-
-#
-# IDA GUI Hooks
-#
-
-class ContextMenuHooks(idaapi.UI_Hooks):
-    def __init__(self, *args, menu_strs=None, **kwargs):
-        idaapi.UI_Hooks.__init__(self)
-        self.menu_strs = menu_strs or []
-
-    def finish_populating_widget_popup(self, form, popup):
-        # Add actions to the context menu of the Pseudocode view
-        if idaapi.get_widget_type(form) == idaapi.BWN_PSEUDOCODE or idaapi.get_widget_type(form) == idaapi.BWN_DISASM:
-            for menu_str, category in self.menu_strs:
-                idaapi.attach_action_to_popup(form, popup, menu_str, f"{category}/")
-
-
-class ScreenHook(ida_kernwin.View_Hooks):
-    def __init__(self, interface: "IDAInterface"):
-        self.interface = interface
-        super(ScreenHook, self).__init__()
-
-    def view_click(self, view, event):
-        self._handle_view_event(view, action_type=Context.ACT_MOUSE_CLICK)
-
-    def view_activated(self, view: "TWidget *"):
-        self._handle_view_event(view, action_type=Context.ACT_VIEW_OPEN)
-
-    def view_mouse_moved(self, view: "TWidget *", event: "view_mouse_event_t"):
-        if self.interface.track_mouse_moves:
-            self._handle_view_event(view, ida_event=event, action_type=Context.ACT_MOUSE_MOVE)
-
-    def _handle_view_event(self, view, action_type=Context.ACT_UNKNOWN, ida_event=None):
-        if self.interface.force_click_recording or self.interface.artifact_watchers_started:
-            # drop ctx for speed when the artifact watches have not been officially started, and we are not clicking
-            if (self.interface.force_click_recording and not self.interface.artifact_watchers_started) and \
-                    action_type != Context.ACT_MOUSE_CLICK:
-                return
-
-            ctx = compat.view_to_bs_context(view, action=action_type)
-            if ctx is None:
-                return
-
-            # handle special case of mouse move
-            if action_type == Context.ACT_MOUSE_MOVE and ida_event is not None:
-                ctx.line_number = ida_event.renderer_pos.cy
-                ctx.col_number = ida_event.renderer_pos.cx
-                if ctx.screen_name == "disassembly" and ida_event.renderer_pos.node != -1:
-                    # TODO: this is not an addr, but the node number in graph view
-                    ctx.extras['node'] = ida_event.renderer_pos.node
-                elif ctx.screen_name == "decompilation":
-                    # TODO: the address is useless here!
-                    ctx.addr = ctx.func_addr
-
-            ctx = self.interface.art_lifter.lift(ctx)
-            self.interface._gui_active_context = ctx
-
-            self.interface.gui_context_changed(ctx)
-
-
-class IDAHotkeyHook(ida_kernwin.UI_Hooks):
-    def __init__(self, keys_to_pass, uiptr):
-        super().__init__()
-        self.keys_to_pass = keys_to_pass
-        self.ui = uiptr
-
-    def preprocess_action(self, action_name):
-        uie = ida_kernwin.input_event_t()
-        ida_kernwin.get_user_input_event(uie)
-        key_event = uie.get_source_QEvent()
-        keycode = key_event.key()
-        if keycode[0] in self.keys_to_pass:
-            ke = QKeyEvent(QtCore.QEvent.KeyPress, keycode[0], QtCore.Qt.NoModifier)
-            # send new event
-            self.ui.event(ke)
-            # consume the event so ida doesn't take it
-            return 1
-        return 0
 
 
 #
@@ -551,6 +470,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
     def byte_patched(self, ea, old_value):
         return 0
 
+
 #
 # Special event hooks
 #
@@ -637,3 +557,93 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
             )
         else:
             self.interface.stack_variable_changed(bs_var)
+
+
+#
+# IDA GUI-only hooks
+#
+
+if IDA_IS_INTERACTIVE:
+    from PyQt5 import QtCore
+    from PyQt5.QtGui import QKeyEvent
+
+    class IDAHotkeyHook(ida_kernwin.UI_Hooks):
+        def __init__(self, keys_to_pass, uiptr):
+            super().__init__()
+            self.keys_to_pass = keys_to_pass
+            self.ui = uiptr
+
+        def preprocess_action(self, action_name):
+            uie = ida_kernwin.input_event_t()
+            ida_kernwin.get_user_input_event(uie)
+            key_event = uie.get_source_QEvent()
+            keycode = key_event.key()
+            if keycode[0] in self.keys_to_pass:
+                ke = QKeyEvent(QtCore.QEvent.KeyPress, keycode[0], QtCore.Qt.NoModifier)
+                # send new event
+                self.ui.event(ke)
+                # consume the event so ida doesn't take it
+                return 1
+            return 0
+
+
+    class ContextMenuHooks(idaapi.UI_Hooks):
+        def __init__(self, *args, menu_strs=None, **kwargs):
+            idaapi.UI_Hooks.__init__(self)
+            self.menu_strs = menu_strs or []
+
+        def finish_populating_widget_popup(self, form, popup):
+            # Add actions to the context menu of the Pseudocode view
+            if idaapi.get_widget_type(form) == idaapi.BWN_PSEUDOCODE or idaapi.get_widget_type(
+                    form) == idaapi.BWN_DISASM:
+                for menu_str, category in self.menu_strs:
+                    idaapi.attach_action_to_popup(form, popup, menu_str, f"{category}/")
+
+
+    class ScreenHook(ida_kernwin.View_Hooks):
+        def __init__(self, interface: "IDAInterface"):
+            self.interface = interface
+            super(ScreenHook, self).__init__()
+
+        def view_click(self, view, event):
+            self._handle_view_event(view, action_type=Context.ACT_MOUSE_CLICK)
+
+        def view_activated(self, view: "TWidget *"):
+            self._handle_view_event(view, action_type=Context.ACT_VIEW_OPEN)
+
+        def view_mouse_moved(self, view: "TWidget *", event: "view_mouse_event_t"):
+            if self.interface.track_mouse_moves:
+                self._handle_view_event(view, ida_event=event, action_type=Context.ACT_MOUSE_MOVE)
+
+        def _handle_view_event(self, view, action_type=Context.ACT_UNKNOWN, ida_event=None):
+            if self.interface.force_click_recording or self.interface.artifact_watchers_started:
+                # drop ctx for speed when the artifact watches have not been officially started, and we are not clicking
+                if (self.interface.force_click_recording and not self.interface.artifact_watchers_started) and \
+                        action_type != Context.ACT_MOUSE_CLICK:
+                    return
+
+                ctx = compat.view_to_bs_context(view, action=action_type)
+                if ctx is None:
+                    return
+
+                # handle special case of mouse move
+                if action_type == Context.ACT_MOUSE_MOVE and ida_event is not None:
+                    ctx.line_number = ida_event.renderer_pos.cy
+                    ctx.col_number = ida_event.renderer_pos.cx
+                    if ctx.screen_name == "disassembly" and ida_event.renderer_pos.node != -1:
+                        # TODO: this is not an addr, but the node number in graph view
+                        ctx.extras['node'] = ida_event.renderer_pos.node
+                    elif ctx.screen_name == "decompilation":
+                        # TODO: the address is useless here!
+                        ctx.addr = ctx.func_addr
+
+                ctx = self.interface.art_lifter.lift(ctx)
+                self.interface._gui_active_context = ctx
+
+                self.interface.gui_context_changed(ctx)
+
+
+else:
+    IDAHotkeyHook = None
+    ContextMenuHooks = None
+    ScreenHook = None

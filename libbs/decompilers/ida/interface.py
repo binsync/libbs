@@ -1,13 +1,7 @@
 import logging
 from typing import Dict, Optional, List
 from collections import OrderedDict, defaultdict
-
-import idc
-import idaapi
-import ida_hexrays
-import ida_auto
 from packaging.version import Version
-
 import libbs
 from libbs.api.decompiler_interface import DecompilerInterface
 from libbs.artifacts import (
@@ -16,9 +10,19 @@ from libbs.artifacts import (
 )
 from libbs.api.decompiler_interface import requires_decompilation
 from . import compat
-from . import ida_ui
 from .artifact_lifter import IDAArtifactLifter
 from .hooks import ContextMenuHooks, ScreenHook, IDBHooks, IDPHooks, HexraysHooks
+
+if compat.IDA_IS_INTERACTIVE:
+    from . import ida_ui
+else:
+    import ida
+
+import idc
+import idaapi
+import ida_hexrays
+import ida_auto
+
 
 _l = logging.getLogger(name=__name__)
 
@@ -48,6 +52,23 @@ class IDAInterface(DecompilerInterface):
 
         # GUI properties
         self._updated_ctx = None
+
+    def _init_headless_components(self, *args, **kwargs):
+        """
+        This function initializes the headless functionality of IDA through idalib.
+        This also means that this feature is only supported in IDA versions >= 9.0
+        """
+        super()._init_headless_components(*args, **kwargs)
+        failure = ida.open_database(str(self.binary_path), True)
+        if failure:
+            raise RuntimeError(f"Failed to open database {self.binary_path}")
+
+    def _deinit_headless_components(self):
+        """
+        This function deinitializes the headless functionality of IDA through idalib.
+        This also means that this feature is only supported in IDA versions >= 9.0
+        """
+        ida.close_database(False)
 
     def _init_gui_hooks(self):
         """
@@ -107,7 +128,6 @@ class IDAInterface(DecompilerInterface):
     def gui_attach_qt_window(self, qt_window: type["QWidgt"], title: str, target_window=None, position=None, *args, **kwargs) -> bool:
         return ida_ui.attach_qt_widget(qt_window, title, target_window=None, position=None, *args, **kwargs)
 
-
     #
     # Mandatory API
     #
@@ -122,7 +142,7 @@ class IDAInterface(DecompilerInterface):
 
     @property
     def binary_path(self) -> Optional[str]:
-        return compat.get_binary_path()
+        return self._binary_path or compat.get_binary_path()
 
     def get_func_size(self, func_addr) -> int:
         func_addr = self.art_lifter.lower_addr(func_addr)

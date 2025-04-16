@@ -15,6 +15,12 @@ from functools import wraps
 import typing
 import logging
 from packaging.version import Version
+import os
+
+IDA_IS_INTERACTIVE = bool(os.getenv("IDA_IS_INTERACTIVE", False))
+if not IDA_IS_INTERACTIVE:
+    # this will make sure all later imports work
+    import ida
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
     ida_bytes, ida_idaapi, ida_typeinf, idautils, ida_kernwin, ida_segment
@@ -99,9 +105,16 @@ def execute_write(f):
 
 
 class DummyIDACodeView:
+    """
+    TODO: this needs to be redone to support setting artifacts in the decompiler when in headless mode.
+        Mostly for decompiled artifacts, like stack variables and function arguments
+    """
     def __init__(self, addr):
         self.cfunc = ida_hexrays.decompile(addr)
         self.addr = addr
+
+    def __getattr__(self, item):
+        return lambda *x,**y: None
 
 
 def requires_decompilation(f):
@@ -415,7 +428,8 @@ def function(addr, decompiler_available=True, ida_code_view=None, **kwargs):
         return None
 
     func_addr = ida_func.start_ea
-    change_time = datetime.datetime.now(tz=datetime.timezone.utc)
+    #change_time = datetime.datetime.now(tz=datetime.timezone.utc)
+    change_time = None
     func = Function(func_addr, get_func_size(func_addr), last_change=change_time)
 
     if not decompiler_available:
@@ -499,9 +513,9 @@ def function_header(ida_code_view) -> FunctionHeader:
         ret_type_str = str(ida_code_view.cfunc.type.get_rettype())
     except Exception:
         ret_type_str = ""
-
-    ida_function_info = FunctionHeader(func_name, func_addr, type_=ret_type_str, args=func_args,
-                                       last_change=datetime.datetime.now(tz=datetime.timezone.utc))
+    #change_time = datetime.datetime.now(tz=datetime.timezone.utc)
+    change_time = None
+    ida_function_info = FunctionHeader(func_name, func_addr, type_=ret_type_str, args=func_args, last_change=change_time)
     return ida_function_info
 
 @execute_write
@@ -527,9 +541,16 @@ def set_function_header(bs_header: libbs.artifacts.FunctionHeader, exit_on_bad_t
     if bs_header.type and bs_header.type != cur_ret_type_str:
         old_prototype = str(ida_code_view.cfunc.type).replace("(", f" {func_name}(", 1)
         new_prototype = old_prototype.replace(cur_ret_type_str, bs_header.type, 1)
-        success = bool(
-            ida_typeinf.apply_tinfo(func_addr, convert_type_str_to_ida_type(new_prototype), ida_typeinf.TINFO_DEFINITE)
-        )
+        parsed_new_proto = convert_type_str_to_ida_type(new_prototype)
+        if parsed_new_proto is None and exit_on_bad_type:
+            _l.warning(f"Failed to parse new prototype {new_prototype}")
+            return False
+
+        success = False
+        if parsed_new_proto is not None:
+            success = bool(
+                ida_typeinf.apply_tinfo(func_addr, convert_type_str_to_ida_type(new_prototype), ida_typeinf.TINFO_DEFINITE)
+            )
 
         # we may need to reload types
         if success is None and exit_on_bad_type:
@@ -558,7 +579,7 @@ def set_function_header(bs_header: libbs.artifacts.FunctionHeader, exit_on_bad_t
 
         # change the name
         if bs_arg.name and bs_arg.name != cur_ida_arg.name:
-            success = ida_code_view.rename_lvar(ida_code_view.cfunc.arguments[idx], bs_arg.name, 1)
+            success = bool(ida_code_view.rename_lvar(ida_code_view.cfunc.arguments[idx], bs_arg.name, 1))
             data_changed |= success
 
     # crazy prototype parsing

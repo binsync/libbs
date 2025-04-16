@@ -18,7 +18,7 @@ IDA_HEADLESS_PATH = Path(os.environ.get('IDA_HEADLESS_PATH', ""))
 TEST_BINARY_DIR = Path(__file__).parent / "binaries"
 TEST_SCRIPTS_DIR = Path(__file__).parent / "scripts"
 DEC_TO_HEADLESS = {
-    IDA_DECOMPILER: IDA_HEADLESS_PATH,
+    IDA_DECOMPILER: None,
     GHIDRA_DECOMPILER: None,
     ANGR_DECOMPILER: None,
     BINJA_DECOMPILER: None,
@@ -39,30 +39,44 @@ class TestHeadlessInterfaces(unittest.TestCase):
             self.deci.shutdown()
 
     def test_readme_example(self):
-        # TODO: add angr, IDA
-        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
+        # TODO: add angr
+        for dec_name in [IDA_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
-                headless_dec_path=DEC_TO_HEADLESS[dec_name],
                 binary_path=TEST_BINARY_DIR / "posix_syscall",
             )
             self.deci = deci
+            changed_addrs = set()
+            # set it
             for addr in deci.functions:
                 function = deci.functions[addr]
                 if function.header.type == "void":
                     function.header.type = "int"
                     deci.functions[function.addr] = function
+                    changed_addrs.add(function.addr)
 
+            # now check that it really was set for AT LEAST one
+            # note: this is not a guarantee that it was set for all, type setting can fail
+            success = 0
+            no_voids = not bool(changed_addrs)
+            for addr in deci.functions:
+                if addr not in changed_addrs:
+                    continue
+
+                function = deci.functions[addr]
+                if function.type == "int":
+                    success += 1
+
+            assert no_voids | success > 0, "Failed to set function type for any functions"
             deci.shutdown()
 
     def test_getting_artifacts(self):
-        # TODO: add angr, IDA
-        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
+        # TODO: add angr
+        for dec_name in [IDA_DECOMPILER, GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
-                headless_dec_path=DEC_TO_HEADLESS[dec_name],
                 binary_path=TEST_BINARY_DIR / "posix_syscall",
             )
             self.deci = deci
@@ -76,6 +90,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
                 assert dec_func is not None
                 dec_json: dict = json.loads(dec_func.dumps(fmt=ArtifactFormat.JSON))
                 assert dec_json.get("header", {}).get("type", None) is not None
+
             for struct in deci.structs.values():
                 json_strings.append(struct.dumps(fmt=ArtifactFormat.JSON))
             for enum in deci.enums.values():
@@ -242,115 +257,117 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
             deci.shutdown()
 
-    def test_ghidra_fauxware(self):
-        deci = DecompilerInterface.discover(
-            force_decompiler=GHIDRA_DECOMPILER,
-            headless=True,
-            headless_dec_path=DEC_TO_HEADLESS[GHIDRA_DECOMPILER],
-            binary_path=self.FAUXWARE_PATH,
-        )
-        self.deci = deci
+    def test_fauxware(self):
+        # TODO: add support for everyone else, but more specifically, IDA!
+        #   there is a problem right now with how function args are set in IDA
+        for dec_name in [GHIDRA_DECOMPILER]:
+            deci = DecompilerInterface.discover(
+                force_decompiler=dec_name,
+                headless=True,
+                binary_path=self.FAUXWARE_PATH,
+            )
+            self.deci = deci
 
-        func_addr = deci.art_lifter.lift_addr(0x400664)
-        main = deci.functions[func_addr]
-        main.name = self.RENAMED_NAME
-        deci.functions[func_addr] = main
-        assert deci.functions[func_addr].name == self.RENAMED_NAME
+            func_addr = deci.art_lifter.lift_addr(0x400664)
+            main = deci.functions[func_addr]
+            main.name = self.RENAMED_NAME
+            deci.functions[func_addr] = main
+            assert deci.functions[func_addr].name == self.RENAMED_NAME
 
-        #
-        # Structs
-        #
+            #
+            # Structs
+            #
 
-        func_args = main.header.args
-        func_args[0].name = "new_name_1"
-        func_args[0].type = "int"
-        func_args[0].size = 4   # set manually to avoid resetting the size in the caller
-        func_args[1].name = "new_name_2"
-        func_args[1].type = "double"
-        func_args[1].size = 8
-        deci.functions[func_addr] = main
-        assert deci.functions[func_addr].header.args == func_args
+            func_args = main.header.args
+            func_args[0].name = "new_name_1"
+            func_args[0].type = "int"
+            func_args[0].size = 4   # set manually to avoid resetting the size in the caller
+            func_args[1].name = "new_name_2"
+            func_args[1].type = "double"
+            func_args[1].size = 8
+            deci.functions[func_addr] = main
+            assert deci.functions[func_addr].header.args == func_args
 
-        eh_hdr_struct = deci.structs['eh_frame_hdr']
-        eh_hdr_struct.name = "my_struct_name"
-        eh_hdr_struct.members[0].type = 'char'
-        eh_hdr_struct.members[1].type = 'char'
-        deci.structs['eh_frame_hdr'] = eh_hdr_struct
-        updated = deci.structs[eh_hdr_struct.name]
-        assert updated.name == eh_hdr_struct.name
-        assert updated.members[0].type == 'char'
-        assert updated.members[1].type == 'char'
+            eh_hdr_struct = deci.structs['eh_frame_hdr']
+            eh_hdr_struct.name = "my_struct_name"
+            eh_hdr_struct.members[0].type = 'char'
+            eh_hdr_struct.members[1].type = 'char'
+            deci.structs['eh_frame_hdr'] = eh_hdr_struct
+            updated = deci.structs[eh_hdr_struct.name]
+            assert updated.name == eh_hdr_struct.name
+            assert updated.members[0].type == 'char'
+            assert updated.members[1].type == 'char'
 
-        #
-        # Enums
-        #
+            #
+            # Enums
+            #
 
-        elf_dyn_tag_enum: Enum = deci.enums['ELF/Elf64_DynTag']
-        elf_dyn_tag_enum.members['DT_YEET'] = elf_dyn_tag_enum.members['DT_FILTER'] + 1
-        deci.enums[elf_dyn_tag_enum.name] = elf_dyn_tag_enum
-        assert deci.enums[elf_dyn_tag_enum.name] == elf_dyn_tag_enum
+            elf_dyn_tag_enum: Enum = deci.enums['ELF/Elf64_DynTag']
+            elf_dyn_tag_enum.members['DT_YEET'] = elf_dyn_tag_enum.members['DT_FILTER'] + 1
+            deci.enums[elf_dyn_tag_enum.name] = elf_dyn_tag_enum
+            assert deci.enums[elf_dyn_tag_enum.name] == elf_dyn_tag_enum
 
-        enum = Enum("my_enum", {"member1": 0, "member2": 1})
-        deci.enums[enum.name] = enum
-        assert deci.enums[enum.name] == enum
+            enum = Enum("my_enum", {"member1": 0, "member2": 1})
+            deci.enums[enum.name] = enum
+            assert deci.enums[enum.name] == enum
 
-        nested_enum = Enum("SomeEnums/nested_enum", {"field": 0, "another_field": 2, "third_field": 3})
-        deci.enums[nested_enum.name] = nested_enum
-        assert deci.enums[nested_enum.name] == nested_enum
+            nested_enum = Enum("SomeEnums/nested_enum", {"field": 0, "another_field": 2, "third_field": 3})
+            deci.enums[nested_enum.name] = nested_enum
+            assert deci.enums[nested_enum.name] == nested_enum
 
-        #
-        # Typedefs
-        #
+            #
+            # Typedefs
+            #
 
-        # simple typedef
-        typedef = Typedef("my_typedef", "int")
-        deci.typedefs[typedef.name] = typedef
-        assert deci.typedefs[typedef.name] == typedef
+            # simple typedef
+            typedef = Typedef("my_typedef", "int")
+            deci.typedefs[typedef.name] = typedef
+            assert deci.typedefs[typedef.name] == typedef
 
-        # typedef to a struct
-        typedef = Typedef("my_eh_frame_hdr", eh_hdr_struct.name)
-        deci.typedefs[typedef.name] = typedef
-        assert deci.typedefs[typedef.name] == typedef
+            # typedef to a struct
+            typedef = Typedef("my_eh_frame_hdr", eh_hdr_struct.name)
+            deci.typedefs[typedef.name] = typedef
+            assert deci.typedefs[typedef.name] == typedef
 
-        # typedef to an enum
-        typedef = Typedef("my_elf_dyn_tag", elf_dyn_tag_enum.name)
-        deci.typedefs[typedef.name] = typedef
-        updated_typedef = deci.typedefs[typedef.name]
-        assert updated_typedef.name == typedef.name
-        # TODO: this should be changed when we do https://github.com/binsync/libbs/issues/97
-        assert updated_typedef.type == typedef.type.split("/")[-1]
+            # typedef to an enum
+            typedef = Typedef("my_elf_dyn_tag", elf_dyn_tag_enum.name)
+            deci.typedefs[typedef.name] = typedef
+            updated_typedef = deci.typedefs[typedef.name]
+            assert updated_typedef.name == typedef.name
+            # TODO: this should be changed when we do https://github.com/binsync/libbs/issues/97
+            assert updated_typedef.type == typedef.type.split("/")[-1]
 
-        # gvar_addr = deci.art_lifter.lift_addr(0x4008e0)
-        # g1 = deci.global_vars[gvar_addr]
-        # g1.name = "gvar1"
-        # deci.global_vars[gvar_addr] = g1
-        # assert deci.global_vars[gvar_addr] == g1
+            # gvar_addr = deci.art_lifter.lift_addr(0x4008e0)
+            # g1 = deci.global_vars[gvar_addr]
+            # g1.name = "gvar1"
+            # deci.global_vars[gvar_addr] = g1
+            # assert deci.global_vars[gvar_addr] == g1
 
-        stack_var = main.stack_vars[-24]
-        stack_var.name = "named_char_array"
-        stack_var.type = 'double'
-        deci.functions[func_addr] = main
-        assert deci.functions[func_addr].stack_vars[-24] == stack_var
+            stack_var = main.stack_vars[-24]
+            stack_var.name = "named_char_array"
+            stack_var.type = 'double'
+            deci.functions[func_addr] = main
+            assert deci.functions[func_addr].stack_vars[-24] == stack_var
 
-        #
-        # Test Random APIs
-        #
+            #
+            # Test Random APIs
+            #
 
-        func_size = deci.get_func_size(func_addr)
-        assert func_size != -1
+            func_size = deci.get_func_size(func_addr)
+            assert func_size != -1
 
-        #
-        # Test Artifact Deletion
-        #
+            #
+            # Test Artifact Deletion
+            #
 
-        eh_hdr_struct = deci.structs['my_struct_name']
-        del deci.structs['my_struct_name']
-        struct_items = deci.structs.items()
-        struct_keys = [k for k, v in struct_items]
-        struct_values = [v for k, v in struct_items]
-        assert eh_hdr_struct.name not in struct_keys and eh_hdr_struct not in struct_values
+            eh_hdr_struct = deci.structs['my_struct_name']
+            del deci.structs['my_struct_name']
+            struct_items = deci.structs.items()
+            struct_keys = [k for k, v in struct_items]
+            struct_values = [v for k, v in struct_items]
+            assert eh_hdr_struct.name not in struct_keys and eh_hdr_struct not in struct_values
 
-        deci.shutdown()
+            deci.shutdown()
 
     def test_ghidra_project_loading(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -454,11 +471,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert new_struct.name not in struct_keys and new_struct not in struct_values
 
     def test_decompile_api(self):
-        for dec_name in [ANGR_DECOMPILER, GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
+        for dec_name in [IDA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER, GHIDRA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
-                headless_dec_path=DEC_TO_HEADLESS[dec_name],
                 binary_path=TEST_BINARY_DIR / "fauxware",
             )
             self.deci = deci
@@ -472,22 +488,26 @@ class TestHeadlessInterfaces(unittest.TestCase):
             print_username_line = 'puts("Username: ");'
             assert print_username_line in decompilation.text
 
-            line_no = [line.strip() for line in decompilation.text.splitlines()].index(print_username_line) + 1
+            line_no = [line.strip() for line in decompilation.text.splitlines()].index(print_username_line)
             assert bool(decompilation.line_map) is True
 
             correct_addr = deci.art_lifter.lift_addr(0x400739)
-            # TODO: fix the mapping for binja
-            if dec_name != BINJA_DECOMPILER:
-                assert correct_addr in decompilation.line_map[line_no]
+            # TODO: fix the mapping for everyone except IDA... everything is off-by-one in some way
+            if dec_name == BINJA_DECOMPILER:
+                line_no -= 1
+            if dec_name in [GHIDRA_DECOMPILER, ANGR_DECOMPILER]:
+                line_no += 1
+
+            assert line_no in decompilation.line_map
+            assert correct_addr in decompilation.line_map[line_no]
 
             self.deci.shutdown()
 
     def test_fast_function_api(self):
-        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER]:
+        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER, IDA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
-                headless_dec_path=DEC_TO_HEADLESS[dec_name],
                 binary_path=TEST_BINARY_DIR / "fauxware",
             )
             self.deci = deci

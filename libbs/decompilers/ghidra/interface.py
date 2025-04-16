@@ -75,9 +75,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
             **kwargs
         )
 
-    def __del__(self):
-        self.shutdown()
-
     def _init_gui_components(self, *args, **kwargs):
         global bridge
         self._bridge = connect_to_bridge()
@@ -94,12 +91,19 @@ class GhidraDecompilerInterface(DecompilerInterface):
             self.start_artifact_watchers()
         super()._init_gui_components(*args, **kwargs)
 
-    def _shutdown_headless(self):
+    def _deinit_headless_components(self):
         if self._program is not None and self._project is not None:
             from .compat.headless import close_program
             close_program(self._program, self._project)
             self._project = None
             self._program = None
+
+        if self._bridge is not None:
+            try:
+                shutdown_bridge(self._bridge)
+            except Exception:
+                pass
+            self._bridge = None
 
     def _init_headless_components(self, *args, **kwargs):
         if os.getenv("GHIDRA_INSTALL_DIR", None) is None:
@@ -119,18 +123,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self.flat_api = flat_api
         self._program = program
         self._project = project
-
-    def shutdown(self):
-        super().shutdown()
-        if self.headless and self._project is not None:
-            self._shutdown_headless()
-
-        if not self.headless and self._bridge is not None:
-            try:
-                shutdown_bridge(self._bridge)
-            except Exception:
-                pass
-            self._bridge = None
 
     #
     # GUI

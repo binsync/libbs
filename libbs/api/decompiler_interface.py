@@ -51,7 +51,6 @@ class DecompilerInterface:
         supports_undo: bool = False,
         # these flags can be changed by subclassed decis
         headless: bool = False,
-        headless_dec_path: Optional[Union[Path, str]] = None,
         binary_path: Optional[Union[Path, str]] = None,
         init_plugin: bool = False,
         plugin_name: str = f"generic_libbs_plugin",
@@ -78,7 +77,6 @@ class DecompilerInterface:
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
 
         self.headless = headless
-        self._headless_dec_path = Path(headless_dec_path) if headless_dec_path else None
         self._binary_path = Path(binary_path) if binary_path else None
         self._init_plugin = init_plugin
         self._unparsed_gui_ctx_actions: dict[str, tuple[str, Callable]] = gui_ctx_menu_actions or {}
@@ -125,11 +123,12 @@ class DecompilerInterface:
         self.debug(f"Using configuration file: {self.config.save_location}")
         self.config.save()
 
-    def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
-        if check_dec_path and not self._headless_dec_path.exists():
-            raise FileNotFoundError("You must provide a valid path to a headless decompiler when using headless mode.")
+    def _init_headless_components(self, *args, **kwargs):
         if not self._binary_path.exists():
             raise FileNotFoundError("You must provide a valid target binary path when using headless mode.")
+
+    def _deinit_headless_components(self):
+        pass
 
     def _init_gui_components(self, *args, **kwargs):
         from libbs.ui.version import set_ui_version
@@ -145,10 +144,16 @@ class DecompilerInterface:
     def _init_gui_plugin(self, *args, **kwargs):
         return None
 
+    def __del__(self):
+        self.shutdown()
+
     def shutdown(self):
-        self.config.save()
+        if self.config:
+            self.config.save()
         if self.artifact_watchers_started:
             self.stop_artifact_watchers()
+        if self.headless:
+            self._deinit_headless_components()
 
     #
     # Public API:
@@ -943,6 +948,11 @@ class DecompilerInterface:
             import idaapi
             if not force:
                 return IDA_DECOMPILER
+            available.add(IDA_DECOMPILER)
+        except ImportError:
+            pass
+        try:
+            import ida
             available.add(IDA_DECOMPILER)
         except ImportError:
             pass

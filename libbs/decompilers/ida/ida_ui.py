@@ -50,6 +50,7 @@ class IDAWidgetWrapper(object):
         layout.setContentsMargins(2, 2, 2, 2)
         self.widget.setLayout(layout)
 
+
 def attach_qt_widget(qt_cls, window_name: str, target_window=None, position=None, *args, **kwargs):
     wrapper = IDAWidgetWrapper(qt_cls, window_name, *args, **kwargs)
     if not wrapper.twidget:

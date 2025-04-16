@@ -1,3 +1,4 @@
+import builtins
 from typing import Optional, Dict
 
 from libbs.decompilers import SUPPORTED_DECOMPILERS, GHIDRA_DECOMPILER, IDA_DECOMPILER, ANGR_DECOMPILER, \
