@@ -6,6 +6,7 @@ from collections import defaultdict
 from functools import wraps
 from typing import Dict, Optional, Tuple, List, Callable, Type, Union
 from pathlib import Path
+import os
 
 import networkx as nx
 
@@ -946,6 +947,7 @@ class DecompilerInterface:
         # IDA Pro
         try:
             import idaapi
+            os.environ["IDA_IS_INTERACTIVE"] = "1"
             if not force:
                 return IDA_DECOMPILER
             available.add(IDA_DECOMPILER)

@@ -30,7 +30,7 @@ jobs:
         ./helpers/download_tooling.sh
         mv tooling-9.0.tar.gz ~/tooling-9.0.tar.gz
         cd ~/
-        tar -xvf tooling-9.0.tar.gz
+        tar -xf tooling-9.0.tar.gz
         python -m pip install ./tooling-9.0/idalib/python && python ./tooling-9.0/idalib/python/py-activate-idalib.py && echo "IDA setup complete"
     - name: Install dependencies
       run: |
