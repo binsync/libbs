@@ -5,6 +5,7 @@ name: Decompiler Tests
 env:
   BN_SERIAL: ${{ secrets.BN_SERIAL }}
   BN_LICENSE: ${{ secrets.BN_LICENSE }}
+  TOOLING_KEY: ${{ secrets.TOOLING_KEY }}
 
 on:
   push:
@@ -22,6 +23,17 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: "3.10"
+    - name: Download BS Artifacts
+      run: |
+        git clone https://github.com/binsync/bs-artifacts.git /tmp/bs-artifacts
+        cd /tmp/bs-artifacts
+        ./helpers/download_tooling.sh
+        mv tooling-9.0.tar.gz ~/tooling-9.0.tar.gz
+        cd ~/
+        tar -xzf tooling-9.0.tar.gz
+        python -m pip install ./tooling-9.0/idalib/python && python ./tooling-9.0/idalib/python/py-activate-idalib.py && echo "IDA setup complete"
+
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
