@@ -1,7 +1,7 @@
 import logging
 import typing
 
-from libbs.artifacts import StackVariable, Artifact, FunctionArgument, StructMember
+from libbs.artifacts import StackVariable, Artifact, FunctionArgument, StructMember, Typedef, Enum, Struct
 from libbs.api.type_parser import CTypeParser
 
 if typing.TYPE_CHECKING:
@@ -30,7 +30,7 @@ class ArtifactLifter:
     #
 
     def lift_type(self, type_str: str) -> str:
-        pass
+        return type_str
 
     def lift_addr(self, addr: int) -> int:
         base_addr = self.deci.binary_base_addr
@@ -43,7 +43,7 @@ class ArtifactLifter:
         pass
 
     def lower_type(self, type_str: str) -> str:
-        pass
+        return type_str
 
     def lower_addr(self, addr: int) -> int:
         base_addr = self.deci.binary_base_addr
@@ -60,14 +60,13 @@ class ArtifactLifter:
     #
 
     def _lift_or_lower_artifact(self, artifact, mode):
-        target_attrs = ("type", "offset", "addr", "func_addr", "line_map")
+        target_attrs = ("name", "type", "offset", "addr", "func_addr", "line_map")
         if mode not in ("lower", "lift"):
             return None
 
         if not isinstance(artifact, Artifact):
             return artifact
         lifted_art = artifact.copy()
-
         # correct simple properties in the artifact
         for attr in target_attrs:
             if hasattr(lifted_art, attr):
@@ -89,6 +88,12 @@ class ArtifactLifter:
                         lifted_line_map[k] = {lift_or_lower_func(_v) for _v in v}
 
                     setattr(lifted_art, attr, lifted_line_map)
+                # special handling for types that have names
+                elif attr == "name":
+                    if not isinstance(artifact, (Typedef, Enum, Struct)):
+                        continue
+                    lifted_type = self.lift_type(curr_val) if mode == "lift" else self.lower_type(curr_val)
+                    setattr(lifted_art, attr, lifted_type)
                 else:
                     attr_func_name = attr if attr != "func_addr" else "addr"
                     lifting_func = getattr(self, f"{mode}_{attr_func_name}")
