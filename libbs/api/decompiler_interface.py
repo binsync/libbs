@@ -947,7 +947,6 @@ class DecompilerInterface:
         # IDA Pro
         try:
             import idaapi
-            os.environ["IDA_IS_INTERACTIVE"] = "1"
             if not force:
                 return IDA_DECOMPILER
             available.add(IDA_DECOMPILER)

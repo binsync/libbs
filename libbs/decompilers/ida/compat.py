@@ -19,7 +19,14 @@ import os
 
 IDA_IS_INTERACTIVE = bool(os.getenv("IDA_IS_INTERACTIVE", False))
 if not IDA_IS_INTERACTIVE:
-    # this will make sure all later imports work
+    try:
+        import ida_kernwin
+        # this is to support IDA 8.4 and below
+        IDA_IS_INTERACTIVE |= bool(ida_kernwin.is_idaq())
+    except ImportError:
+        pass
+
+if not IDA_IS_INTERACTIVE:
     import ida
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
