@@ -28,14 +28,13 @@ jobs:
         git clone https://github.com/binsync/bs-artifacts.git /tmp/bs-artifacts
         cd /tmp/bs-artifacts
         ./helpers/download_tooling.sh
+        mkdir -p ~/.idapro
+        cp ./helpers/ida.reg ~/.idapro/
         mv tooling-9.0.tar.gz ~/tooling-9.0.tar.gz
         cd ~/
         tar -xf tooling-9.0.tar.gz
         python -m pip install ./tooling-9.0/idalib/python && python ./tooling-9.0/idalib/python/py-activate-idalib.py
         echo -e "0\n" | ./tooling-9.0/idapyswitch
-        echo $(realpath ./tooling-9.0/)
-        echo $(whoami)
-        exit 1
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
