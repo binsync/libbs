@@ -5,6 +5,7 @@ name: Decompiler Tests
 env:
   BN_SERIAL: ${{ secrets.BN_SERIAL }}
   BN_LICENSE: ${{ secrets.BN_LICENSE }}
+  TOOLING_KEY: ${{ secrets.TOOLING_KEY }}
 
 on:
   push:
@@ -26,6 +27,11 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install .[test]
+    - name: Download BS Artifact & Install IDA
+      run: |
+        (git clone https://github.com/binsync/bs-artifacts.git /tmp/bs-artifacts && \
+          cd /tmp/bs-artifacts && \
+          ./helpers/setup_ida_ci.sh)
     # taken from https://github.com/mandiant/capa/blob/master/.github/workflows/tests.yml#L107-L147
     - name: Install Binary Ninja
       if: ${{ env.BN_SERIAL != 0 }}
@@ -48,4 +54,5 @@ jobs:
       run: |
         # these two test must be run in separate python environments, due to the way ghidra bridge works
         # you also must run these tests in the exact order shown here
-        pytest ./tests/test_remote_ghidra.py && pytest ./tests/test_decompilers.py -s
+        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_remote_ghidra.py -s
+        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_decompilers.py -s

@@ -67,8 +67,8 @@ class BinjaInterface(DecompilerInterface):
         self._data_monitor = None
         super(BinjaInterface, self).__init__(name="binja", artifact_lifter=BinjaArtifactLifter(self), **kwargs)
 
-    def _init_headless_components(self, *args, check_dec_path=True, **kwargs):
-        super()._init_headless_components(*args, check_dec_path=False, **kwargs)
+    def _init_headless_components(self, *args, **kwargs):
+        super()._init_headless_components(*args, **kwargs)
         if not BN_AVAILABLE:
             raise ImportError("Unable to import binaryninja module. Are you sure you have it installed with an enterprise license?")
 

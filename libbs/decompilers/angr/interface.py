@@ -42,7 +42,7 @@ class AngrInterface(DecompilerInterface):
         super().__init__(name="angr", artifact_lifter=AngrArtifactLifter(self), **kwargs)
 
     def _init_headless_components(self, *args, **kwargs):
-        super()._init_headless_components(*args, check_dec_path=False, **kwargs)
+        super()._init_headless_components(*args, **kwargs)
         self.project = angr.Project(str(self._binary_path), auto_load_libs=False)
         self._cfg = self.project.analyses.CFG(show_progressbar=False, normalize=True, data_references=True)
         self.project.analyses.CompleteCallingConventions(cfg=self._cfg, recover_variables=True, analyze_callsites=True)
