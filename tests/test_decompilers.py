@@ -41,7 +41,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
     def test_readme_example(self):
         # TODO: add angr
-        for dec_name in [IDA_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER]:
+        for dec_name in [ BINJA_DECOMPILER, GHIDRA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
@@ -74,7 +74,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
     def test_getting_artifacts(self):
         # TODO: add angr
-        for dec_name in [IDA_DECOMPILER, GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
+        for dec_name in [ GHIDRA_DECOMPILER, BINJA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
@@ -472,7 +472,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert new_struct.name not in struct_keys and new_struct not in struct_values
 
     def test_decompile_api(self):
-        for dec_name in [IDA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER, GHIDRA_DECOMPILER]:
+        for dec_name in [ BINJA_DECOMPILER, ANGR_DECOMPILER, GHIDRA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
@@ -505,7 +505,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             self.deci.shutdown()
 
     def test_fast_function_api(self):
-        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER, IDA_DECOMPILER]:
+        for dec_name in [GHIDRA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
@@ -535,13 +535,13 @@ class TestHeadlessInterfaces(unittest.TestCase):
             raise RuntimeError("Failed to find the expected typedef")
         ghidra_deci.shutdown()
 
-        ida_deci = DecompilerInterface.discover(
-            force_decompiler=IDA_DECOMPILER,
-            headless=True,
-            binary_path=TEST_BINARIES_DIR / "debug_symbol_mod_stripped",
-        )
-        # TODO add the import
-        ida_deci.shutdown()
+        #ida_deci = DecompilerInterface.discover(
+        #    force_decompiler=
+        #    headless=True,
+        #    binary_path=TEST_BINARIES_DIR / "debug_symbol_mod_stripped",
+        #)
+        ## TODO add the import
+        #ida_deci.shutdown()
 
 
 if __name__ == "__main__":

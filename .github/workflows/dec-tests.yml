@@ -31,7 +31,8 @@ jobs:
         mv tooling-9.0.tar.gz ~/tooling-9.0.tar.gz
         cd ~/
         tar -xf tooling-9.0.tar.gz
-        python -m pip install ./tooling-9.0/idalib/python && python ./tooling-9.0/idalib/python/py-activate-idalib.py && echo "IDA setup complete" && echo -e "0\n" | ./tooling-9.0/idapyswitch
+        python -m pip install ./tooling-9.0/idalib/python && python ./tooling-9.0/idalib/python/py-activate-idalib.py
+        echo -e "0\n" | ./tooling-9.0/idapyswitch
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -58,4 +59,5 @@ jobs:
       run: |
         # these two test must be run in separate python environments, due to the way ghidra bridge works
         # you also must run these tests in the exact order shown here
-        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_remote_ghidra.py && TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_decompilers.py -s
+        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_remote_ghidra.py -s
+        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_decompilers.py -s
