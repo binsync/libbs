@@ -540,7 +540,16 @@ class TestHeadlessInterfaces(unittest.TestCase):
             headless=True,
             binary_path=TEST_BINARIES_DIR / "debug_symbol_mod_stripped",
         )
-        # TODO add the import
+        # since this type is already native to IDA, even without symbols, we need to change the name
+        debug_type.name += "_new"
+        normalized_type_name = debug_type.name.split("/")[-1]
+        assert normalized_type_name not in ida_deci.typedefs
+
+        # now add the type to IDA
+        ida_deci.typedefs[debug_type.name] = debug_type
+
+        # verify it was added
+        assert normalized_type_name in ida_deci.typedefs
         ida_deci.shutdown()
 
 
