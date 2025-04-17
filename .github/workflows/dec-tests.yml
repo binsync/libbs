@@ -16,7 +16,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python 3.10
@@ -58,4 +58,5 @@ jobs:
       run: |
         # these two test must be run in separate python environments, due to the way ghidra bridge works
         # you also must run these tests in the exact order shown here
+        EXPORT TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries
         pytest ./tests/test_remote_ghidra.py && pytest ./tests/test_decompilers.py -s

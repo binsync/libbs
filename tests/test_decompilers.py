@@ -15,20 +15,21 @@ from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
 
 GHIDRA_HEADLESS_PATH = Path(os.environ.get('GHIDRA_INSTALL_DIR', "")) / "support" / "analyzeHeadless"
 IDA_HEADLESS_PATH = Path(os.environ.get('IDA_HEADLESS_PATH', ""))
-TEST_BINARY_DIR = Path(__file__).parent / "binaries"
-TEST_SCRIPTS_DIR = Path(__file__).parent / "scripts"
-DEC_TO_HEADLESS = {
-    IDA_DECOMPILER: None,
-    GHIDRA_DECOMPILER: None,
-    ANGR_DECOMPILER: None,
-    BINJA_DECOMPILER: None,
-}
+
+if os.getenv("TEST_BINARIES_DIR"):
+    TEST_BINARIES_DIR = Path(os.getenv("TEST_BINARIES_DIR"))
+else:
+    # default assumes its a git repo that is above this one
+    TEST_BINARIES_DIR = Path(__file__).parent.parent.parent / "bs-artifacts" / "binaries"
+
+assert TEST_BINARIES_DIR.exists(), f"Test binaries dir {TEST_BINARIES_DIR} does not exist"
+
 
 _l = logging.getLogger(__name__)
 
 
 class TestHeadlessInterfaces(unittest.TestCase):
-    FAUXWARE_PATH = TEST_BINARY_DIR / "fauxware"
+    FAUXWARE_PATH = TEST_BINARIES_DIR / "fauxware"
     RENAMED_NAME = "binsync_main"
 
     def setUp(self):
@@ -44,7 +45,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
-                binary_path=TEST_BINARY_DIR / "posix_syscall",
+                binary_path=TEST_BINARIES_DIR / "posix_syscall",
             )
             self.deci = deci
             changed_addrs = set()
@@ -77,7 +78,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
-                binary_path=TEST_BINARY_DIR / "posix_syscall",
+                binary_path=TEST_BINARIES_DIR / "posix_syscall",
             )
             self.deci = deci
 
@@ -115,7 +116,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             deci = DecompilerInterface.discover(
                 force_decompiler=GHIDRA_DECOMPILER,
                 headless=True,
-                binary_path=TEST_BINARY_DIR / 'fdupes',
+                binary_path=TEST_BINARIES_DIR / 'fdupes',
                 project_location=Path(temp_dir),
                 project_name=proj_name,
             )
@@ -135,7 +136,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             deci = DecompilerInterface.discover(
                 force_decompiler=GHIDRA_DECOMPILER,
                 headless=True,
-                binary_path=TEST_BINARY_DIR / 'fdupes',
+                binary_path=TEST_BINARIES_DIR / 'fdupes',
                 project_location=Path(temp_dir),
                 project_name=proj_name,
             )
@@ -236,7 +237,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             deci = DecompilerInterface.discover(
                 force_decompiler=GHIDRA_DECOMPILER,
                 headless=True,
-                binary_path=TEST_BINARY_DIR / "posix_syscall",
+                binary_path=TEST_BINARIES_DIR / "posix_syscall",
                 project_location=Path(temp_dir),
                 project_name="posix_syscall_ghidra",
             )
@@ -372,7 +373,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
     def test_ghidra_project_loading(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             proj_name = "posix_syscall_ghidra"
-            binary_path = TEST_BINARY_DIR / "posix_syscall"
+            binary_path = TEST_BINARIES_DIR / "posix_syscall"
 
             start_load = time.time()
             deci = DecompilerInterface.discover(
@@ -475,7 +476,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
-                binary_path=TEST_BINARY_DIR / "fauxware",
+                binary_path=TEST_BINARIES_DIR / "fauxware",
             )
             self.deci = deci
             main_func_addr = deci.art_lifter.lift_addr(0x40071d)
@@ -508,7 +509,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
-                binary_path=TEST_BINARY_DIR / "fauxware",
+                binary_path=TEST_BINARIES_DIR / "fauxware",
             )
             self.deci = deci
             main_func_addr = deci.art_lifter.lift_addr(0x40071d)
@@ -517,6 +518,31 @@ class TestHeadlessInterfaces(unittest.TestCase):
             assert main_func.name is not None
 
             self.deci.shutdown()
+
+    def test_ghidra_to_ida_transfer(self):
+        # first use ghidra to load types from a debug sym binary
+        ghidra_deci = DecompilerInterface.discover(
+            force_decompiler=GHIDRA_DECOMPILER,
+            headless=True,
+            binary_path=TEST_BINARIES_DIR / "debug_symbol",
+        )
+        debug_func = ghidra_deci.functions[0x1249]
+        debug_types = ghidra_deci.get_dependencies(debug_func)
+        for debug_type in debug_types:
+            if isinstance(debug_type, Typedef) and debug_type.name.endswith("_IO_lock_t"):
+                break
+        else:
+            raise RuntimeError("Failed to find the expected typedef")
+        ghidra_deci.shutdown()
+
+        ida_deci = DecompilerInterface.discover(
+            force_decompiler=IDA_DECOMPILER,
+            headless=True,
+            binary_path=TEST_BINARIES_DIR / "debug_symbol_mod_stripped",
+        )
+        # TODO add the import
+        ida_deci.shutdown()
+
 
 if __name__ == "__main__":
     unittest.main()
