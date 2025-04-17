@@ -58,4 +58,4 @@ jobs:
       run: |
         # these two test must be run in separate python environments, due to the way ghidra bridge works
         # you also must run these tests in the exact order shown here
-        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_remote_ghidra.py && pytest ./tests/test_decompilers.py -s
+        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_remote_ghidra.py && TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_decompilers.py -s
