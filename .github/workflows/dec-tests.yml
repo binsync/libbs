@@ -33,8 +33,9 @@ jobs:
         mv tooling-9.0.tar.gz ~/tooling-9.0.tar.gz
         cd ~/
         tar -xf tooling-9.0.tar.gz
-        python -m pip install ./tooling-9.0/idalib/python && python ./tooling-9.0/idalib/python/py-activate-idalib.py
-        echo -e "0\n" | ./tooling-9.0/idapyswitch
+        mv tooling-9.0 ~/idapro-9.0
+        python -m pip install ~/idapro-9.0/idalib/python && python ~/idapro-9.0/idalib/python/py-activate-idalib.py
+        echo -e "0\n" | ./idapro-9.0/idapyswitch
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
