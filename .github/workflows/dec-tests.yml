@@ -23,23 +23,14 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: "3.10"
-    - name: Download BS Artifacts
-      run: |
-        git clone https://github.com/binsync/bs-artifacts.git /tmp/bs-artifacts
-        cd /tmp/bs-artifacts
-        ./helpers/download_tooling.sh
-        mkdir -p ~/.idapro
-        cp ./helpers/ida.reg ~/.idapro/
-        mv tooling-9.0.tar.gz ~/tooling-9.0.tar.gz
-        cd ~/
-        tar -xf tooling-9.0.tar.gz
-        mv tooling-9.0 ~/idapro-9.0
-        python -m pip install ~/idapro-9.0/idalib/python && python ~/idapro-9.0/idalib/python/py-activate-idalib.py
-        echo -e "0\n" | ./idapro-9.0/idapyswitch
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install .[test]
+    - name: Download BS Artifact & Install IDA
+      run: |
+        git clone https://github.com/binsync/bs-artifacts.git /tmp/bs-artifacts && /tmp/bs-artifacts
+        ./helpers/setup_ida_ci.sh
     # taken from https://github.com/mandiant/capa/blob/master/.github/workflows/tests.yml#L107-L147
     - name: Install Binary Ninja
       if: ${{ env.BN_SERIAL != 0 }}
