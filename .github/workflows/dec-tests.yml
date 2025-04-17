@@ -29,7 +29,7 @@ jobs:
         pip install .[test]
     - name: Download BS Artifact & Install IDA
       run: |
-        git clone https://github.com/binsync/bs-artifacts.git /tmp/bs-artifacts && /tmp/bs-artifacts
+        git clone https://github.com/binsync/bs-artifacts.git /tmp/bs-artifacts && cd /tmp/bs-artifacts
         ./helpers/setup_ida_ci.sh
     # taken from https://github.com/mandiant/capa/blob/master/.github/workflows/tests.yml#L107-L147
     - name: Install Binary Ninja
