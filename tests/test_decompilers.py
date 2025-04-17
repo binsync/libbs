@@ -41,7 +41,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
     def test_readme_example(self):
         # TODO: add angr
-        for dec_name in [ BINJA_DECOMPILER, GHIDRA_DECOMPILER]:
+        for dec_name in [IDA_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,
