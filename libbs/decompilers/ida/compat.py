@@ -1786,7 +1786,7 @@ def generate_generic_ida_plugic_cls(cls_name=None):
 
     cls = GenericIDAPlugin
     if cls_name is not None:
-        cls = type(cls_name, idaapi.plugin_t, dict(GenericIDAPlugin.__dict__))
+        cls = type(cls_name, (idaapi.plugin_t,), dict(GenericIDAPlugin.__dict__))
 
     return cls
 
