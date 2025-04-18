@@ -1763,14 +1763,11 @@ def generate_generic_ida_plugic_cls(cls_name=None):
     Below the class gets dynamically created and, if you provide a name, we copy the direct contents of that class
     into a new Python type, essentially making a new class of the exact same contents
     """
-    from PyQt5.Qt import QObject
-
-    class GenericIDAPlugin(QObject, idaapi.plugin_t):
+    class GenericIDAPlugin(idaapi.plugin_t):
         """Plugin entry point. Does most of the skinning magic."""
         flags = idaapi.PLUGIN_FIX
 
         def __init__(self, *args, name=None, comment=None, interface=None, **kwargs):
-            QObject.__init__(self, *args, **kwargs)
             idaapi.plugin_t.__init__(self)
             self.wanted_name = name or "generic_libbs_plugin"
             self.comment = comment or "A generic LibBS plugin"
@@ -1789,7 +1786,7 @@ def generate_generic_ida_plugic_cls(cls_name=None):
 
     cls = GenericIDAPlugin
     if cls_name is not None:
-        cls = type(cls_name, (QObject, idaapi.plugin_t), dict(GenericIDAPlugin.__dict__))
+        cls = type(cls_name, idaapi.plugin_t, dict(GenericIDAPlugin.__dict__))
 
     return cls
 
