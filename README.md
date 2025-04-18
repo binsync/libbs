@@ -12,7 +12,7 @@ than 30 lines, in any supported decompilers.
 pip install libbs
 ```
 
-The minimum Python version is **3.10**. 3.12 is not currently supported.
+The minimum Python version is **3.10**.
 **If you plan on using libbs alone (without installing some other plugin), 
 you must do `libbs --install` after pip install**. This will copy the appropriate files to your decompiler. 
 
