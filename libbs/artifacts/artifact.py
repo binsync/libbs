@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Optional, List, Type
+from typing import Dict, Optional, List
 import datetime
 
 import toml
