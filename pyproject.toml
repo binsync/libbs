@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "libbs"
+classifiers = [
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
+]
+license = {text = "BSD 2 Clause"}
+description = "Your Only Decompiler API Lib - A generic API to script in and out of decompilers"
+urls = {Homepage = "https://github.com/binsync/libbs"}
+requires-python = ">= 3.10"
+dependencies = [
+    "toml",
+    "pycparser",
+    "setuptools",
+    "prompt_toolkit",
+    "tqdm",
+    "jfx_bridge",
+    "ghidra_bridge",
+    "psutil",
+    "pyhidra",
+    "platformdirs",
+    "filelock",
+    "networkx"
+]
+dynamic = ["version"]
+
+[project.readme]
+file = "README.md"
+content-type = "text/markdown"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "angr",
+    "requests",
+    "ipdb"
+]
+ghidra = [
+    "PySide6-Essentials"
+]
+
+[project.scripts]
+libbs = "libbs.__main__:main"
+
+[tool.setuptools]
+include-package-data = true
+license-files = ["LICENSE"]
+
+[tool.setuptools.packages]
+find = {namespaces = false}
+
+[tool.setuptools.dynamic]
+version = {attr = "libbs.__version__"}
