@@ -9,6 +9,7 @@
 #
 # ----------------------------------------------------------------------------
 import datetime
+import platform
 import re
 import threading
 from functools import wraps
@@ -1763,11 +1764,22 @@ def generate_generic_ida_plugic_cls(cls_name=None):
     Below the class gets dynamically created and, if you provide a name, we copy the direct contents of that class
     into a new Python type, essentially making a new class of the exact same contents
     """
-    class GenericIDAPlugin(idaapi.plugin_t):
+    from PyQt5.Qt import QObject
+
+    is_macos = platform.system() == "Darwin"
+    if is_macos:
+        subcls_types = (QObject, idaapi.plugin_t)
+    else:
+        # there is a bug on Linux that you are not allowed to have two classes that inherit from QObject
+        subcls_types = (idaapi.plugin_t,)
+
+    class GenericIDAPlugin(*subcls_types):
         """Plugin entry point. Does most of the skinning magic."""
         flags = idaapi.PLUGIN_FIX
 
         def __init__(self, *args, name=None, comment=None, interface=None, **kwargs):
+            if is_macos:
+                QObject.__init__(self, *args, **kwargs)
             idaapi.plugin_t.__init__(self)
             self.wanted_name = name or "generic_libbs_plugin"
             self.comment = comment or "A generic LibBS plugin"
@@ -1786,7 +1798,7 @@ def generate_generic_ida_plugic_cls(cls_name=None):
 
     cls = GenericIDAPlugin
     if cls_name is not None:
-        cls = type(cls_name, (idaapi.plugin_t,), dict(GenericIDAPlugin.__dict__))
+        cls = type(cls_name, subcls_types, dict(GenericIDAPlugin.__dict__))
 
     return cls
 
