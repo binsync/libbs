@@ -11,6 +11,8 @@ _l = logging.getLogger(name=__name__)
 
 
 class ArtifactLifter:
+    SCOPE_DELIMITER = "::"
+
     def __init__(self, deci: "DecompilerInterface", types=None):
         self.deci = deci
         self.type_parser = CTypeParser(extra_types=types)
@@ -24,6 +26,43 @@ class ArtifactLifter:
 
     def lower(self, artifact: Artifact):
         return self._lift_or_lower_artifact(artifact, "lower")
+
+    #
+    # Special handlers for scopes
+    #
+
+    @staticmethod
+    def parse_scoped_type(type_str: str) -> tuple[str, str | None]:
+        """
+        Parses a scoped type string into its base type and scope.
+        Note: the scope can be None if the type is not scoped.
+
+        Examples:
+        'stdint::uint32_t' -> ('uint32_t', 'stdint')
+        'uint32_t' -> ('uint32_t', None)
+        """
+        if not type_str:
+            return "", None
+
+        # check if the type is scoped
+        scope = None
+        deli = ArtifactLifter.SCOPE_DELIMITER
+        if deli in type_str:
+            scope_parts = type_str.split(deli)
+            base_type = scope_parts[-1]
+            scope = deli.join(scope_parts[:-1])
+        else:
+            base_type = type_str
+
+        return base_type, scope
+
+    @staticmethod
+    def scoped_type_to_str(name: str, scope: str | None = None) -> str:
+        """
+        Converts a name and scope into a scoped type string.
+        Note: the scope can be None if the type is not scoped.
+        """
+        return name if not scope else f"{scope}::{name}"
 
     #
     # Override Mandatory Funcs
@@ -43,6 +82,9 @@ class ArtifactLifter:
         pass
 
     def lower_type(self, type_str: str) -> str:
+        if self.SCOPE_DELIMITER in type_str and not self.deci.supports_type_scopes:
+            type_str, scope = self.scoped_type_to_str(type_str)
+
         return type_str
 
     def lower_addr(self, addr: int) -> int:

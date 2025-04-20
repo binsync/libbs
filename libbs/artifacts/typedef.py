@@ -37,7 +37,8 @@ class Typedef(Artifact):
         self.type: str = type_
 
     def __str__(self):
-        return f"<TypeDef: {self.name}={self.type}>"
+        scope_str = f" scope={self.scope}" if self.scope else ""
+        return f"<TypeDef: {self.name}={self.type}{scope_str}>"
 
     def nonconflict_merge(self, typedef2: "Typedef", **kwargs):
         typedef1: Typedef = self.copy()

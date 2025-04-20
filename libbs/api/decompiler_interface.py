@@ -50,6 +50,7 @@ class DecompilerInterface:
         error_on_artifact_duplicates: bool = False,
         decompiler_available: bool = True,
         supports_undo: bool = False,
+        supports_type_scopes: bool = False,
         # these flags can be changed by subclassed decis
         headless: bool = False,
         binary_path: Optional[Union[Path, str]] = None,
@@ -73,6 +74,7 @@ class DecompilerInterface:
         self.art_lifter = artifact_lifter
         self.type_parser = CTypeParser()
         self.supports_undo = supports_undo
+        self.supports_type_scopes = supports_type_scopes
         self.qt_version = qt_version
         self.default_func_prefix = default_func_prefix
         self._error_on_artifact_duplicates = error_on_artifact_duplicates
@@ -103,11 +105,11 @@ class DecompilerInterface:
         # these are the public API for artifacts that are used by the decompiler interface
         self.functions = ArtifactDict(Function, self, error_on_duplicate=error_on_artifact_duplicates)
         self.comments = ArtifactDict(Comment, self, error_on_duplicate=error_on_artifact_duplicates)
-        self.enums = ArtifactDict(Enum, self, error_on_duplicate=error_on_artifact_duplicates)
-        self.structs = ArtifactDict(Struct, self, error_on_duplicate=error_on_artifact_duplicates)
         self.patches = ArtifactDict(Patch, self, error_on_duplicate=error_on_artifact_duplicates)
         self.global_vars = ArtifactDict(GlobalVariable, self, error_on_duplicate=error_on_artifact_duplicates)
-        self.typedefs = ArtifactDict(Typedef, self, error_on_duplicate=error_on_artifact_duplicates)
+        self.structs = ArtifactDict(Struct, self, error_on_duplicate=error_on_artifact_duplicates, scopable=True)
+        self.enums = ArtifactDict(Enum, self, error_on_duplicate=error_on_artifact_duplicates, scopable=True)
+        self.typedefs = ArtifactDict(Typedef, self, error_on_duplicate=error_on_artifact_duplicates, scopable=True)
 
         self._decompiler_available = decompiler_available
         # override the file-saved config when one is passed in manually, otherwise
@@ -407,6 +409,8 @@ class DecompilerInterface:
         if decompile:
             # the function was never decompiled
             if artifact.dec_obj is None:
+                # TODO: this needs to be fixed so that it still works without redecompiling. What if we want
+                #   to do analysis on a function that is not set yet.
                 artifact = self.functions[artifact.addr]
 
         art_users = self.xrefs_to(artifact, decompile=decompile)
@@ -877,12 +881,15 @@ class DecompilerInterface:
             return (artifact.offset,)
         elif isinstance(artifact, (Struct, Enum, Typedef)):
             return (artifact.name,)
+        else:
+            raise ValueError(f"Unsupported artifact type: {type(artifact)}")
 
     def get_defined_type(self, type_str) -> Optional[Artifact]:
         if not type_str:
             return None
 
-        type_: CType = self.type_parser.parse_type(type_str)
+        normalized_type, scope = self.art_lifter.parse_scoped_type(type_str)
+        type_: CType = self.type_parser.parse_type(normalized_type)
         if not type_:
             # it was not parseable
             return None
@@ -897,31 +904,15 @@ class DecompilerInterface:
             return None
 
         base_type_str = base_type.type
-        # use a speical handler for ghidra until a later issue is fixed
-        if self.name == "ghidra":
-            return self._find_ghidra_type_name_in_types(base_type_str)
-
-        if base_type_str in self.structs:
-            return self.structs[base_type_str]
-        elif base_type_str in self.enums:
-            return self.enums[base_type_str]
-        elif base_type_str in self.typedefs:
-            return self.typedefs[base_type_str]
+        lifted_scoped_type = self.art_lifter.scoped_type_to_str(base_type_str, scope)
+        if lifted_scoped_type in self.structs:
+            return self.structs[lifted_scoped_type]
+        elif lifted_scoped_type in self.enums:
+            return self.enums[lifted_scoped_type]
+        elif lifted_scoped_type in self.typedefs:
+            return self.typedefs[lifted_scoped_type]
         else:
             return None
-
-    def _find_ghidra_type_name_in_types(self, type_name: str) -> Struct | Enum | Typedef | None:
-        """
-        TODO: deprecate me after https://github.com/binsync/libbs/issues/97 is closed.
-        """
-        type_dicts = [self.structs, self.enums, self.typedefs]
-        for type_dict in type_dicts:
-            for name, type_ in type_dict.items():
-                normalized_name = name.split("/")[-1]
-                if normalized_name == type_name:
-                    return type_
-        return None
-
 
     @staticmethod
     def _find_global_in_call_frames(global_name, max_frames=10):

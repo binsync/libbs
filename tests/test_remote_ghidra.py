@@ -13,13 +13,18 @@ from libbs.decompilers.ghidra.compat.transaction import Transaction
 from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
 
 GHIDRA_HEADLESS_PATH = Path(os.environ.get('GHIDRA_INSTALL_DIR', "")) / "support" / "analyzeHeadless"
-TEST_BINARY_DIR = Path(__file__).parent / "binaries"
+if os.getenv("TEST_BINARIES_DIR"):
+    TEST_BINARIES_DIR = Path(os.getenv("TEST_BINARIES_DIR"))
+else:
+    # default assumes its a git repo that is above this one
+    TEST_BINARIES_DIR = Path(__file__).parent.parent.parent / "bs-artifacts" / "binaries"
 
+assert TEST_BINARIES_DIR.exists(), f"Test binaries dir {TEST_BINARIES_DIR} does not exist"
 _l = logging.getLogger(__name__)
 
 
 class TestRemoteGhidra(unittest.TestCase):
-    FAUXWARE_PATH = TEST_BINARY_DIR / "fauxware"
+    FAUXWARE_PATH = TEST_BINARIES_DIR / "fauxware"
 
     def setUp(self):
         self.deci = None

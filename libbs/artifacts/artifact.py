@@ -16,15 +16,18 @@ class Artifact:
     LST_CHNG_ATTR = "last_change"
     ADDR_ATTR = "addr"
     ART_TYPE_STR = "artifact_type"
+    SCOPE_ATTR = "scope"
 
     ATTR_ATTR_IGNORE_SET = "_attr_ignore_set"
     __slots__ = (
         LST_CHNG_ATTR,
-        ATTR_ATTR_IGNORE_SET
+        ATTR_ATTR_IGNORE_SET,
+        SCOPE_ATTR
     )
 
-    def __init__(self, last_change: Optional[datetime.datetime] = None):
+    def __init__(self, last_change: Optional[datetime.datetime] = None, scope: Optional[str] = None):
         self.last_change = last_change
+        self.scope = scope
         self._attr_ignore_set = set()
 
     def __getstate__(self) -> Dict:
@@ -44,6 +47,12 @@ class Artifact:
         for k in self.slots:
             if k == self.LST_CHNG_ATTR:
                 continue
+            elif k == self.SCOPE_ATTR:
+                # special case scopes: a scope of None indicates that the artifact could be in any scope
+                this_scope = getattr(self, k)
+                that_scope = getattr(other, k)
+                if this_scope is None or that_scope is None:
+                    continue
 
             if getattr(self, k) != getattr(other, k):
                 return False
@@ -175,6 +184,18 @@ class Artifact:
     #
     # Public API
     #
+
+    @property
+    def scoped_name(self) -> str:
+        """
+        Returns the name of the artifact with its scope, if it has one.
+        """
+        if hasattr(self, "name"):
+            if self.scope:
+                return f"{self.scope}::{self.name}"
+
+            return self.name
+        return ""
 
     @property
     def commit_msg(self) -> str:
