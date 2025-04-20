@@ -752,7 +752,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if type_ is None:
                 continue
 
-            type_name = str(type_.getName().getPathName())
+            type_name = str(type_.getPathName())
             if not type_name or type_name == gtype_name:
                 continue
 
@@ -812,7 +812,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if match_single_offset is not None and match_single_offset != addr:
                 continue
 
-            type_str = str(sym_data.getDataType().gePathName())
+            type_str = str(sym_data.getDataType().getPathName())
             size = int(self.currentProgram.getListing().getDataAt(sym.getAddress()).getLength()) \
                 if type_str != "undefined" else self.default_pointer_size
 

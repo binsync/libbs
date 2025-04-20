@@ -126,7 +126,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
             func = deci.functions[0x1d66]
 
             # verify that the second argument is just a normal type name, and not a 'typedef ...'
-            assert func.header.args[1].type == "__off64_t"
+            type_name, _ = deci.art_lifter.parse_scoped_type(func.header.args[1].type)
+            assert type_name == "off_t"
             assert "typedef" not in func.header.args[1].type
 
     def test_ghidra_artifact_dependency_resolving(self):
