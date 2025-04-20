@@ -20,12 +20,12 @@ class GhidraArtifactLifter(ArtifactLifter):
         "char4": "char[4]",
         "char2": "char[2]",
         "char1": "char",
-        "sqword": "long long",
-        "qword": "long long",
-        "sdword": "int",
-        "dword": "int",
-        "word": "short",
-        "byte": "char",
+        #"sqword": "long long",
+        #"qword": "long long",
+        #"sdword": "int",
+        #"dword": "int",
+        #"word": "short",
+        #"byte": "char",
     }
 
     def lift_type(self, type_str: str) -> str:
