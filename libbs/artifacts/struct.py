@@ -65,7 +65,8 @@ class Struct(Artifact):
         self.members: Dict[int, StructMember] = members or {}
 
     def __str__(self):
-        return f"<Struct: {self.name} membs={len(self.members)} ({hex(self.size)})>"
+        scope_str = f" scope={self.scope}" if self.scope else ""
+        return f"<Struct: {self.name} membs={len(self.members)}{scope_str} ({hex(self.size)})>"
 
     def __getstate__(self):
         data_dict = super().__getstate__()

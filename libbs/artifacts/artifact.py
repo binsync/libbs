@@ -25,8 +25,9 @@ class Artifact:
         SCOPE_ATTR
     )
 
-    def __init__(self, last_change: Optional[datetime.datetime] = None):
+    def __init__(self, last_change: Optional[datetime.datetime] = None, scope: Optional[str] = None):
         self.last_change = last_change
+        self.scope = scope
         self._attr_ignore_set = set()
 
     def __getstate__(self) -> Dict:
@@ -183,6 +184,18 @@ class Artifact:
     #
     # Public API
     #
+
+    @property
+    def scoped_name(self) -> str:
+        """
+        Returns the name of the artifact with its scope, if it has one.
+        """
+        if hasattr(self, "name"):
+            if self.scope:
+                return f"{self.scope}::{self.name}"
+
+            return self.name
+        return ""
 
     @property
     def commit_msg(self) -> str:

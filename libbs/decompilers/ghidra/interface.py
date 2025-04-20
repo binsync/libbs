@@ -71,6 +71,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             name="ghidra",
             artifact_lifter=GhidraArtifactLifter(self),
             supports_undo=True,
+            supports_type_scopes=True,
             default_func_prefix="FUN_",
             **kwargs
         )
@@ -369,23 +370,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         return self._update_local_variable_symbols(symbols_to_update) if symbols_to_update else False
 
-    @staticmethod
-    def _organize_scoped_types_by_name(type_dict: dict[str, object]) -> dict[str, object]:
-        all_names = list(type_dict.keys())
-        # split each name, count the '/' in it and make the least go first
-        # this creates a sorted list of types with the least scopes first
-        all_names.sort(key=lambda x: x.count('/'))
-
-        # if the string before the first '/' ends in .h, its a header and should go first
-        all_names.sort(key=lambda x: x.split('/')[0].endswith('.h'), reverse=True)
-
-        new_type_dict = {}
-        for name in all_names:
-            new_type_dict[name] = type_dict[name]
-
-        return new_type_dict
-
-
     #
     # Private Artifact API
     #
@@ -562,7 +546,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         from .compat.imports import DataTypeConflictHandler, StructureDataType, ByteDataType
 
         struct: Struct = struct
-        old_ghidra_struct = self._get_struct_by_name(struct.name)
+        old_ghidra_struct = self._get_gtype_by_bs_name(struct.name, Struct)
         data_manager = self.currentProgram.getDataTypeManager()
         ghidra_struct = StructureDataType(struct.name, 0)
         for offset in struct.members:
@@ -588,19 +572,23 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return False
 
     def _get_struct(self, name) -> Optional[Struct]:
-        ghidra_struct = self._get_struct_by_name(name)
+        ghidra_struct = self._get_gtype_by_bs_name(name, Struct)
         if ghidra_struct is None:
             return None
 
+        full_struct_name = ghidra_struct.getPathName()
+        name, scope = self._gscoped_type_to_bs(full_struct_name)
+
         return Struct(
-            ghidra_struct.getName(), ghidra_struct.getLength(), self._struct_members_from_gstruct(ghidra_struct)
+            name=name, size=ghidra_struct.getLength(), members=self._struct_members_from_gstruct(ghidra_struct),
+            scope=scope
         )
 
     @ghidra_transaction
     def _del_struct(self, name) -> bool:
         from .compat.imports import ConsoleTaskMonitor
         data_manager = self.currentProgram.getDataTypeManager()
-        gstruct = self._get_struct_by_name(name)
+        gstruct = self._get_gtype_by_bs_name(name, Struct)
         try:
             success = data_manager.remove(gstruct, ConsoleTaskMonitor())
             if success:
@@ -608,19 +596,18 @@ class GhidraDecompilerInterface(DecompilerInterface):
             else:
                 raise Exception('DataManager failed to remove struct')
         except Exception as ex:
-            print(f"Error removing struct {name}: {ex}")
+            self.error(f"Failed to remove struct {name}: {ex}")
 
 
     def _structs(self) -> Dict[str, Struct]:
         structs = {}
         gstructs = self.__gstructs()
-        for name, gstruct in gstructs:
+        for g_scoped_name, gstruct in gstructs:
+            name, scope = self._gscoped_type_to_bs(g_scoped_name)
             structs[name] = Struct(
-                name=name, size=gstruct.getLength(), members=self._struct_members_from_gstruct(gstruct)
+                name=name, size=gstruct.getLength(), members=self._struct_members_from_gstruct(gstruct), scope=scope
             )
 
-        # XXX: should be removed when https://github.com/binsync/libbs/issues/147 is fixed
-        structs = self._organize_scoped_types_by_name(structs)
         return structs
 
     @ghidra_transaction
@@ -670,15 +657,14 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def _set_enum(self, enum: Enum, **kwargs) -> bool:
         from .compat.imports import EnumDataType, CategoryPath, DataTypeConflictHandler
 
-        corrected_enum_name = "/" + enum.name
+        name, scope = self.art_lifter.parse_scoped_type(enum.name)
+        corrected_enum_name = self._bs_scoped_type_to_g(enum.name)
         old_ghidra_enum = self.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
         data_manager = self.currentProgram.getDataTypeManager()
 
         # Parse the libbs Enum name into category path and raw enum name for proper Enum creation
-        split = corrected_enum_name.split('/')
-        unpathed_name = split[-1]
-        category_path = '/'.join(split[:-1])
-        ghidra_enum = EnumDataType(CategoryPath(category_path), unpathed_name, 4)
+        scope = scope or ""
+        ghidra_enum = EnumDataType(CategoryPath("/" + scope), name, 4)
         for m_name, m_val in enum.members.items():
             ghidra_enum.add(m_name, m_val)
 
@@ -693,23 +679,23 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return False
 
     def _get_enum(self, name) -> Optional[Enum]:
-        g_enum = self._get_ghidra_enum(name)
+        g_enum = self._get_gtype_by_bs_name(name, Enum)
         if g_enum is None:
             return None
 
-        members = {name: val for name, val in self.__get_enum_members(g_enum)}
-        return Enum(name, members) if members else None
+        name, scope = self._gscoped_type_to_bs(g_enum.getPathName())
+        members = {_name: val for _name, val in self.__get_enum_members(g_enum)}
+        return Enum(name=name, members=members, scope=scope) if members else None
 
     def _enums(self) -> Dict[str, Enum]:
         enums = {}
         enums_by_name = self.__enum_names()
-        for enum_name, g_enum in enums_by_name:
-            members = {name: val for name, val in self.__get_enum_members(g_enum)}
+        for g_enum_name, g_enum in enums_by_name:
+            name, scope = self._gscoped_type_to_bs(g_enum_name)
+            members = {_name: val for _name, val in self.__get_enum_members(g_enum)}
             if members:
-                enums[enum_name] = Enum(name=enum_name, members=members)
+                enums[name] = Enum(name=name, members=members, scope=scope)
 
-        # XXX: should be removed when https://github.com/binsync/libbs/issues/147 is fixed
-        enums = self._organize_scoped_types_by_name(enums)
         return enums
 
     @ghidra_transaction
@@ -722,17 +708,18 @@ class GhidraDecompilerInterface(DecompilerInterface):
             raise ValueError(f"Invalid base type for typedef {typedef.name}: {typedef.type}")
 
         # parse out the correct name
-        corrected_typedef_name = "/" + typedef.name
-        split = corrected_typedef_name.split('/')
-        unpathed_name = split[-1]
-        category_path = '/'.join(split[:-1])
+        scope = typedef.scope
+        if not scope:
+            scope = ""
+
         # do a full parse of the typedef
-        ghidra_typedef = TypedefDataType(CategoryPath(category_path), unpathed_name, base_g_type)
+        ghidra_typedef = TypedefDataType(CategoryPath("/"+scope), typedef.name, base_g_type)
         if ghidra_typedef is None:
-            raise ValueError(f"Failed to create TypedefDataType for {typedef.name}")
+            raise ValueError(f"Failed to create TypedefDataType for {typedef}")
 
         # get the old typedef if it exists, and override it
-        old_g_typedef = self.currentProgram.getDataTypeManager().getDataType(corrected_typedef_name)
+        g_typename = ghidra_typedef.getPathName()
+        old_g_typedef = self.currentProgram.getDataTypeManager().getDataType(g_typename)
         data_manager = self.currentProgram.getDataTypeManager()
 
         try:
@@ -746,7 +733,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return False
 
     def _get_typedef(self, name) -> Optional[Typedef]:
-        g_typedef = self._get_ghidra_typedef(name)
+        g_typedef = self._get_gtype_by_bs_name(name, Typedef)
         if g_typedef is None:
             return None
 
@@ -754,24 +741,25 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if base_type is None:
             return None
 
-        return Typedef(name=name, type_=str(base_type.getName()))
+        norm_name, scope = self._gscoped_type_to_bs(g_typedef.getPathName())
+        return Typedef(name=norm_name, type_=str(base_type.getName()), scope=scope)
 
     def _typedefs(self) -> Dict[str, Typedef]:
         typedefs = {}
         typedefs_by_name = self.__gtypedefs()
-        for name, gtypedef in typedefs_by_name:
+        for gtype_name, gtypedef in typedefs_by_name:
             type_ = gtypedef.getDataType()
             if type_ is None:
                 continue
 
             type_name = str(type_.getName())
-            if not type_name or type_name == name:
+            if not type_name or type_name == gtype_name:
                 continue
 
-            typedefs[name] = Typedef(name=name, type_=type_name)
+            name, scope = self._gscoped_type_to_bs(gtypedef.getPathName())
+            # TODO: this could probably go wrong if typedef name and type are of different scopes
+            typedefs[gtype_name] = Typedef(name=name, type_=type_name, scope=scope)
 
-        # XXX: should be removed when https://github.com/binsync/libbs/issues/147 is fixed
-        typedefs = self._organize_scoped_types_by_name(typedefs)
         return typedefs
 
     def _gsyms_too_large(self):
@@ -874,6 +862,27 @@ class GhidraDecompilerInterface(DecompilerInterface):
     # Ghidra Specific API
     #
 
+    def _gscoped_type_to_bs(self, gscoped_type: str) -> tuple[str, str | None]:
+        scope = None
+        if "/" in gscoped_type:
+            scope_parts = gscoped_type.split("/")
+            name = scope_parts.pop(-1)
+            scope = "/".join(scope_parts)
+            # remove the first slash
+            if scope.startswith("/"):
+                scope = scope[1:]
+        else:
+            name = gscoped_type
+
+        return name, scope
+
+    def _bs_scoped_type_to_g(self, bs_scoped_type: str) -> str:
+        name, scope = self.art_lifter.parse_scoped_type(bs_scoped_type)
+        if scope is None:
+            return "/" + name
+
+        return f"/{scope}/{name}"
+
     def _to_gaddr(self, addr: int):
         return self.flat_api.toAddr(hex(addr))
 
@@ -886,15 +895,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return any([
             r is not None for r in self.__update_local_variable_symbols(symbols)
         ])
-
-    def _get_struct_by_name(self, name: str) -> Optional["StructureDB"]:
-        """
-        Returns None if the struct does not exist or is not a struct.
-        """
-        from .compat.imports import StructureDB
-
-        struct = self.currentProgram.getDataTypeManager().getDataType("/" + name)
-        return struct if self.isinstance(struct, StructureDB) else None
 
     def _struct_members_from_gstruct(self, gstruct: "StructDB") -> Dict[int, StructMember]:
         gmemb_info = self.__gstruct_members(gstruct)
@@ -1039,17 +1039,33 @@ class GhidraDecompilerInterface(DecompilerInterface):
         program = self.currentProgram
         return CParserUtils.parseSignature(program, progotype_str)
 
-    def _get_ghidra_enum(self, enum_name: str) -> Optional["EnumDB"]:
-        from .compat.imports import EnumDB
+    def _get_gtype_by_bs_name(self, name: str, bs_type: type[Artifact]) -> Optional["DataType"]:
+        """
+        Returns None if the type does not exist or is not a struct.
+        """
+        from .compat.imports import EnumDB, StructureDB, TypedefDB
 
-        ghidra_enum = self.currentProgram.getDataTypeManager().getDataType("/" + enum_name)
-        return ghidra_enum if self.isinstance(ghidra_enum, EnumDB) else None
+        g_type = {
+            Typedef: TypedefDB,
+            Struct: StructureDB,
+            Enum: EnumDB,
+        }.get(bs_type, None)
+        if g_type is None:
+            raise ValueError(f"Invalid type for gtype lookup: {bs_type}")
 
-    def _get_ghidra_typedef(self, typedef_name: str) -> Optional["TypedefDB"]:
-        from .compat.imports import TypedefDB
+        bs_name, bs_scope = self.art_lifter.parse_scoped_type(name)
+        g_scoped_name = self._bs_scoped_type_to_g(name)
+        gtype = self.currentProgram.getDataTypeManager().getDataType(g_scoped_name)
+        if not gtype:
+            # TODO: add recovery one day: if the scope is None we should still try to search
+            self.warning(f"Failed to get type by name: {g_scoped_name}")
+            return None
 
-        ghidra_typedef = self.currentProgram.getDataTypeManager().getDataType("/" + typedef_name)
-        return ghidra_typedef if self.isinstance(ghidra_typedef, TypedefDB) else None
+        if not self.isinstance(gtype, g_type):
+            self.warning(f"Type {g_scoped_name} is not a {g_type.__name__}")
+            return None
+
+        return gtype
 
     @staticmethod
     def isinstance(obj, cls):
@@ -1108,7 +1124,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         from .compat.imports import EnumDB
 
         return [
-            (dType.getPathName()[1:], dType)
+            (dType.getPathName(), dType)
             for dType in self.currentProgram.getDataTypeManager().getAllDataTypes()
             if isinstance(dType, EnumDB)
         ]
@@ -1163,7 +1179,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ui_remote_eval
     def __gstructs(self):
         return [
-            (struct.getPathName()[1:], struct)
+            (struct.getPathName(), struct)
             for struct in self.currentProgram.getDataTypeManager().getAllStructures()
         ]
 
@@ -1172,7 +1188,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         from .compat.imports import TypedefDB
 
         return [
-            (typedef.getPathName()[1:], typedef)
+            (typedef.getPathName(), typedef)
             for typedef in self.currentProgram.getDataTypeManager().getAllDataTypes()
             if isinstance(typedef, TypedefDB)
         ]

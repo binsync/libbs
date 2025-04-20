@@ -26,6 +26,42 @@ class ArtifactLifter:
         return self._lift_or_lower_artifact(artifact, "lower")
 
     #
+    # Special handlers for scopes
+    #
+
+    @staticmethod
+    def parse_scoped_type(type_str: str) -> tuple[str, str | None]:
+        """
+        Parses a scoped type string into its base type and scope.
+        Note: the scope can be None if the type is not scoped.
+
+        Examples:
+        'stdint::uint32_t' -> ('uint32_t', 'stdint')
+        'uint32_t' -> ('uint32_t', None)
+        """
+        if not type_str:
+            return "", None
+
+        # check if the type is scoped
+        scope = None
+        if "::" in type_str:
+            scope_parts = type_str.split("::")
+            base_type = scope_parts[-1]
+            scope = "::".join(scope_parts[:-1])
+        else:
+            base_type = type_str
+
+        return base_type, scope
+
+    @staticmethod
+    def scoped_type_to_str(name: str, scope: str | None = None) -> str:
+        """
+        Converts a name and scope into a scoped type string.
+        Note: the scope can be None if the type is not scoped.
+        """
+        return name if not scope else f"{scope}::{name}"
+
+    #
     # Override Mandatory Funcs
     #
 

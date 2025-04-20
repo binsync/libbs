@@ -32,11 +32,12 @@ class ArtifactDict(dict):
     - For convience, you can access functions by their lowered address
     """
 
-    def __init__(self, artifact_cls, deci: "DecompilerInterface", error_on_duplicate=False):
+    def __init__(self, artifact_cls, deci: "DecompilerInterface", error_on_duplicate=False, scopable=False):
         super().__init__()
 
         self._deci = deci
         self._error_on_duplicate = error_on_duplicate
+        self._scopable = scopable
         self._art_function = {
             # ArtifactType: (setter, getter, lister)
             Function: (self._deci._set_function, self._deci._get_function, self._deci._functions, self._deci._del_function),
@@ -80,6 +81,8 @@ class ArtifactDict(dict):
         """
         if isinstance(item, int):
             item = self._deci.art_lifter.lower_addr(item)
+        if self._scopable and not self._deci.supports_type_scopes:
+            item, _ = self._deci.art_lifter.parse_scoped_type(item)
 
         art = self._artifact_getter(item)
         if art is None:
@@ -96,6 +99,8 @@ class ArtifactDict(dict):
 
         if isinstance(key, int):
             key = self._deci.art_lifter.lower_addr(key)
+        if self._scopable and not self._deci.supports_type_scopes:
+            key, _ = self._deci.art_lifter.parse_scoped_type(key)
 
         art = self._deci.art_lifter.lower(value)
         if not self._artifact_setter(art) and self._error_on_duplicate:
@@ -104,6 +109,8 @@ class ArtifactDict(dict):
     def __contains__(self, item):
         if isinstance(item, int):
             item = self._deci.art_lifter.lower_addr(item)
+        if self._scopable and not self._deci.supports_type_scopes:
+            item, _ = self._deci.art_lifter.parse_scoped_type(item)
 
         data = self._artifact_getter(item)
         return data is not None
@@ -111,6 +118,8 @@ class ArtifactDict(dict):
     def __delitem__(self, key):
         if isinstance(key, int):
             key = self._deci.art_lifter.lower_addr(key)
+        if self._scopable and not self._deci.supports_type_scopes:
+            key, _ = self._deci.art_lifter.parse_scoped_type(key)
 
         art = self._artifact_getter(key)
         if isinstance(art, Struct):

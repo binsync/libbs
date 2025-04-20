@@ -519,6 +519,85 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
             self.deci.shutdown()
 
+    def test_ghidra_type_scoping(self):
+        """
+        Scopes help distinguish between types with the same name but different namespaces.
+        In most decompilers, there is no such thing as a type scope, i.e., a type is always scoped to the global
+        and the name must be unique.
+
+        In Ghidra, however, types can be scoped to a specific category, which is a way to group types together.
+        Types looks like this: `/CategoryLayer1/CategorLayery2/my_type`.
+        We need to save types from Ghidra in such a way that:
+        1. The scope is preserved when the type is saved, so that other Ghidra instances can load it and use it.
+        2. The type can be used without the scope, i.e., the type can be used as if it was a global type.
+        """
+        # first use ghidra to load types from a debug sym binary
+        ghidra_deci = DecompilerInterface.discover(
+            force_decompiler=GHIDRA_DECOMPILER,
+            headless=True,
+            binary_path=TEST_BINARIES_DIR / "fauxware",
+        )
+        self.deci = ghidra_deci
+
+        #
+        # Typedefs
+        #
+
+        custom_type = Typedef(name="my_int", type_="int", scope="MyCategory")
+        ghidra_deci.typedefs[custom_type.name] = custom_type
+        assert custom_type.scope == "MyCategory"
+        # use special scoped name to access the scoped type
+        assert ghidra_deci.typedefs[custom_type.scoped_name] == custom_type
+
+        # define another custom type that has no scope
+        custom_type_no_scope = Typedef(name="my_int", type_="int")
+        ghidra_deci.typedefs[custom_type_no_scope.name] = custom_type_no_scope
+        assert custom_type_no_scope.scope is None
+        # use the normal name to access the type, since it has no scope (scoped works too)
+        assert ghidra_deci.typedefs[custom_type_no_scope.name] == custom_type_no_scope
+        assert ghidra_deci.typedefs[custom_type_no_scope.scoped_name] == custom_type_no_scope
+
+        # make sure both are in the lister
+        all_typedefs = list(ghidra_deci.typedefs.values())
+        assert custom_type in all_typedefs
+        assert custom_type_no_scope in all_typedefs
+
+        #
+        # Structs
+        #
+
+        custom_type = Struct(name="my_struct", size=0, scope="MyCategory")
+        ghidra_deci.structs[custom_type.name] = custom_type
+        assert custom_type.scope == "MyCategory"
+        assert ghidra_deci.structs[custom_type.scoped_name] == custom_type
+
+        custom_type_no_scope = Struct(name="my_struct", size=0)
+        ghidra_deci.structs[custom_type_no_scope.name] = custom_type_no_scope
+        assert custom_type_no_scope.scope is None
+        assert ghidra_deci.structs[custom_type_no_scope.name] == custom_type_no_scope
+
+        all_structs = list(ghidra_deci.structs.values())
+        assert custom_type in all_structs
+        assert custom_type_no_scope in all_structs
+
+        #
+        # Enums
+        #
+
+        custom_type = Enum(name="my_enum", members={}, scope="MyCategory")
+        ghidra_deci.enums[custom_type.name] = custom_type
+        assert custom_type.scope == "MyCategory"
+        assert ghidra_deci.enums[custom_type.scoped_name] == custom_type
+        custom_type_no_scope = Enum(name="my_enum", members={})
+        ghidra_deci.enums[custom_type_no_scope.name] = custom_type_no_scope
+        assert custom_type_no_scope.scope is None
+        assert ghidra_deci.enums[custom_type_no_scope.name] == custom_type_no_scope
+        all_enums = list(ghidra_deci.enums.values())
+        assert custom_type in all_enums
+        assert custom_type_no_scope in all_enums
+
+        ghidra_deci.shutdown()
+
     def test_ghidra_to_ida_transfer(self):
         # first use ghidra to load types from a debug sym binary
         ghidra_deci = DecompilerInterface.discover(
@@ -554,4 +633,5 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    #unittest.main()
+    TestHeadlessInterfaces().test_ghidra_type_scoping()

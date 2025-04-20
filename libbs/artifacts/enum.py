@@ -22,7 +22,8 @@ class Enum(Artifact):
         self.members = self._order_members(members) if members else {}
 
     def __str__(self):
-        return f"<Enum: {self.name} member_count={len(self.members)}>"
+        scope_str = f" scope={self.scope}" if self.scope else ""
+        return f"<Enum: {self.name} member_count={len(self.members)}{scope_str}>"
 
     @staticmethod
     def _order_members(members):
