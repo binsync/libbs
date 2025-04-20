@@ -151,8 +151,6 @@ class DecompilerInterface:
         self.shutdown()
 
     def shutdown(self):
-        if self.config:
-            self.config.save()
         if self.artifact_watchers_started:
             self.stop_artifact_watchers()
         if self.headless:
