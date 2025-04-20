@@ -418,7 +418,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 continue
 
             args[arg_offset] = FunctionArgument(
-                offset=arg_offset, name=str(sym.getName()), type_=str(sym.getDataType()), size=int(sym.getSize())
+                offset=arg_offset, name=str(sym.getName()), type_=str(sym.getDataType().getPathName()), size=int(sym.getSize())
             )
             arg_offset += 1
 
@@ -466,7 +466,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
             if svar.type:
                 parsed_type = self.typestr_to_gtype(svar.type)
-                if parsed_type is not None and parsed_type != str(gstack_var.getDataType()):
+                if parsed_type is not None and parsed_type != str(gstack_var.getDataType().getPathName()):
                     changes |= True
                     retype_pairs.append((gstack_var, parsed_type))
                     #update_data[1] = parsed_type
@@ -742,7 +742,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return None
 
         norm_name, scope = self._gscoped_type_to_bs(g_typedef.getPathName())
-        return Typedef(name=norm_name, type_=str(base_type.getName()), scope=scope)
+        return Typedef(name=norm_name, type_=str(base_type.getPathName()), scope=scope)
 
     def _typedefs(self) -> Dict[str, Typedef]:
         typedefs = {}
@@ -752,7 +752,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if type_ is None:
                 continue
 
-            type_name = str(type_.getName())
+            type_name = str(type_.getName().getPathName())
             if not type_name or type_name == gtype_name:
                 continue
 
@@ -789,7 +789,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 cmd.applyTo(self.currentProgram)
                 changes = True
 
-            type_str = str(sym_data.getDataType()) if sym_data is not None else None
+            type_str = str(sym_data.getDataType().getPathName()) if sym_data is not None else None
             if gvar.type and gvar.type != type_str:
                 # TODO: set type
                 pass
@@ -812,7 +812,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if match_single_offset is not None and match_single_offset != addr:
                 continue
 
-            type_str = str(sym_data.getDataType())
+            type_str = str(sym_data.getDataType().gePathName())
             size = int(self.currentProgram.getListing().getDataAt(sym.getAddress()).getLength()) \
                 if type_str != "undefined" else self.default_pointer_size
 
@@ -917,7 +917,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         bs_stack_var = StackVariable(
             gstack_var.getStackOffset(),
             gstack_var.getName(),
-            str(gstack_var.getDataType()),
+            str(gstack_var.getDataType().getPathName()),
             gstack_var.getLength(),
             gstack_var.getFunction().getEntryPoint().getOffset()  # Unsure if this is what is wanted here
         )

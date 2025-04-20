@@ -907,11 +907,11 @@ class DecompilerInterface:
 
         base_type_str = base_type.type
         lifted_scoped_type = self.art_lifter.scoped_type_to_str(base_type_str, scope)
-        if base_type_str in self.structs:
+        if lifted_scoped_type in self.structs:
             return self.structs[lifted_scoped_type]
-        elif base_type_str in self.enums:
+        elif lifted_scoped_type in self.enums:
             return self.enums[lifted_scoped_type]
-        elif base_type_str in self.typedefs:
+        elif lifted_scoped_type in self.typedefs:
             return self.typedefs[lifted_scoped_type]
         else:
             return None

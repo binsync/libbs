@@ -157,26 +157,25 @@ class TestHeadlessInterfaces(unittest.TestCase):
             struct_cnt = 0
             typedef_cnt = 0
             for dep in initial_deps:
-                corrected_type_name = dep.name.split("/")[-1] if isinstance(dep, (Struct, Typedef)) else None
                 if isinstance(dep, Struct):
                     struct_cnt += 1
-                    assert corrected_type_name == "md5_state_s", "Unexpected struct"
+                    assert dep.name == "md5_state_s", "Unexpected struct"
                     assert len(dep.members) == 3, "Unexpected number of members"
                 elif isinstance(dep, Typedef):
                     typedef_cnt += 1
-                    assert corrected_type_name in {"md5_word_t", "md5_state_t", "md5_byte_t"}, "Unexpected typedef"
+                    assert dep.name in {"md5_word_t", "md5_state_t", "md5_byte_t"}, "Unexpected typedef"
             assert struct_cnt == 1
             assert typedef_cnt == 3
 
             # test a case of dependency resolving where we have a func arg with a multi-defined type
             # the type in this case is '__off64_t' which is defined in types.h and DWARF
-            # the correct one to be used is the one from types.h
+            # the correct one to be used is the one from DWARF
             func = deci.functions[0x1d66]
             deps = deci.get_dependencies(func)
             off64t_types = [d for d in deps if isinstance(d, Typedef) and d.name.endswith("__off64_t")]
             assert len(off64t_types) == 1
             off64t_type = off64t_types[0]
-            assert off64t_type.name.startswith("types.h")
+            assert off64t_type.scope == "DWARF"
 
 
             # TODO: right now in headless Ghidra you cant ever set structs to variable types.
@@ -249,12 +248,13 @@ class TestHeadlessInterfaces(unittest.TestCase):
             typdefs = [d for d in deps if isinstance(d, Typedef)]
             assert len(typdefs) == 1
             typdef = typdefs[0]
-            assert typdef.name.split("/")[-1] == "EVP_PKEY_CTX"
-            assert typdef.type.split("/")[-1] == "evp_pkey_ctx_st"
+            assert typdef.name == "EVP_PKEY_CTX"
+            type_name, type_scope = self.deci.art_lifter.parse_scoped_type(typdef.type)
+            assert type_name == "evp_pkey_ctx_st"
             structs = [d for d in deps if isinstance(d, Struct)]
             assert len(structs) == 1
             struct = structs[0]
-            assert struct.name.split("/")[-1] == "evp_pkey_ctx_st"
+            assert struct.name == "evp_pkey_ctx_st"
 
             deci.shutdown()
 
@@ -303,18 +303,18 @@ class TestHeadlessInterfaces(unittest.TestCase):
             # Enums
             #
 
-            elf_dyn_tag_enum: Enum = deci.enums['ELF/Elf64_DynTag']
+            elf_dyn_tag_enum: Enum = deci.enums['ELF::Elf64_DynTag']
             elf_dyn_tag_enum.members['DT_YEET'] = elf_dyn_tag_enum.members['DT_FILTER'] + 1
             deci.enums[elf_dyn_tag_enum.name] = elf_dyn_tag_enum
-            assert deci.enums[elf_dyn_tag_enum.name] == elf_dyn_tag_enum
+            assert deci.enums[elf_dyn_tag_enum.scoped_name] == elf_dyn_tag_enum
 
             enum = Enum("my_enum", {"member1": 0, "member2": 1})
             deci.enums[enum.name] = enum
             assert deci.enums[enum.name] == enum
 
-            nested_enum = Enum("SomeEnums/nested_enum", {"field": 0, "another_field": 2, "third_field": 3})
-            deci.enums[nested_enum.name] = nested_enum
-            assert deci.enums[nested_enum.name] == nested_enum
+            nested_enum = Enum("nested_enum", {"field": 0, "another_field": 2, "third_field": 3}, scope="SomeEnums")
+            deci.enums[nested_enum.scoped_name] = nested_enum
+            assert deci.enums[nested_enum.scoped_name] == nested_enum
 
             #
             # Typedefs
@@ -326,17 +326,15 @@ class TestHeadlessInterfaces(unittest.TestCase):
             assert deci.typedefs[typedef.name] == typedef
 
             # typedef to a struct
-            typedef = Typedef("my_eh_frame_hdr", eh_hdr_struct.name)
+            typedef = Typedef("my_eh_frame_hdr", eh_hdr_struct.scoped_name)
             deci.typedefs[typedef.name] = typedef
             assert deci.typedefs[typedef.name] == typedef
 
             # typedef to an enum
-            typedef = Typedef("my_elf_dyn_tag", elf_dyn_tag_enum.name)
+            typedef = Typedef("my_elf_dyn_tag", elf_dyn_tag_enum.scoped_name)
             deci.typedefs[typedef.name] = typedef
             updated_typedef = deci.typedefs[typedef.name]
             assert updated_typedef.name == typedef.name
-            # TODO: this should be changed when we do https://github.com/binsync/libbs/issues/97
-            assert updated_typedef.type == typedef.type.split("/")[-1]
 
             # gvar_addr = deci.art_lifter.lift_addr(0x4008e0)
             # g1 = deci.global_vars[gvar_addr]
@@ -638,14 +636,13 @@ class TestHeadlessInterfaces(unittest.TestCase):
         )
         # since this type is already native to IDA, even without symbols, we need to change the name
         debug_type.name += "_new"
-        normalized_type_name = debug_type.name.split("/")[-1]
-        assert normalized_type_name not in ida_deci.typedefs
+        assert debug_type.name not in ida_deci.typedefs
 
         # now add the type to IDA
         ida_deci.typedefs[debug_type.name] = debug_type
 
         # verify it was added
-        assert normalized_type_name in ida_deci.typedefs
+        assert debug_type.name in ida_deci.typedefs
         ida_deci.shutdown()
 
 
