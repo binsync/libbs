@@ -648,5 +648,4 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    #unittest.main()
-    TestHeadlessInterfaces().test_ghidra_type_scoping()
+    unittest.main()
