@@ -411,6 +411,8 @@ class DecompilerInterface:
         if decompile:
             # the function was never decompiled
             if artifact.dec_obj is None:
+                # TODO: this needs to be fixed so that it still works without redecompiling. What if we want
+                #   to do analysis on a function that is not set yet.
                 artifact = self.functions[artifact.addr]
 
         art_users = self.xrefs_to(artifact, decompile=decompile)
@@ -904,13 +906,13 @@ class DecompilerInterface:
             return None
 
         base_type_str = base_type.type
-        normalized_base_str = self.art_lifter.scoped_type_to_str(base_type_str)
+        lifted_scoped_type = self.art_lifter.scoped_type_to_str(base_type_str, scope)
         if base_type_str in self.structs:
-            return self.structs[normalized_base_str]
+            return self.structs[lifted_scoped_type]
         elif base_type_str in self.enums:
-            return self.enums[normalized_base_str]
+            return self.enums[lifted_scoped_type]
         elif base_type_str in self.typedefs:
-            return self.typedefs[normalized_type]
+            return self.typedefs[lifted_scoped_type]
         else:
             return None
 

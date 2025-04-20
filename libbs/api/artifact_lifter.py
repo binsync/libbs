@@ -11,6 +11,8 @@ _l = logging.getLogger(name=__name__)
 
 
 class ArtifactLifter:
+    SCOPE_DELIMITER = "::"
+
     def __init__(self, deci: "DecompilerInterface", types=None):
         self.deci = deci
         self.type_parser = CTypeParser(extra_types=types)
@@ -44,10 +46,11 @@ class ArtifactLifter:
 
         # check if the type is scoped
         scope = None
-        if "::" in type_str:
-            scope_parts = type_str.split("::")
+        deli = ArtifactLifter.SCOPE_DELIMITER
+        if deli in type_str:
+            scope_parts = type_str.split(deli)
             base_type = scope_parts[-1]
-            scope = "::".join(scope_parts[:-1])
+            scope = deli.join(scope_parts[:-1])
         else:
             base_type = type_str
 
@@ -79,6 +82,9 @@ class ArtifactLifter:
         pass
 
     def lower_type(self, type_str: str) -> str:
+        if self.SCOPE_DELIMITER in type_str and not self.deci.supports_type_scopes:
+            type_str, scope = self.scoped_type_to_str(type_str)
+
         return type_str
 
     def lower_addr(self, addr: int) -> int:

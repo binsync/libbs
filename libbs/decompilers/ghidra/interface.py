@@ -330,7 +330,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             gvar = GlobalVariable(
                 addr=int(sym_storage.getMinAddress().getOffset()),
                 name=str(global_sym.getName()),
-                type_=str(global_sym.getDataType()) if global_sym.getDataType() else None,
+                type_=str(global_sym.getDataType().getPathName()) if global_sym.getDataType() else None,
                 size=int(global_sym.getSize()),
             )
             new_xrefs.append(gvar)
@@ -426,7 +426,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def _function_type(self, addr: int, decompilation=None) -> Optional[str]:
         decompilation = decompilation or self._ghidra_decompile(self._get_nearest_function(addr))
-        return str(decompilation.getHighFunction().getFunctionPrototype().getReturnType().getName())
+        type_pathname = decompilation.getHighFunction().getFunctionPrototype().getReturnType().getPathName()
+        return type_pathname if type_pathname else None
 
     @ghidra_transaction
     def _set_stack_variables(self, svars: List[StackVariable], **kwargs) -> bool:
@@ -543,12 +544,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     @ghidra_transaction
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
-        from .compat.imports import DataTypeConflictHandler, StructureDataType, ByteDataType
+        from .compat.imports import DataTypeConflictHandler, StructureDataType, ByteDataType, CategoryPath
 
-        struct: Struct = struct
-        old_ghidra_struct = self._get_gtype_by_bs_name(struct.name, Struct)
         data_manager = self.currentProgram.getDataTypeManager()
-        ghidra_struct = StructureDataType(struct.name, 0)
+        scope = struct.scope or ""
+        ghidra_struct = StructureDataType(CategoryPath("/" + scope), struct.name, 0)
         for offset in struct.members:
             member = struct.members[offset]
             ghidra_struct.add(ByteDataType.dataType, 1, member.name, "")
@@ -560,7 +560,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
                         ghidra_struct.clearAtOffset(i)
                     ghidra_struct.replaceAtOffset(offset, gtype, member.size, member.name, "")
                     break
+
         # TODO: normalize the size of the struct if it did not grow enough
+        old_ghidra_struct = self._get_gtype_by_bs_name(struct.scoped_name, Struct)
         try:
             if old_ghidra_struct is not None:
                 data_manager.replaceDataType(old_ghidra_struct, ghidra_struct, True)
@@ -578,10 +580,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         full_struct_name = ghidra_struct.getPathName()
         name, scope = self._gscoped_type_to_bs(full_struct_name)
+        size = 0 if ghidra_struct.isZeroLength() else ghidra_struct.getLength()
 
         return Struct(
-            name=name, size=ghidra_struct.getLength(), members=self._struct_members_from_gstruct(ghidra_struct),
-            scope=scope
+            name=name, size=size, members=self._struct_members_from_gstruct(ghidra_struct), scope=scope
         )
 
     @ghidra_transaction
@@ -604,9 +606,11 @@ class GhidraDecompilerInterface(DecompilerInterface):
         gstructs = self.__gstructs()
         for g_scoped_name, gstruct in gstructs:
             name, scope = self._gscoped_type_to_bs(g_scoped_name)
-            structs[name] = Struct(
-                name=name, size=gstruct.getLength(), members=self._struct_members_from_gstruct(gstruct), scope=scope
+            size = 0 if gstruct.isZeroLength() else gstruct.getLength()
+            struct = Struct(
+                name=name, size=size, members=self._struct_members_from_gstruct(gstruct), scope=scope
             )
+            structs[struct.scoped_name] = struct
 
         return structs
 
@@ -657,17 +661,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def _set_enum(self, enum: Enum, **kwargs) -> bool:
         from .compat.imports import EnumDataType, CategoryPath, DataTypeConflictHandler
 
-        name, scope = self.art_lifter.parse_scoped_type(enum.name)
-        corrected_enum_name = self._bs_scoped_type_to_g(enum.name)
-        old_ghidra_enum = self.currentProgram.getDataTypeManager().getDataType(corrected_enum_name)
         data_manager = self.currentProgram.getDataTypeManager()
-
-        # Parse the libbs Enum name into category path and raw enum name for proper Enum creation
-        scope = scope or ""
-        ghidra_enum = EnumDataType(CategoryPath("/" + scope), name, 4)
+        scope = enum.scope or ""
+        ghidra_enum = EnumDataType(CategoryPath("/" + scope), enum.name, 4)
         for m_name, m_val in enum.members.items():
             ghidra_enum.add(m_name, m_val)
 
+        old_ghidra_enum = self.currentProgram.getDataTypeManager().getDataType(ghidra_enum.getPathName())
         try:
             if old_ghidra_enum:
                 data_manager.replaceDataType(old_ghidra_enum, ghidra_enum, True)
@@ -685,7 +685,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         name, scope = self._gscoped_type_to_bs(g_enum.getPathName())
         members = {_name: val for _name, val in self.__get_enum_members(g_enum)}
-        return Enum(name=name, members=members, scope=scope) if members else None
+        return Enum(name=name, members=members, scope=scope)
 
     def _enums(self) -> Dict[str, Enum]:
         enums = {}
@@ -693,8 +693,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         for g_enum_name, g_enum in enums_by_name:
             name, scope = self._gscoped_type_to_bs(g_enum_name)
             members = {_name: val for _name, val in self.__get_enum_members(g_enum)}
-            if members:
-                enums[name] = Enum(name=name, members=members, scope=scope)
+            enum = Enum(name=name, members=members, scope=scope)
+            enums[enum.scoped_name] = enum
 
         return enums
 
@@ -757,8 +757,9 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 continue
 
             name, scope = self._gscoped_type_to_bs(gtypedef.getPathName())
+            bs_typedef = Typedef(name=name, type_=type_name, scope=scope)
             # TODO: this could probably go wrong if typedef name and type are of different scopes
-            typedefs[gtype_name] = Typedef(name=name, type_=type_name, scope=scope)
+            typedefs[bs_typedef.scoped_name] = bs_typedef
 
         return typedefs
 
@@ -1015,7 +1016,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         # attempt a lookup as a custom datatype
         if parsed_type is None:
-            parsed_type = self.currentProgram.getDataTypeManager().getDataType("/" + typestr)
+            typestr = "/" + typestr if not typestr.startswith("/") else typestr
+            parsed_type = self.currentProgram.getDataTypeManager().getDataType(typestr)
 
         #if self.headless and parsed_type is None:
         #    # try again in headless mode only!
@@ -1053,16 +1055,15 @@ class GhidraDecompilerInterface(DecompilerInterface):
         if g_type is None:
             raise ValueError(f"Invalid type for gtype lookup: {bs_type}")
 
-        bs_name, bs_scope = self.art_lifter.parse_scoped_type(name)
         g_scoped_name = self._bs_scoped_type_to_g(name)
         gtype = self.currentProgram.getDataTypeManager().getDataType(g_scoped_name)
         if not gtype:
             # TODO: add recovery one day: if the scope is None we should still try to search
-            self.warning(f"Failed to get type by name: {g_scoped_name}")
+            #self.warning(f"Failed to get type by name: {g_scoped_name}")
             return None
 
         if not self.isinstance(gtype, g_type):
-            self.warning(f"Type {g_scoped_name} is not a {g_type.__name__}")
+            #self.warning(f"Type {g_scoped_name} is not a {g_type.__name__}")
             return None
 
         return gtype
@@ -1132,7 +1133,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ui_remote_eval
     def __stack_variables(self, decompilation) -> List[Tuple[int, str, str, int]]:
         return [
-            (int(sym.getStorage().getStackOffset()), str(sym.getName()), sym.getDataType().displayName, int(sym.getSize()))
+            (int(sym.getStorage().getStackOffset()), str(sym.getName()), sym.getDataType().getPathName(), int(sym.getSize()))
             for sym in decompilation.getHighFunction().getLocalSymbolMap().getSymbols()
             if sym.getStorage().isStackStorage()
         ]
@@ -1152,7 +1153,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
     @ui_remote_eval
     def __gstruct_members(self, gstruct: "StructureDB") -> List[Tuple[int, str, str, int]]:
         return [
-            (int(m.getOffset()), str(m.getFieldName()), str(m.getDataType().getName()), int(m.getLength()))
+            (int(m.getOffset()), str(m.getFieldName()), str(m.getDataType().getPathName()), int(m.getLength()))
             for m in gstruct.getComponents()
         ]
 

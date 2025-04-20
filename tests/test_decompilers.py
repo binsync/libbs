@@ -544,7 +544,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         #
 
         custom_type = Typedef(name="my_int", type_="int", scope="MyCategory")
-        ghidra_deci.typedefs[custom_type.name] = custom_type
+        ghidra_deci.typedefs[custom_type.scoped_name] = custom_type
         assert custom_type.scope == "MyCategory"
         # use special scoped name to access the scoped type
         assert ghidra_deci.typedefs[custom_type.scoped_name] == custom_type
@@ -558,16 +558,16 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert ghidra_deci.typedefs[custom_type_no_scope.scoped_name] == custom_type_no_scope
 
         # make sure both are in the lister
-        all_typedefs = list(ghidra_deci.typedefs.values())
-        assert custom_type in all_typedefs
-        assert custom_type_no_scope in all_typedefs
+        all_typedefs = list(ghidra_deci.typedefs.items())
+        assert (custom_type.scoped_name, custom_type) in all_typedefs
+        assert (custom_type_no_scope.scoped_name, custom_type_no_scope) in all_typedefs
 
         #
         # Structs
         #
 
         custom_type = Struct(name="my_struct", size=0, scope="MyCategory")
-        ghidra_deci.structs[custom_type.name] = custom_type
+        ghidra_deci.structs[custom_type.scoped_name] = custom_type
         assert custom_type.scope == "MyCategory"
         assert ghidra_deci.structs[custom_type.scoped_name] == custom_type
 
@@ -576,16 +576,16 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert custom_type_no_scope.scope is None
         assert ghidra_deci.structs[custom_type_no_scope.name] == custom_type_no_scope
 
-        all_structs = list(ghidra_deci.structs.values())
-        assert custom_type in all_structs
-        assert custom_type_no_scope in all_structs
+        all_structs = list(ghidra_deci.structs.items())
+        assert (custom_type.scoped_name, custom_type) in all_structs
+        assert (custom_type_no_scope.scoped_name, custom_type_no_scope) in all_structs
 
         #
         # Enums
         #
 
         custom_type = Enum(name="my_enum", members={}, scope="MyCategory")
-        ghidra_deci.enums[custom_type.name] = custom_type
+        ghidra_deci.enums[custom_type.scoped_name] = custom_type
         assert custom_type.scope == "MyCategory"
         assert ghidra_deci.enums[custom_type.scoped_name] == custom_type
         custom_type_no_scope = Enum(name="my_enum", members={})
@@ -595,6 +595,23 @@ class TestHeadlessInterfaces(unittest.TestCase):
         all_enums = list(ghidra_deci.enums.values())
         assert custom_type in all_enums
         assert custom_type_no_scope in all_enums
+
+        #
+        # Get dependencies check for overlapping name use
+        #
+
+        custom_type = Typedef(name="my_int", type_="int", scope="MyCategory")
+        custom_type_no_scope = Typedef(name="my_int", type_="int")
+        main_func = ghidra_deci.functions[0x71d]
+        main_func.type = custom_type.scoped_name
+        main_func.stack_vars[-0x2c].type = custom_type_no_scope.scoped_name
+
+        # refresh the function to be sure it set
+        ghidra_deci.functions[main_func.addr] = main_func
+        main_func = ghidra_deci.functions[main_func.addr]
+
+        deps = ghidra_deci.get_dependencies(main_func)
+        assert len(deps) == 2
 
         ghidra_deci.shutdown()
 
