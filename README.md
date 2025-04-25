@@ -54,10 +54,8 @@ from libbs.api import DecompilerInterface
 deci = DecompilerInterface.discover(force_decompiler="ghidra", headless=True)
 ```
 
-In the case of decompilers that don't have a native python library for working with, like Ghidra and IDA, you will to 
-tell libbs where the headless binary path exists. This can be passed through either `headless_dec_path` flag, or
-through your environment. For Ghidra this would be: `GHIDRA_HEADLESS_PATH`.
-
+In the case of Ghidra, you must have the environment variable `GHIDRA_HEADLESS_PATH` set to the path of the Ghidra
+headless binary. This is usually `ghidraRun` or `ghidraHeadlessAnalyzer`.
 
 ### Artifact Access Caveats
 In designing the dictionaries that contain all Artifacts in a decompiler, we had a clash between ease-of-use and speed. 
