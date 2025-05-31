@@ -147,9 +147,6 @@ class DecompilerInterface:
     def _init_gui_plugin(self, *args, **kwargs):
         return None
 
-    def __del__(self):
-        self.shutdown()
-
     def shutdown(self):
         if self.artifact_watchers_started:
             self.stop_artifact_watchers()
