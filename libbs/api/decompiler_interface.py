@@ -936,12 +936,12 @@ class DecompilerInterface:
             if not force:
                 return IDA_DECOMPILER
             available.add(IDA_DECOMPILER)
-        except ImportError:
+        except Exception:
             pass
         try:
             import ida
             available.add(IDA_DECOMPILER)
-        except ImportError:
+        except Exception:
             pass
 
         # angr-management
@@ -952,7 +952,7 @@ class DecompilerInterface:
             if DecompilerInterface._find_global_in_call_frames('workspace') is not None:
                 if not force:
                     return ANGR_DECOMPILER
-        except ImportError:
+        except Exception:
             pass
 
         # Ghidra
@@ -1001,6 +1001,8 @@ class DecompilerInterface:
         if force in available:
             return force
 
+        return None
+
     @staticmethod
     def discover(
         force_decompiler: str = None,
@@ -1018,7 +1020,13 @@ class DecompilerInterface:
         if force_decompiler and force_decompiler not in SUPPORTED_DECOMPILERS:
             raise ValueError(f"Unsupported decompiler {force_decompiler}")
 
-        current_decompiler = DecompilerInterface.find_current_decompiler(force=force_decompiler)
+        if force_decompiler:
+            if force_decompiler not in SUPPORTED_DECOMPILERS:
+                raise ValueError(f"Unsupported decompiler {force_decompiler}, please use one of {SUPPORTED_DECOMPILERS}")
+            current_decompiler = force_decompiler
+        else:
+            current_decompiler = DecompilerInterface.find_current_decompiler(force=force_decompiler)
+
         if current_decompiler == IDA_DECOMPILER:
             from libbs.decompilers.ida.interface import IDAInterface
             deci_class = IDAInterface
