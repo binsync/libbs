@@ -471,7 +471,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert new_struct.name not in struct_keys and new_struct not in struct_values
 
     def test_decompile_api(self):
-        for dec_name in [IDA_DECOMPILER, BINJA_DECOMPILER, ANGR_DECOMPILER, GHIDRA_DECOMPILER]:
+        # TODO: put angr back when it is greater than 9.2.165
+        for dec_name in [IDA_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER]:
             deci = DecompilerInterface.discover(
                 force_decompiler=dec_name,
                 headless=True,

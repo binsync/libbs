@@ -712,7 +712,7 @@ class BinjaInterface(DecompilerInterface):
         return Function(bn_func.start, size, header=sync_header, stack_vars=bs_stack_vars)
 
     @staticmethod
-    def bn_enum_to_bs(name: str, bn_enum: binaryninja.EnumerationType):
+    def bn_enum_to_bs(name: str, bn_enum: "binaryninja.EnumerationType"):
         members = {}
 
         for enum_member in bn_enum.members:
@@ -722,7 +722,7 @@ class BinjaInterface(DecompilerInterface):
         return Enum(name, members)
 
     @staticmethod
-    def bn_typedef_to_bs(name: str, bn_typedef: binaryninja.NamedTypeReferenceType):
+    def bn_typedef_to_bs(name: str, bn_typedef: "binaryninja.NamedTypeReferenceType"):
         return Typedef(name, str(bn_typedef.name))
 
     @staticmethod
