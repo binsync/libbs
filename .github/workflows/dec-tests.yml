@@ -47,9 +47,10 @@ jobs:
         distribution: "oracle"
         java-version: "17"
     - name: Install Ghidra
-      uses: antoniovazquezblanco/setup-ghidra@v2.0.6
+      uses: antoniovazquezblanco/setup-ghidra@v2.0.12
       with:
         version: "11.1"
+        auth_token: ${{ secrets.GITHUB_TOKEN }}
     - name: Pytest
       run: |
         # these two test must be run in separate python environments, due to the way ghidra bridge works
