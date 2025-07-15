@@ -63,9 +63,23 @@ def background_and_wait(func):
 
 class BinjaInterface(DecompilerInterface):
     def __init__(self, bv=None, **kwargs):
-        self.bv: "binaryninja.BinaryView" = bv
+        self._bv: "binaryninja.BinaryView" = bv
         self._data_monitor = None
         super(BinjaInterface, self).__init__(name="binja", artifact_lifter=BinjaArtifactLifter(self), **kwargs)
+
+    @property
+    def bv(self):
+        if self._bv is None:
+            raise RuntimeError("The BinaryView is not initialized. You may need to pass 'bv=' to the constructor call or discover call.")
+
+        return self._bv
+
+    @bv.setter
+    def bv(self, bv: "binaryninja.BinaryView"):
+        if not isinstance(bv, binaryninja.BinaryView):
+            raise TypeError("The bv must be a BinaryView instance.")
+
+        self._bv = bv
 
     def _init_headless_components(self, *args, **kwargs):
         super()._init_headless_components(*args, **kwargs)
@@ -216,7 +230,6 @@ class BinjaInterface(DecompilerInterface):
     def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
         bv = self.bv
         if bv is None:
-            print("[DAILA] Warning: was unable to collect the current BinaryView. Please report this issue.")
             return
 
         bn_func = self.addr_to_bn_func(bv, function.addr)
