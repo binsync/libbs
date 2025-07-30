@@ -930,19 +930,25 @@ class DecompilerInterface:
         """
         available = set()
 
-        # IDA Pro
+        # Binary Ninja
+        # this check needs to be done last since there is no way to traverse the stack frame to find the correct
+        # BV at this point in time.
         try:
-            import idaapi
-            if not force:
-                return IDA_DECOMPILER
-            available.add(IDA_DECOMPILER)
-        except Exception:
-            pass
-        try:
-            import ida
-            available.add(IDA_DECOMPILER)
-        except Exception:
-            pass
+            import binaryninja
+            has_bn_ui = False
+            try:
+                import binaryninjaui
+                has_bn_ui = True
+            except Exception:
+                pass
+
+            if not force or has_bn_ui:
+                return BINJA_DECOMPILER
+            available.add(BINJA_DECOMPILER)
+        # error can be thrown for an invalid license
+        except Exception as e:
+            if "License is not valid" in str(e):
+                _l.warning("Binary Ninja license is invalid, skipping...")
 
         # angr-management
         try:
@@ -950,8 +956,21 @@ class DecompilerInterface:
             available.add(ANGR_DECOMPILER)
             import angrmanagement
             if DecompilerInterface._find_global_in_call_frames('workspace') is not None:
-                if not force:
-                    return ANGR_DECOMPILER
+                return ANGR_DECOMPILER
+        except Exception:
+            pass
+
+        # IDA Pro
+        try:
+            import idaapi
+            available.add(IDA_DECOMPILER)
+            if not force:
+                return IDA_DECOMPILER
+        except Exception:
+            pass
+        try:
+            import ida
+            available.add(IDA_DECOMPILER)
         except Exception:
             pass
 
@@ -973,19 +992,6 @@ class DecompilerInterface:
         if (this_obj is not None) and (hasattr(this_obj, "currentProgram")):
             if not force:
                 return GHIDRA_DECOMPILER
-
-        # Binary Ninja
-        # this check needs to be done last since there is no way to traverse the stack frame to find the correct
-        # BV at this point in time.
-        try:
-            import binaryninja
-            if not force:
-                return BINJA_DECOMPILER
-            available.add(BINJA_DECOMPILER)
-        # error can be thrown for an invalid license
-        except Exception as e:
-            if "License is not valid" in str(e):
-                _l.warning("Binary Ninja license is invalid, skipping...")
 
         if not available:
             _l.critical("LibBS was unable to find the current decompiler you are running in or any headless instances!")
