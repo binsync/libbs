@@ -70,7 +70,7 @@ class BinjaInterface(DecompilerInterface):
     @property
     def bv(self):
         if self._bv is None:
-            raise RuntimeError("The BinaryView is not initialized. You may need to pass 'bv=' to the constructor call or discover call.")
+            l.warning("The BinaryView is not initialized. You may need to pass 'bv=' to the constructor call or discover call.")
 
         return self._bv
 
