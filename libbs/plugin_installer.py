@@ -212,8 +212,15 @@ class PluginInstaller:
             else default_path
 
     def install_binja(self, path=None, interactive=True):
+        os_name = platform.system()
+        if os_name == "Windows":
+            default_path = Path(os.environ.get("APPDATA", str(self._home))) / "Binary Ninja" / "plugins"
+        elif os_name == "Darwin":
+            default_path = (self._home / "Library" / "Application Support" / "Binary Ninja" / "plugins").expanduser()
+        else:
+            default_path = (self._home / ".binaryninja" / "plugins").expanduser()
         default_path, skip_ask = self._get_path_without_ask(
-            path, default_path=self._home.joinpath(".binaryninja").joinpath("plugins").expanduser(),
+            path, default_path=default_path,
             interactive=interactive
         )
         return self.ask_path("Binary Ninja", "Plugins Path", default=default_path) if not skip_ask \
