@@ -4,7 +4,7 @@ if ui_version == "PySide6":
     from PySide6.QtCore import (
         QDir, Qt, Signal, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, QPersistentModelIndex,
         QEvent, QThread, Slot, QObject, QPropertyAnimation, QAbstractAnimation, QParallelAnimationGroup,
-        QLineF
+        QLineF, QRect
     )
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -45,6 +45,7 @@ if ui_version == "PySide6":
         QGraphicsTextItem,
         QGraphicsLineItem,
         QGraphicsItem,
+        QToolTip,
     )
     from PySide6.QtGui import (
         QFontDatabase,
@@ -59,12 +60,13 @@ if ui_version == "PySide6":
         QPainter,
         QBrush,
         QPen,
+        QCursor,
     )
 else:
     from PyQt5.QtCore import (
         QDir, Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, QPersistentModelIndex,
         QEvent, QThread, QObject, QPropertyAnimation, QAbstractAnimation, QParallelAnimationGroup,
-        QLineF
+        QLineF, QRect
     )
     from PyQt5.QtCore import pyqtSignal as Signal
     from PyQt5.QtCore import pyqtSlot as Slot
@@ -108,6 +110,7 @@ else:
         QGraphicsTextItem,
         QGraphicsLineItem,
         QGraphicsItem,
+        QToolTip,
     )
     from PyQt5.QtGui import (
         QFontDatabase,
@@ -121,4 +124,5 @@ else:
         QPainter,
         QBrush,
         QPen,
+        QCursor,
     )
