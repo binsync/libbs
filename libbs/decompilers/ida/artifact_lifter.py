@@ -1,6 +1,7 @@
 import logging
 
 from libbs.api import ArtifactLifter
+from libbs.artifacts import Segment
 
 l = logging.getLogger(name=__name__)
 

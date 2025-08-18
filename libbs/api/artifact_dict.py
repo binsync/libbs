@@ -3,7 +3,7 @@ import logging
 
 from libbs.artifacts import (
     Artifact, Comment, Enum, FunctionHeader, Function, FunctionArgument,
-    GlobalVariable, Patch, StackVariable, Struct, StructMember, Typedef
+    GlobalVariable, Patch, Segment, StackVariable, Struct, StructMember, Typedef
 )
 
 if typing.TYPE_CHECKING:
@@ -47,7 +47,8 @@ class ArtifactDict(dict):
             Enum: (self._deci._set_enum, self._deci._get_enum, self._deci._enums, self._deci._del_enum),
             Typedef: (self._deci._set_typedef, self._deci._get_typedef, self._deci._typedefs, self._deci._del_typedef),
             Comment: (self._deci._set_comment, self._deci._get_comment, self._deci._comments, self._deci._del_comment),
-            Patch: (self._deci._set_patch, self._deci._get_patch, self._deci._patches, self._deci._del_patch)
+            Patch: (self._deci._set_patch, self._deci._get_patch, self._deci._patches, self._deci._del_patch),
+            Segment: (self._deci._set_segment, self._deci._get_segment, self._deci._segments, self._deci._del_segment)
         }
 
         functions = self._art_function.get(artifact_cls, None)
@@ -125,6 +126,8 @@ class ArtifactDict(dict):
         if isinstance(art, Struct):
             self._artifact_remover(key)
             self._deci.struct_changed(art, deleted=True)
+        else:
+            self._artifact_remover(key)
 
     def __iter__(self):
         return iter(self._lifted_art_lister())

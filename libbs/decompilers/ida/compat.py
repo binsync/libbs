@@ -35,7 +35,7 @@ import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
 import libbs
 from libbs.artifacts import (
     Struct, FunctionHeader, FunctionArgument, StackVariable, Function, GlobalVariable, Enum, Artifact, Context, Typedef,
-    StructMember
+    StructMember, Segment
 )
 
 from .artifact_lifter import IDAArtifactLifter
@@ -1715,6 +1715,94 @@ def get_decompiler_version() -> typing.Optional[Version]:
         return None
 
     return vers
+
+
+#
+# Segment Management
+#
+
+@execute_write
+def set_segment(segment: Segment) -> bool:
+    """
+    Creates or updates a segment in IDA Pro.
+    """
+    if not segment.name or segment.start_addr is None or segment.end_addr is None:
+        return False
+    
+    # Check if segment already exists
+    existing_seg = ida_segment.get_segm_by_name(segment.name)
+    if existing_seg is not None:
+        # TODO: maybe we can do this more efficiently?
+        # delete the segment
+        del_seg = del_segment(segment.name)
+        if not del_seg:
+            _l.warning(f"Failed to delete existing segment {segment.name} before updating it.")
+            return False
+
+    # Create new segment
+    seg = ida_segment.segment_t()
+    seg.start_ea = segment.start_addr
+    seg.end_ea = segment.end_addr
+    seg.sel = idaapi.setup_selector(0)
+
+    # Add the segment
+    result = ida_segment.add_segm(seg.sel, segment.start_addr, segment.end_addr, segment.name, "DATA")
+    if result:
+        # Set segment name explicitly
+        new_seg = ida_segment.get_segm_by_name(segment.name)
+        if new_seg is None:
+            new_seg = ida_segment.getseg(segment.start_addr)
+        if new_seg is not None:
+            ida_segment.set_segm_name(new_seg, segment.name)
+    return result
+
+
+def segment(name: str) -> typing.Optional[Segment]:
+    """
+    Gets a segment by name.
+    """
+    seg = ida_segment.get_segm_by_name(name)
+    if seg is None:
+        return None
+    
+    # Convert IDA segment to LibBS Segment
+    return Segment(
+        name=name,
+        start_addr=seg.start_ea,
+        end_addr=seg.end_ea,
+        permissions=None  # TODO: extract permissions if needed
+    )
+
+
+def segments() -> typing.Dict[str, Segment]:
+    """
+    Returns all segments in the binary.
+    """
+    segs = {}
+    for seg_addr in idautils.Segments():
+        seg = ida_segment.getseg(seg_addr)
+        if seg is not None:
+            seg_name = ida_segment.get_segm_name(seg)
+            if seg_name:
+                segs[seg_name] = Segment(
+                    name=seg_name,
+                    start_addr=seg.start_ea,
+                    end_addr=seg.end_ea,
+                    permissions=None  # TODO: extract permissions if needed
+                )
+    return segs
+
+
+@execute_write  
+def del_segment(name: str) -> bool:
+    """
+    Deletes a segment by name.
+    """
+    seg = ida_segment.get_segm_by_name(name)
+    if seg is None:
+        return False
+    
+    return ida_segment.del_segm(seg.start_ea, ida_segment.SEGMOD_KILL)
 
 
 def view_to_bs_context(view, get_var=True, action: str = Context.ACT_UNKNOWN) -> typing.Optional[Context]:

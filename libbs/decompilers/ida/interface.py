@@ -6,7 +6,7 @@ import libbs
 from libbs.api.decompiler_interface import DecompilerInterface
 from libbs.artifacts import (
     StackVariable, Function, FunctionHeader, Struct, Comment, GlobalVariable, Enum, Patch, Artifact, Decompilation,
-    Context, Typedef
+    Context, Typedef, Segment
 )
 from libbs.api.decompiler_interface import requires_decompilation
 from . import compat
@@ -430,6 +430,19 @@ class IDAInterface(DecompilerInterface):
     def _comments(self) -> Dict[int, Comment]:
         # TODO: implement me!
         return {}
+
+    # segments
+    def _set_segment(self, segment: Segment, **kwargs) -> bool:
+        return compat.set_segment(segment)
+
+    def _get_segment(self, name) -> Optional[Segment]:
+        return compat.segment(name)
+
+    def _del_segment(self, name) -> bool:
+        return compat.del_segment(name)
+
+    def _segments(self) -> Dict[str, Segment]:
+        return compat.segments()
 
     # others...
     def _set_function_header(self, fheader: FunctionHeader, **kwargs) -> bool:
