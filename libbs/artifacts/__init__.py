@@ -10,6 +10,7 @@ from .enum import Enum
 from .func import Function, FunctionHeader, FunctionArgument
 from .global_variable import GlobalVariable
 from .patch import Patch
+from .segment import Segment
 from .stack_variable import StackVariable
 from .struct import Struct, StructMember
 from .context import Context
@@ -29,6 +30,7 @@ ART_NAME_TO_CLS = {
     Decompilation.__name__: Decompilation,
     Context.__name__: Context,
     Typedef.__name__: Typedef,
+    Segment.__name__: Segment,
 }
 
 ALL_ARTIFACTS = list(ART_NAME_TO_CLS.values())

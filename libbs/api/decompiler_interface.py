@@ -18,7 +18,7 @@ from libbs.configuration import LibbsConfig
 from libbs.artifacts import (
     Artifact,
     Function, FunctionHeader, StackVariable,
-    Comment, GlobalVariable, Patch,
+    Comment, GlobalVariable, Patch, Segment,
     Enum, Struct, FunctionArgument, Context, Decompilation, Typedef
 )
 from libbs.decompilers import SUPPORTED_DECOMPILERS, ANGR_DECOMPILER, \
@@ -107,6 +107,7 @@ class DecompilerInterface:
         self.comments = ArtifactDict(Comment, self, error_on_duplicate=error_on_artifact_duplicates)
         self.patches = ArtifactDict(Patch, self, error_on_duplicate=error_on_artifact_duplicates)
         self.global_vars = ArtifactDict(GlobalVariable, self, error_on_duplicate=error_on_artifact_duplicates)
+        self.segments = ArtifactDict(Segment, self, error_on_duplicate=error_on_artifact_duplicates)
         self.structs = ArtifactDict(Struct, self, error_on_duplicate=error_on_artifact_duplicates, scopable=True)
         self.enums = ArtifactDict(Enum, self, error_on_duplicate=error_on_artifact_duplicates, scopable=True)
         self.typedefs = ArtifactDict(Typedef, self, error_on_duplicate=error_on_artifact_duplicates, scopable=True)
@@ -677,6 +678,26 @@ class DecompilerInterface:
     def _comments(self) -> Dict[int, Comment]:
         return {}
 
+    # segments
+    def _set_segment(self, segment: Segment, **kwargs) -> bool:
+        return False
+
+    def _get_segment(self, name) -> Optional[Segment]:
+        return None
+
+    def _del_segment(self, name) -> bool:
+        return False
+
+    def _segments(self) -> Dict[str, Segment]:
+        """
+        Returns a dict of libbs.Segment that contain the name, start_addr, end_addr, and permissions of each segment.
+        Note: this does not contain the live artifacts of the Artifact, only the minimum knowledge to that the Artifact
+        exists. To get live artifacts, use the singleton function of the same name.
+
+        @return:
+        """
+        return {}
+
     # others...
     def _set_function_header(self, fheader: FunctionHeader, **kwargs) -> bool:
         return False
@@ -726,6 +747,17 @@ class DecompilerInterface:
                 callback_func(*args, **kwargs)
 
         return ctx
+
+    def segment_changed(self, segment: Segment, **kwargs) -> Segment:
+        lifted_segment = self.art_lifter.lift(segment)
+        for callback_func in self.artifact_change_callbacks[Segment]:
+            args = (lifted_segment,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
+
+        return lifted_segment
 
     def function_header_changed(self, fheader: FunctionHeader, **kwargs) -> FunctionHeader:
         lifted_fheader = self.art_lifter.lift(fheader)
@@ -854,6 +886,7 @@ class DecompilerInterface:
             Struct: self._set_struct,
             Enum: self._set_enum,
             Patch: self._set_patch,
+            Segment: self._set_segment,
             Artifact: None,
         }
 
@@ -876,7 +909,7 @@ class DecompilerInterface:
         elif isinstance(artifact, FunctionArgument):
             # TODO: add addr to function arguments
             return (artifact.offset,)
-        elif isinstance(artifact, (Struct, Enum, Typedef)):
+        elif isinstance(artifact, (Struct, Enum, Typedef, Segment)):
             return (artifact.name,)
         else:
             raise ValueError(f"Unsupported artifact type: {type(artifact)}")

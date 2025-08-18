@@ -9,7 +9,7 @@ import os
 
 from libbs.api import DecompilerInterface
 from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat, \
-    Decompilation, Function, StructMember, Typedef
+    Decompilation, Function, StructMember, Typedef, Segment
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
 from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
 
@@ -645,6 +645,81 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # verify it was added
         assert debug_type.name in ida_deci.typedefs
+        ida_deci.shutdown()
+
+    def test_ida_segment(self):
+        """
+        Test segment CRUD operations specifically for IDA Pro.
+        This tests the new segment syncing functionality.
+        """
+        ida_deci = DecompilerInterface.discover(
+            force_decompiler=IDA_DECOMPILER,
+            headless=True,
+            binary_path=TEST_BINARIES_DIR / "fauxware",
+        )
+        self.deci = ida_deci
+
+        # Get initial segments to avoid conflicts
+        initial_segments = list(ida_deci.segments.keys())
+
+        # Create a test segment
+        test_segment_name = "BSSEG"
+        test_segment = Segment(
+            name=test_segment_name,
+            # addresses
+            start_addr=0x6010c0,
+            end_addr=0x6010c0 + 0x40,
+        )
+
+        # Ensure test segment doesn't exist initially
+        assert test_segment_name not in ida_deci.segments.keys()
+
+        # Set the segment (this should create it in IDA)
+        ida_deci.segments[test_segment_name] = test_segment
+
+        # Test 2: Read the segment back
+        retrieved_segment = ida_deci.segments[test_segment_name]
+        assert retrieved_segment is not None
+        assert retrieved_segment.name == test_segment.name
+        assert retrieved_segment.start_addr == test_segment.start_addr
+        assert retrieved_segment.end_addr == test_segment.end_addr
+        # Note: permissions might not be preserved exactly in IDA, so we don't assert on them
+
+        # Test 3: List all segments (should include our new one)
+        all_segments = ida_deci.segments.keys()
+        assert test_segment_name in all_segments
+        assert len(all_segments) == len(initial_segments) + 1
+
+        # Test 4: Modify the segment
+        modified_segment = retrieved_segment.copy()
+        modified_segment.end_addr = modified_segment.end_addr + 0x40
+        ida_deci.segments[test_segment_name] = modified_segment
+
+        # Verify modification
+        updated_segment = ida_deci.segments[test_segment_name]
+        assert updated_segment.end_addr == modified_segment.end_addr
+        assert updated_segment.size == test_segment.size + 0x40
+
+        # Test 5: Test serialization of IDA segments
+        segment_toml = updated_segment.dumps()
+        loaded_segment = Segment.loads(segment_toml)
+        assert loaded_segment == updated_segment
+
+        # Test 6: Delete the segment
+        del ida_deci.segments[test_segment_name]
+
+        # Verify deletion
+        final_segments = ida_deci.segments._artifact_lister()
+        assert test_segment_name not in final_segments
+        assert len(final_segments) == len(initial_segments)
+
+        # Test 7: Try to access deleted segment (should raise KeyError)
+        try:
+            _ = ida_deci.segments[test_segment_name]
+            assert False, "Expected KeyError when accessing deleted segment"
+        except KeyError:
+            pass  # Expected behavior
+
         ida_deci.shutdown()
 
 
