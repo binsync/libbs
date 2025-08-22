@@ -54,7 +54,7 @@ class IDAWidgetWrapper(object):
 def attach_qt_widget(qt_cls, window_name: str, target_window=None, position=None, *args, **kwargs):
     wrapper = IDAWidgetWrapper(qt_cls, window_name, *args, **kwargs)
     if not wrapper.twidget:
-        _l.error(f"Failed to create widget {window_name}")
+        _l.error("Failed to create widget %s", window_name)
         return False
 
     flags = idaapi.PluginForm.WOPN_TAB | idaapi.PluginForm.WOPN_RESTORE | idaapi.PluginForm.WOPN_PERSIST

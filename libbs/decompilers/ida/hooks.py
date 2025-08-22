@@ -244,7 +244,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
                 compat.ida_to_bs_stack_offset(func_addr, mptr.soff)
             ]
         except KeyError:
-            _l.debug(f"Failed to track an internal changing stack var: {mptr.id}.")
+            _l.debug("Failed to track an internal changing stack var: %s.", mptr.id)
             return 0
 
         # find the properties of the changed stack var
@@ -275,7 +275,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
                 self.interface._deleted_artifacts[Struct].remove(struct_name)
 
         if struct_name.startswith(IDA_STACK_VAR_PREFIX) or struct_name.startswith("__"):
-            _l.info(f"Not recording change to {struct_name} since its likely an internal IDA struct.")
+            _l.info("Not recording change to %s since its likely an internal IDA struct.", struct_name)
             return 0
 
         if deleted:

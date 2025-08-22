@@ -160,28 +160,28 @@ def get_func(ea):
 def set_func_ret_type(ea, return_type_str):
     tinfo = ida_typeinf.tinfo_t()
     if not idaapi.get_tinfo(tinfo, ea):
-        _l.warning(f"Failed to get tinfo for function at {hex(ea)}")
+        _l.warning("Failed to get tinfo for function at %s", hex(ea))
         return False
 
     new_type = convert_type_str_to_ida_type(return_type_str)
     if new_type is None:
-        _l.warning(f"Failed to convert type string {return_type_str} to ida type.")
+        _l.warning("Failed to convert type string %s to ida type.", return_type_str)
         return False
 
     func_type_data = ida_typeinf.func_type_data_t()
     if not tinfo.get_func_details(func_type_data):
-        _l.warning(f"Failed to get function details for function at {hex(ea)}")
+        _l.warning("Failed to get function details for function at %s", hex(ea))
         return False
 
     func_type_data.rettype = new_type
     new_func_type = ida_typeinf.tinfo_t()
     if not new_func_type.create_func(func_type_data):
-        _l.warning(f"Failed to create new function type for function at {hex(ea)}")
+        _l.warning("Failed to create new function type for function at %s", hex(ea))
         return False
 
     # Apply the new function type to the function
     if not idaapi.apply_tinfo(ea, new_func_type, idaapi.TINFO_DEFINITE):
-        _l.warning(f"Failed to apply new function type for function at {hex(ea)}")
+        _l.warning("Failed to apply new function type for function at %s", hex(ea))
         return False
 
     return True
@@ -431,7 +431,7 @@ def functions():
 def function(addr, decompiler_available=True, ida_code_view=None, **kwargs):
     ida_func = ida_funcs.get_func(addr)
     if ida_func is None:
-        _l.warning(f"IDA function does not exist for {hex(addr)}.")
+        _l.warning("IDA function does not exist for %s.", hex(addr))
         return None
 
     func_addr = ida_func.start_ea
@@ -445,7 +445,7 @@ def function(addr, decompiler_available=True, ida_code_view=None, **kwargs):
 
     def _get_func_info(code_view):
         if code_view is None:
-            _l.warning(f"IDA function {hex(func_addr)} is not decompilable")
+            _l.warning("IDA function %s is not decompilable", hex(func_addr))
             return func
 
         func_header: FunctionHeader = function_header(code_view)
@@ -550,7 +550,7 @@ def set_function_header(bs_header: libbs.artifacts.FunctionHeader, exit_on_bad_t
         new_prototype = old_prototype.replace(cur_ret_type_str, bs_header.type, 1)
         parsed_new_proto = convert_type_str_to_ida_type(new_prototype)
         if parsed_new_proto is None and exit_on_bad_type:
-            _l.warning(f"Failed to parse new prototype {new_prototype}")
+            _l.warning("Failed to parse new prototype %s", new_prototype)
             return False
 
         success = False
@@ -649,7 +649,7 @@ def bs_header_from_tif(tif, name=None, addr=None):
     proto_str_regex += "\\)"
     matches = re.findall(proto_str_regex, str(tif))
     if not matches:
-        _l.warning(f"Failed to parse a function header with header: {str(tif)}")
+        _l.warning("Failed to parse a function header with header: %s", str(tif))
         return bs_header
 
     match = matches[0]
@@ -792,12 +792,12 @@ def get_frame_info(func_addr) -> typing.Tuple[int, int]:
 
     stack_tif = get_func_stack_tif(func)
     if stack_tif is None:
-        _l.warning(f"Function {hex(func_addr)} does not have a stack frame.")
+        _l.warning("Function %s does not have a stack frame.", hex(func_addr))
         return None, None
 
     frame_size = stack_tif.get_size()
     if frame_size == 0:
-        _l.warning(f"Function {hex(func_addr)} has a stack frame size of 0.")
+        _l.warning("Function %s has a stack frame size of 0.", hex(func_addr))
         return None, None
 
     # get the last member size
@@ -805,12 +805,12 @@ def get_frame_info(func_addr) -> typing.Tuple[int, int]:
     stack_tif.get_udt_details(udt_data)
     membs = [m for m in udt_data]
     if not membs:
-        _l.warning(f"Function {hex(func_addr)} has a stack frame with no members.")
+        _l.warning("Function %s has a stack frame with no members.", hex(func_addr))
         return None, None
 
     last_member_type = membs[-1].type
     if not last_member_type:
-        _l.warning(f"Function {hex(func_addr)} has a stack frame with a member with no type.")
+        _l.warning("Function %s has a stack frame with a member with no type.", hex(func_addr))
         return None, None
 
     last_member_size = last_member_type.get_size()
@@ -858,7 +858,7 @@ def set_stack_variables(svars: list[StackVariable], decompiler_available=True, *
 
     for bs_off, bs_var in svars.items():
         if bs_off not in lvars:
-            _l.warning(f"Stack variable at offset {bs_off} not found in decompilation.")
+            _l.warning("Stack variable at offset %s not found in decompilation.", bs_off)
             continue
 
         lvar = lvars[bs_off]
@@ -877,7 +877,7 @@ def set_stack_variables(svars: list[StackVariable], decompiler_available=True, *
             if curr_ida_type and bs_var.type != curr_ida_type:
                 new_type = convert_type_str_to_ida_type(bs_var.type)
                 if new_type is None:
-                    _l.warning(f"Failed to convert type string {bs_var.type} to ida type.")
+                    _l.warning("Failed to convert type string %s to ida type.", bs_var.type)
                     continue
 
                 updated_type = ida_code_view.set_lvar_type(lvar, new_type)
@@ -970,7 +970,7 @@ def _deprecated_set_stack_vars_types(var_type_dict, ida_code_view) -> bool:
 def set_ida_comment(addr, cmt, decompiled=False):
     func = ida_funcs.get_func(addr)
     if not func:
-        _l.info(f"No function found at {addr}")
+        _l.info("No function found at %s", addr)
         return False
 
     rpt = 1
@@ -1182,7 +1182,7 @@ def set_ida_struct(struct: Struct) -> bool:
 
             type_size = type_str_to_size(member.type)
             if type_size is None:
-                _l.warning(f"Failed to get size for member %s of struct %s, assuming 8!", member.name, struct.name)
+                _l.warning("Failed to get size for member %s of struct %s, assuming 8!", member.name, struct.name)
                 type_size = 8
 
             member.size = type_size
@@ -1265,7 +1265,7 @@ def set_ida_struct_member_types(bs_struct: Struct):
 
         member_tif = convert_type_str_to_ida_type(bs_member.type)
         if member_tif is None:
-            _l.warning(f"Failed to convert type %s for struct member %s", bs_member.type, bs_member.name)
+            _l.warning("Failed to convert type %s for struct member %s", bs_member.type, bs_member.name)
             continue
 
         if member_tif != udt_memb.type:
@@ -1370,7 +1370,7 @@ def _deprecated_get_enum_mmebers(_enum_id, max_size=100) -> typing.Dict[str, int
 
         member = idc.get_next_enum_member(_enum_id, member, 0)
     else:
-        _l.critical(f"IDA failed to iterate all enum members for enum %s", _enum_id)
+        _l.critical("IDA failed to iterate all enum members for enum %s", _enum_id)
 
     return enum_members
 
@@ -1388,19 +1388,19 @@ def get_enum_members(_enum: typing.Union["ida_typeinf.tinfo_t", int], max_size=1
     enum_tif: "ida_typeinf.tinfo_t" = _enum
     ei = ida_typeinf.enum_type_data_t()
     if not enum_tif.get_enum_details(ei):
-        _l.error(f"IDA failed to get enum details for %s", enum_tif)
+        _l.error("IDA failed to get enum details for %s", enum_tif)
         return {}
 
     enum_members = {}
     for e_memb in ei:
         val = e_memb.value
         if val == -1:
-            _l.warning(f"IDA failed to get enum member value for %s", e_memb)
+            _l.warning("IDA failed to get enum member value for %s", e_memb)
             break
 
         name = e_memb.name
         if name is None:
-            _l.warning(f"IDA failed to get enum member name for %s", e_memb)
+            _l.warning("IDA failed to get enum member name for %s", e_memb)
             break
 
         enum_members[name] = val
@@ -1445,7 +1445,7 @@ def set_enum(bs_enum: Enum):
     enum_id = idc.add_enum(ords, bs_enum.name, 0)
 
     if enum_id is None:
-        _l.warning(f"IDA failed to create a new enum with {bs_enum.name}")
+        _l.warning("IDA failed to create a new enum with %s", bs_enum.name)
         return False
 
     for member_name, value in bs_enum.members.items():
@@ -1520,12 +1520,12 @@ def make_typedef_tif(name, type_str):
 def set_typedef(bs_typedef: Typedef):
     type_tif = convert_type_str_to_ida_type(bs_typedef.type)
     if type_tif is None:
-        _l.critical(f"Attempted to set a typedef with an invalid type: %s (does not exist)", bs_typedef.name)
+        _l.critical("Attempted to set a typedef with an invalid type: %s (does not exist)", bs_typedef.name)
         return False
 
     typedef_tif = make_typedef_tif(bs_typedef.name, bs_typedef.type)
     if typedef_tif is None:
-        _l.critical(f"Failed to create a typedef name=%s type=%s", bs_typedef.name, bs_typedef.type)
+        _l.critical("Failed to create a typedef name=%s type=%s", bs_typedef.name, bs_typedef.type)
         return False
 
     typedef_tif.set_named_type(idaapi.get_idati(), bs_typedef.name, ida_typeinf.NTF_TYPE)
@@ -1736,7 +1736,7 @@ def set_segment(segment: Segment) -> bool:
         # delete the segment
         del_seg = del_segment(segment.name)
         if not del_seg:
-            _l.warning(f"Failed to delete existing segment {segment.name} before updating it.")
+            _l.warning("Failed to delete existing segment %s before updating it.", segment.name)
             return False
 
     # Create new segment
