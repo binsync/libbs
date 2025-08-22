@@ -110,8 +110,10 @@ class Artifact:
 
     def dumps(self, fmt=ArtifactFormat.TOML) -> str:
         dict_data = self.__getstate__()
-        # encode the artifact type
-        dict_data.update({self.ART_TYPE_STR: self.__class__.__name__})
+        # encode the artifact type only for JSON format
+        if fmt == ArtifactFormat.JSON:
+            dict_data.update({self.ART_TYPE_STR: self.__class__.__name__})
+        
         if fmt == ArtifactFormat.TOML:
             return toml.dumps(dict_data, encoder=TomlHexEncoder())
         elif fmt == ArtifactFormat.JSON:
