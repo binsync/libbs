@@ -24,7 +24,7 @@ def connect_to_bridge(connection_timeout=20) -> Optional[ghidra_bridge.GhidraBri
                 namespace=globals(), interactive_mode=True, response_timeout=30
             )
         except ConnectionError as e:
-            _l.debug(f"Failed to connect to GhidraBridge: {e}")
+            _l.debug("Failed to connect to GhidraBridge: %s", e)
             time.sleep(1)
 
         if bridge is not None:

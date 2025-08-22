@@ -47,7 +47,7 @@ class BSConfig:
             with open(self.save_location, "w") as fp:
                 toml.dump(dump_dict, fp)
 
-        _l.debug(f"Saved config to %s", self.save_location)
+        _l.debug("Saved config to %s", self.save_location)
         return True
 
     def load(self):

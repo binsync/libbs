@@ -237,7 +237,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         gfuncs = self.__fast_function(lowered_addr)
         gfunc = gfuncs[0] if gfuncs else None
         if gfunc is None:
-            _l.error(f"Func does not exist at {lowered_addr}")
+            _l.error("Func does not exist at %s", lowered_addr)
 
         bs_func = self._gfunc_to_bsfunc(gfunc)
         lifted_func = self.art_lifter.lift(bs_func)
@@ -405,7 +405,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             )
 
         if not funcs:
-            _l.warning(f"Failed to get any functions from Ghidra. Did something break?")
+            _l.warning("Failed to get any functions from Ghidra. Did something break?")
 
         return funcs
 
@@ -1024,7 +1024,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         #    parsed_type = self._headless_lookup_struct(typestr)
 
         if parsed_type is None:
-            _l.warning(f"Failed to parse type string: {typestr}")
+            _l.warning("Failed to parse type string: %s", typestr)
 
         return parsed_type
 

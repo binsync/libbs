@@ -349,7 +349,7 @@ class DecompilerInterface:
         if lowered_addr in func_by_addr:
             func = func_by_addr[lowered_addr]
         else:
-            _l.debug(f"Address is not a function start, searching for function...")
+            _l.debug("Address is not a function start, searching for function...")
             for func_addr, _func in sorted_funcs:
                 if _func.addr <= lowered_addr < (_func.addr + _func.size):
                     func = _func
@@ -895,7 +895,7 @@ class DecompilerInterface:
 
         setter = set_map.get(type(artifact), None)
         if setter is None:
-            _l.critical(f"Unsupported object is attempting to be set, please check your object: {artifact}")
+            _l.critical("Unsupported object is attempting to be set, please check your object: %s", artifact)
             return False
 
         return setter(artifact, **kwargs)

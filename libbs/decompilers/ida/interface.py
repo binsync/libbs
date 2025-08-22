@@ -342,7 +342,7 @@ class IDAInterface(DecompilerInterface):
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
         data_changed = False
         if (self.dec_version < Version("8.3")) and "gcc_va_list" in struct.name:
-            _l.critical(f"Syncing the struct {struct.name} in IDA Pro 8.2 <= will cause a crash. Skipping...")
+            _l.critical("Syncing the struct %s in IDA Pro 8.2 <= will cause a crash. Skipping...", struct.name)
             return False
 
         if header:

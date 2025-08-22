@@ -222,7 +222,7 @@ class BinjaInterface(DecompilerInterface):
             return None
 
         if len(funcs) > 1:
-            l.warning(f"More than one function contains the the address {addr}")
+            l.warning("More than one function contains the the address %s", addr)
 
         bn_func = funcs[0]
         return self._get_function(bn_func.start)
@@ -446,7 +446,7 @@ class BinjaInterface(DecompilerInterface):
                             bn_func.create_user_stack_var(bn_offset, bs_svar_type, svar.name)
                             bn_func.create_auto_stack_var(bn_offset, bs_svar_type, svar.name)
                         except Exception as e:
-                            l.warning(f"BinSync could not sync stack variable at offset {bn_offset}: {e}")
+                            l.warning("BinSync could not sync stack variable at offset %s: %s", bn_offset, e)
 
                     updates |= True
 
@@ -587,15 +587,15 @@ class BinjaInterface(DecompilerInterface):
 
     # patches
     def _set_patch(self, patch: Patch, **kwargs) -> bool:
-        l.warning(f"Patch setting is unimplemented in Binja")
+        l.warning("Patch setting is unimplemented in Binja")
         return False
 
     def _get_patch(self, addr) -> Optional[Patch]:
-        l.warning(f"Patch getting is unimplemented in Binja")
+        l.warning("Patch getting is unimplemented in Binja")
         return None
 
     def _patches(self) -> Dict[int, Patch]:
-        l.warning(f"Patch listing is unimplemented in Binja")
+        l.warning("Patch listing is unimplemented in Binja")
         return {}
 
     # comments

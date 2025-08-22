@@ -155,7 +155,7 @@ class AngrInterface(DecompilerInterface):
         try:
             decomp = self.decompile_function(func)
         except Exception as e:
-            l.warning(f"Failed to decompile {func} because {e}")
+            l.warning("Failed to decompile %s because %s", func, e)
             decomp = None
 
         return decomp
@@ -263,7 +263,7 @@ class AngrInterface(DecompilerInterface):
         try:
             decompilation = self.decompile_function(_func).codegen
         except Exception as e:
-            l.warning(f"Failed to decompile function {hex(_func.addr)}: {e}")
+            l.warning("Failed to decompile function %s: %s", hex(_func.addr), e)
             decompilation = None
 
         if not decompilation:

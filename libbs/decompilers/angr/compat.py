@@ -217,7 +217,7 @@ def attach_qt_widget(workspace: Workspace, qt_cls, window_name: str, default_doc
 
     wrapper = AngrWidgetWrapper(workspace, default_docking_position, qt_cls, window_name, *args, **kwargs)
     if not wrapper.widget:
-        l.error(f"Failed to create widget {window_name}")
+        l.error("Failed to create widget %s", window_name)
         return False
 
     workspace.add_view(wrapper)

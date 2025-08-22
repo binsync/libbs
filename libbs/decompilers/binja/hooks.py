@@ -76,7 +76,7 @@ class DataMonitor(BinaryDataNotification):
 
         # service requested function only
         if self._changing_func_pre_change is not None and self._changing_func_addr == func_.start:
-            l.debug(f"Update on {hex(self._changing_func_addr)} being processed...")
+            l.debug("Update on %s being processed...", hex(self._changing_func_addr))
             self._changing_func_addr = None
 
             # convert to libbs Function type for diffing
@@ -167,21 +167,21 @@ class DataMonitor(BinaryDataNotification):
 
     def function_update_requested(self, view, func):
         if self._changing_func_addr is None:
-            l.debug(f"Update on {func} requested...")
+            l.debug("Update on %s requested...", func)
             self._changing_func_addr = func.start
             self._changing_func_pre_change = BinjaInterface.bn_func_to_bs(func)
     
     def symbol_updated(self, view, sym):
-        l.debug(f"Symbol update Requested on {sym}...")
+        l.debug("Symbol update Requested on %s...", sym)
         if sym.type == SymbolType.FunctionSymbol:
-            l.debug(f"   -> Function Symbol")
+            l.debug("   -> Function Symbol")
             func = view.get_function_at(sym.address)
             bs_func = BinjaInterface.bn_func_to_bs(func)
             self._interface.function_header_changed(
                 FunctionHeader(bs_func.name, bs_func.addr)
             )
         elif sym.type == SymbolType.DataSymbol:
-            l.debug(f"   -> Data Symbol")
+            l.debug("   -> Data Symbol")
             var: binaryninja.DataVariable = view.get_data_var_at(sym.address)
             self._interface.global_variable_changed(
                 GlobalVariable(int(sym.address), str(var.name), type_=str(var.type), size=int(var.type.width))
@@ -191,7 +191,7 @@ class DataMonitor(BinaryDataNotification):
             pass
 
     def type_defined(self, view, name, type_):
-        l.debug(f"Type Defined: {name} {type_}")
+        l.debug("Type Defined: %s %s", name, type_)
         name = str(name)
         if isinstance(type_, StructureType):
             bs_struct = BinjaInterface.bn_struct_to_bs(name, type_)
