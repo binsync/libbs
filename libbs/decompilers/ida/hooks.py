@@ -24,6 +24,7 @@ import functools
 import logging
 from typing import TYPE_CHECKING
 from packaging.version import Version
+import datetime
 
 from .compat import IDA_IS_INTERACTIVE
 
@@ -619,7 +620,7 @@ if IDA_IS_INTERACTIVE:
             if self.interface.force_click_recording or self.interface.artifact_watchers_started:
                 # drop ctx for speed when the artifact watches have not been officially started, and we are not clicking
                 if (self.interface.force_click_recording and not self.interface.artifact_watchers_started) and \
-                        action_type != Context.ACT_MOUSE_CLICK:
+                        action_type == Context.ACT_MOUSE_MOVE:
                     return
 
                 ctx = compat.view_to_bs_context(view, action=action_type)
@@ -638,6 +639,7 @@ if IDA_IS_INTERACTIVE:
                         ctx.addr = ctx.func_addr
 
                 ctx = self.interface.art_lifter.lift(ctx)
+                ctx.last_change = datetime.datetime.now(tz=datetime.timezone.utc)
                 self.interface._gui_active_context = ctx
 
                 self.interface.gui_context_changed(ctx)
