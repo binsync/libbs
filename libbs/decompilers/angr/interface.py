@@ -61,6 +61,10 @@ class AngrInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
+        for seg in self.main_instance.project.loader.main_object.segments:
+            return seg.min_addr
+
+        # fallback
         return self.main_instance.project.loader.main_object.mapped_base
 
     @property
