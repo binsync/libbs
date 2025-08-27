@@ -38,6 +38,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         project_location: Optional[Union[str, Path]] = None,
         project_name: Optional[str] = None,
         program_name: Optional[str] = None,
+        language: Optional[str] = None,
         **kwargs
     ):
         self.loop_on_plugin = loop_on_plugin
@@ -51,6 +52,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._program_name = program_name
         self._project = None
         self._program = None
+        self._language = language
 
         # ui-only attributes
         self._data_monitor = None
@@ -117,6 +119,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
             project_location=self._headless_project_location,
             project_name=self._headless_project_name,
             program_name=self._program_name,
+            language=self._language,
         )
         if flat_api is None:
             raise RuntimeError("Failed to open program with Pyhidra")
