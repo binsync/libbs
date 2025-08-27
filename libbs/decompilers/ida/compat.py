@@ -87,24 +87,49 @@ def is_mainthread():
     return isinstance(threading.current_thread(), threading._MainThread)
 
 
-def execute_write(f):
-    @wraps(f)
-    def _execute_write(*args, **kwargs):
+def execute_sync(func, sync_type):
+    """
+    Synchronize with the disassembler for safe database access.
+    Modified from https://github.com/vrtadmin/FIRST-plugin-ida
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
         output = [None]
 
+        #
+        # this inline function definition is technically what will execute
+        # in the context of the main thread. we use this thunk to capture
+        # any output the function may want to return to the user.
+        #
+
         def thunk():
-            output[0] = f(*args, **kwargs)
+            output[0] = func(*args, **kwargs)
             return 1
 
         if is_mainthread():
             thunk()
         else:
-            idaapi.execute_sync(thunk, idaapi.MFF_WRITE)
+            idaapi.execute_sync(thunk, sync_type)
 
         # return the output of the synchronized execution
         return output[0]
+    return wrapper
 
-    return _execute_write
+# TODO: a while ago we moved away from using read, but that was wrong. We should refactor the below code at some point
+#    to use the correct sync type instead of always execute_write
+def execute_read(func):
+    return execute_sync(func, idaapi.MFF_READ)
+
+
+def execute_write(func):
+    return execute_sync(func, idaapi.MFF_WRITE)
+
+
+def execute_ui(func):
+    return execute_sync(func, idaapi.MFF_FAST)
+
+
 
 #
 # Decompilation
@@ -1535,11 +1560,11 @@ def set_typedef(bs_typedef: Typedef):
 #   IDA GUI r/w
 #
 
-@execute_write
+@execute_read
 def get_image_base():
     return idaapi.get_imagebase()
 
-
+@execute_read
 def get_first_segment_base():
     """
     Get the virtual address of the first segment.
