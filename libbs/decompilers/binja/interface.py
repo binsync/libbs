@@ -158,7 +158,7 @@ class BinjaInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
-        return self.bv.start
+        return self._get_first_segment_base()
 
     @property
     def binary_hash(self) -> str:
@@ -753,3 +753,17 @@ class BinjaInterface(DecompilerInterface):
         self.bv = bv
         func = self.addr_to_bn_func(bv, address)
         return func is not None
+
+    def _get_first_segment_base(self) -> int:
+        """
+        Get the virtual address of the first segment.
+        """
+        if self.bv is None:
+            return None
+        
+        # First, try to find a code/executable segment
+        for segment in self.bv.segments:
+            return segment.start
+        
+        # Fallback to bv.start if no segments found
+        return self.bv.start

@@ -1,5 +1,6 @@
 import json
 import logging
+import subprocess
 import tempfile
 import time
 import unittest
@@ -26,6 +27,29 @@ assert TEST_BINARIES_DIR.exists(), f"Test binaries dir {TEST_BINARIES_DIR} does 
 
 
 _l = logging.getLogger(__name__)
+
+def custom_load_ida(binary_path: Path, extra_args: list[str] | None = None, delete_old_idb=True) -> None:
+    import ida
+    idat_path = Path(ida.__file__).parent / "bin/idat64"
+    assert idat_path.exists(), "IDA executable not found, this cannot run"
+
+    # first, assure no idb currently reside there
+    idb_path = binary_path.with_name(binary_path.name + ".i64")
+    if delete_old_idb:
+        if idb_path.exists():
+            idb_path.unlink()
+
+    # Command: idat64 -A -B /path/to/binary [extra args]
+    # construct the command
+    cmd = [str(idat_path), "-A"]
+    if extra_args:
+        cmd.extend(extra_args)
+    cmd.extend(["-B", str(binary_path)])
+
+    subprocess.check_call(cmd)
+
+    # verify the idb was created
+    assert idb_path.exists(), "IDA database was not created"
 
 
 class TestHeadlessInterfaces(unittest.TestCase):
@@ -721,6 +745,50 @@ class TestHeadlessInterfaces(unittest.TestCase):
             pass  # Expected behavior
 
         ida_deci.shutdown()
+
+    def test_firmware_base_addrs(self):
+        binary_path = TEST_BINARIES_DIR / "i2c_master_read-arduino_mzero.hex"
+
+        # Load an armel binary in the hex format. Because IDA 9 (the version we are stuck on) does not support
+        # loading armel binaries in headless mode, we first need to load it with idat64 and save it.
+        custom_load_ida(binary_path, extra_args=["-pARM"], delete_old_idb=True)
+
+        # function for setting at already known lifted addr
+        my_func = Function(addr=0x214, name="my_func")
+
+        # In https://github.com/binsync/binsync/issues/425 we found that IDA and Binja would report different
+        # base addresses (0 and non-0) for the same firmware, along with static-looking addresses for this firmware
+        # Now, this testcase should verify that both IDA and Binja report the same base address (0x4000).
+        for dec_name in [IDA_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER]:
+            deci = DecompilerInterface.discover(
+                force_decompiler=dec_name,
+                headless=True,
+                binary_path=binary_path,
+                language="ARM:LE:32:v7"
+            )
+            self.deci = deci
+            assert deci.binary_base_addr == 0x4000, f"Unexpected base addr {hex(deci.binary_base_addr)} for {dec_name}"
+
+            # check a few function addresses to be sure, Ghidra does no identify the same functions, so we choose alternates that overla[
+            expected_func_addrs = {0x40DC, 0x41d8, 0x4214}
+            for lower_addr in expected_func_addrs:
+                if dec_name == GHIDRA_DECOMPILER and lower_addr == 0x40DC:
+                    # skip this one, Ghidra does not identify it for some reason
+                    continue
+
+                lifted_addr = deci.art_lifter.lift_addr(lower_addr)
+                try:
+                    exists = self.deci.functions[lifted_addr]  # verify it exists
+                except KeyError:
+                    exists = None
+                assert exists is not None, f"Failed to find function at {hex(lower_addr)} in {dec_name}"
+
+            # attempt to set a function at a known lifted addr
+            deci.functions[my_func.addr] = my_func
+            assert deci.functions[my_func.addr].name == my_func.name
+
+            deci.shutdown()
+
 
 
 if __name__ == "__main__":

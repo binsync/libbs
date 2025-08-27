@@ -69,6 +69,7 @@ class DecompilerInterface:
         thread_artifact_callbacks: bool = True,
         force_click_recording: bool = False,
         track_mouse_moves: bool = False,
+        **kwargs,
     ):
         self.name = name
         self.art_lifter = artifact_lifter
