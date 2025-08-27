@@ -912,21 +912,14 @@ class GhidraDecompilerInterface(DecompilerInterface):
     
     def _get_first_segment_base(self) -> int:
         """
-        Get the virtual address of the first segment or code segment.
-        This provides the base address of the actual code, not just the image base.
+        Get the virtual address of the first segment.
         """
         memory = self.currentProgram.getMemory()
         
         # First, try to find an executable segment (typically the code segment)
         for block in memory.getBlocks():
-            if block.isExecute():
-                return int(block.getStart().getOffset())
-        
-        # If no executable segment found, return the first segment's address
-        first_block = memory.getBlocks()[0] if memory.getBlocks() else None
-        if first_block is not None:
-            return int(first_block.getStart().getOffset())
-        
+            return int(block.getStart().getOffset())
+
         # Fallback to image base if no memory blocks found
         return int(self.currentProgram.getImageBase().getOffset())
 
