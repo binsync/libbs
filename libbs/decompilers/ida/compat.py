@@ -1540,6 +1540,29 @@ def get_image_base():
     return idaapi.get_imagebase()
 
 
+def get_first_segment_base():
+    """
+    Get the virtual address of the first segment or code segment.
+    This provides the base address of the actual code, not just the image base.
+    """
+    # First, try to find the code segment specifically
+    for seg_addr in idautils.Segments():
+        seg = ida_segment.getseg(seg_addr)
+        if seg is not None:
+            seg_name = ida_segment.get_segm_name(seg)
+            # Check if this is a code segment
+            if seg.type == ida_segment.SEG_CODE or seg_name in [".text", "__text"]:
+                return seg.start_ea
+    
+    # If no explicit code segment found, return the first segment's address
+    first_seg_addr = next(iter(idautils.Segments()), None)
+    if first_seg_addr is not None:
+        return first_seg_addr
+    
+    # Fallback to image base if no segments found
+    return idaapi.get_imagebase()
+
+
 @execute_write
 def acquire_pseudocode_vdui(addr):
     """

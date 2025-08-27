@@ -134,7 +134,7 @@ class IDAInterface(DecompilerInterface):
 
     @property
     def binary_base_addr(self) -> int:
-        return compat.get_image_base()
+        return compat.get_first_segment_base()
 
     @property
     def binary_hash(self) -> str:
