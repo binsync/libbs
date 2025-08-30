@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import Dict
 import logging
 
-from .interface import BinjaInterface, BN_AVAILABLE
+from .interface import BinjaInterface, BN_AVAILABLE, VALID_FUNC_SYM_TYPES
 if BN_AVAILABLE:
     import binaryninja
     from binaryninja.types import StructureType, EnumerationType
@@ -173,7 +173,7 @@ class DataMonitor(BinaryDataNotification):
     
     def symbol_updated(self, view, sym):
         l.debug("Symbol update Requested on %s...", sym)
-        if sym.type == SymbolType.FunctionSymbol:
+        if sym.type in VALID_FUNC_SYM_TYPES:
             l.debug("   -> Function Symbol")
             func = view.get_function_at(sym.address)
             bs_func = BinjaInterface.bn_func_to_bs(func)

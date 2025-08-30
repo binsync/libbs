@@ -43,6 +43,7 @@ l = logging.getLogger(__name__)
 # Helpers
 #
 
+VALID_FUNC_SYM_TYPES = {SymbolType.FunctionSymbol, SymbolType.LibraryFunctionSymbol}
 
 def background_and_wait(func):
     @functools.wraps(func)
@@ -351,7 +352,7 @@ class BinjaInterface(DecompilerInterface):
     def _functions(self) -> Dict[int, Function]:
         funcs = {}
         for bn_func in self.bv.functions:
-            if bn_func.symbol.type != SymbolType.FunctionSymbol:
+            if not bn_func.symbol.type in VALID_FUNC_SYM_TYPES:
                 continue
 
             funcs[bn_func.start] = Function(bn_func.start, bn_func.total_bytes)
@@ -638,7 +639,7 @@ class BinjaInterface(DecompilerInterface):
         # search every single function for comments
         comments = {}
         for bn_func in self.bv.functions:
-            if bn_func.symbol.type != SymbolType.FunctionSymbol:
+            if not bn_func.symbol.type in VALID_FUNC_SYM_TYPES:
                 continue
 
             comments.update(bn_func.comments)
