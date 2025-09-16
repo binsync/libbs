@@ -97,13 +97,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
             self._project = None
             self._program = None
 
-        if self._bridge is not None:
-            try:
-                shutdown_bridge(self._bridge)
-            except Exception:
-                pass
-            self._bridge = None
-
     def _init_headless_components(self, *args, **kwargs):
         if self._program is not None:
             # We were already provided a program object as part of the instantiation, so just use it
@@ -1061,14 +1054,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return None
 
         return gtype
-
-    @staticmethod
-    def isinstance(obj, cls):
-        """
-        A proxy self.isinstance function that can handle BridgedObjects. This is necessary because the `self.isinstance` function
-        in the remote namespace will not recognize BridgedObjects as instances of classes in the local namespace.
-        """
-        return obj._bridge_isinstance(cls) if isinstance(obj, BridgedObject) else isinstance(obj, cls)
 
     #
     # Internal functions that are very dangerous
