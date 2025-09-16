@@ -14,8 +14,8 @@ def install():
     LibBSPluginInstaller().install()
 
 
-def start_server(host="localhost", port=18861, decompiler=None, binary_path=None, headless=False):
-    """Start the DecompilerServer (RPyC-based)"""
+def start_server(socket_path=None, decompiler=None, binary_path=None, headless=False):
+    """Start the DecompilerServer (AF_UNIX socket-based)"""
     try:
         from libbs.api.decompiler_server import DecompilerServer
         from libbs.api.decompiler_interface import DecompilerInterface
@@ -33,13 +33,16 @@ def start_server(host="localhost", port=18861, decompiler=None, binary_path=None
             interface_kwargs['headless'] = headless
         
         # Create and start server
-        _l.info(f"Starting RPyC DecompilerServer on {host}:{port}")
+        if socket_path:
+            _l.info(f"Starting AF_UNIX DecompilerServer on {socket_path}")
+        else:
+            _l.info("Starting AF_UNIX DecompilerServer with auto-generated socket path")
         if interface_kwargs:
             _l.info(f"Interface options: {interface_kwargs}")
         
-        with DecompilerServer(host=host, port=port, **interface_kwargs) as server:
+        with DecompilerServer(socket_path=socket_path, **interface_kwargs) as server:
             _l.info("Server started successfully. Press Ctrl+C to stop.")
-            _l.info("Connect with: DecompilerClient.discover('rpyc://{}:{}')".format(host, port))
+            _l.info("Connect with: DecompilerClient.discover('unix://{}')".format(server.socket_path))
             try:
                 server.wait_for_shutdown()
             except KeyboardInterrupt:
@@ -47,14 +50,13 @@ def start_server(host="localhost", port=18861, decompiler=None, binary_path=None
                 
     except ImportError as e:
         _l.error(f"Failed to import required modules: {e}")
-        _l.error("Make sure RPyC is installed: pip install rpyc")
         sys.exit(1)
     except Exception as e:
         _l.error(f"Failed to start server: {e}")
         sys.exit(1)
 
 
-def test_client(server_url="rpyc://localhost:18861"):
+def test_client(server_url=None):
     """Test the DecompilerClient connection"""
     try:
         from libbs.api.decompiler_client import DecompilerClient
@@ -62,7 +64,10 @@ def test_client(server_url="rpyc://localhost:18861"):
         # Configure logging
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         
-        _l.info(f"Testing connection to RPyC DecompilerServer at {server_url}")
+        if server_url:
+            _l.info(f"Testing connection to DecompilerServer at {server_url}")
+        else:
+            _l.info("Testing connection to auto-discovered DecompilerServer")
         
         with DecompilerClient.discover(server_url=server_url) as client:
             _l.info(f"Successfully connected to {client.name} decompiler")
@@ -86,7 +91,6 @@ def test_client(server_url="rpyc://localhost:18861"):
             
     except ImportError as e:
         _l.error(f"Failed to import required modules: {e}")
-        _l.error("Make sure RPyC is installed: pip install rpyc")
         sys.exit(1)
     except Exception as e:
         _l.error(f"Client test failed: {e}")
@@ -102,9 +106,10 @@ def main():
             epilog="""
             Examples:
             libbs --install
-            libbs --server --host 0.0.0.0 --port 18861
+            libbs --server --socket-path /tmp/my_server.sock
             libbs --server --decompiler ghidra --binary-path /path/to/binary --headless
-            libbs --client --server-url rpyc://remote-server:18861
+            libbs --client --server-url unix:///tmp/libbs_server_abc123/decompiler.sock
+            libbs --client  # Auto-discover server
             """
     )
     parser.add_argument(
@@ -117,7 +122,7 @@ def main():
     )
     parser.add_argument(
         "--server", action="store_true", help="""
-        Start the DecompilerServer to expose DecompilerInterface APIs over RPyC.
+        Start the DecompilerServer to expose DecompilerInterface APIs over AF_UNIX sockets.
         """
     )
     parser.add_argument(
@@ -126,18 +131,14 @@ def main():
         """
     )
     parser.add_argument(
-        "--server-url", default="rpyc://localhost:18861", help="""
-        URL of the DecompilerServer to connect to (default: rpyc://localhost:18861).
+        "--server-url", help="""
+        URL of the DecompilerServer to connect to (e.g., unix:///tmp/server.sock). 
+        If not specified, will auto-discover running servers.
         """
     )
     parser.add_argument(
-        "--host", default="localhost", help="""
-        Host address for the DecompilerServer (default: localhost). Use 0.0.0.0 to bind to all interfaces.
-        """
-    )
-    parser.add_argument(
-        "--port", type=int, default=18861, help="""
-        Port number for the DecompilerServer (default: 18861).
+        "--socket-path", help="""
+        Path for the AF_UNIX socket (default: auto-generated in temp directory).
         """
     )
     parser.add_argument(
@@ -166,8 +167,7 @@ def main():
         if args.headless and not args.binary_path:
             parser.error("--headless requires --binary-path")
         start_server(
-            host=args.host,
-            port=args.port,
+            socket_path=args.socket_path,
             decompiler=args.decompiler,
             binary_path=args.binary_path,
             headless=args.headless

@@ -1,22 +1,135 @@
 import logging
+import socket
 import threading
 import time
+import os
+import glob
+import tempfile
 from typing import Dict, Any, Optional, List, Union, Callable
-import rpyc
+from collections import defaultdict
+import threading
 
 from libbs.artifacts import (
     Artifact, Function, Comment, Patch, GlobalVariable, 
     Struct, Enum, Typedef, Context, Decompilation
 )
+from libbs.api.decompiler_server import SocketProtocol
+from libbs.api.type_parser import CTypeParser
+from libbs.configuration import LibbsConfig
 
 _l = logging.getLogger(__name__)
 
 
+class ArtLifterProxy:
+    """
+    A proxy for the ArtifactLifter that delegates all operations to the remote server.
+    This maintains API compatibility with the local ArtifactLifter while sending
+    requests to the remote decompiler server.
+    """
+    SCOPE_DELIMITER = "::"
+    
+    def __init__(self, client: 'DecompilerClient'):
+        self.client = client
+    
+    def lift(self, artifact: Artifact):
+        """Lift an artifact using the remote decompiler"""
+        return self.client._send_request({
+            "type": "method_call", 
+            "method_name": "art_lifter.lift",
+            "args": [artifact]
+        })
+    
+    def lower(self, artifact: Artifact):
+        """Lower an artifact using the remote decompiler"""
+        return self.client._send_request({
+            "type": "method_call",
+            "method_name": "art_lifter.lower", 
+            "args": [artifact]
+        })
+    
+    def lift_addr(self, addr: int) -> int:
+        """Lift an address using the remote decompiler"""
+        return self.client._send_request({
+            "type": "method_call",
+            "method_name": "art_lifter.lift_addr",
+            "args": [addr]
+        })
+    
+    def lower_addr(self, addr: int) -> int:
+        """Lower an address using the remote decompiler"""
+        return self.client._send_request({
+            "type": "method_call",
+            "method_name": "art_lifter.lower_addr",
+            "args": [addr]
+        })
+    
+    def lift_type(self, type_str: str) -> str:
+        """Lift a type string using the remote decompiler"""
+        return self.client._send_request({
+            "type": "method_call",
+            "method_name": "art_lifter.lift_type",
+            "args": [type_str]
+        })
+    
+    def lower_type(self, type_str: str) -> str:
+        """Lower a type string using the remote decompiler"""
+        return self.client._send_request({
+            "type": "method_call",
+            "method_name": "art_lifter.lower_type",
+            "args": [type_str]
+        })
+    
+    def lift_stack_offset(self, offset: int, func_addr: int) -> int:
+        """Lift a stack offset using the remote decompiler"""
+        return self.client._send_request({
+            "type": "method_call",
+            "method_name": "art_lifter.lift_stack_offset",
+            "args": [offset, func_addr]
+        })
+    
+    def lower_stack_offset(self, offset: int, func_addr: int) -> int:
+        """Lower a stack offset using the remote decompiler"""
+        return self.client._send_request({
+            "type": "method_call",
+            "method_name": "art_lifter.lower_stack_offset",
+            "args": [offset, func_addr]
+        })
+    
+    @staticmethod
+    def parse_scoped_type(type_str: str) -> tuple[str, str | None]:
+        """
+        Parse a scoped type string into its base type and scope.
+        This is a static method that doesn't need remote decompiler access.
+        """
+        if not type_str:
+            return "", None
+
+        # check if the type is scoped
+        scope = None
+        deli = ArtLifterProxy.SCOPE_DELIMITER
+        if deli in type_str:
+            scope_parts = type_str.split(deli)
+            base_type = scope_parts[-1]
+            scope = deli.join(scope_parts[:-1])
+        else:
+            base_type = type_str
+
+        return base_type, scope
+
+    @staticmethod
+    def scoped_type_to_str(name: str, scope: str | None = None) -> str:
+        """
+        Convert a name and scope into a scoped type string.
+        This is a static method that doesn't need remote decompiler access.
+        """
+        return name if not scope else f"{scope}::{name}"
+
+
 class FastClientArtifactDict(dict):
     """
-    A fast client-side proxy for ArtifactDict that communicates with DecompilerServer via RPyC.
+    A fast client-side proxy for ArtifactDict that communicates with DecompilerServer via AF_UNIX sockets.
     
-    This class mimics the behavior of ArtifactDict but uses RPyC for bulk operations
+    This class mimics the behavior of ArtifactDict but uses sockets for bulk operations
     and maintains the same performance characteristics as the local version by using
     the _lifted_art_lister pattern.
     """
@@ -37,7 +150,35 @@ class FastClientArtifactDict(dict):
             # Cache expired, fetch from server using bulk endpoint
             try:
                 _l.debug(f"Fetching light artifacts for {self.collection_name}")
-                self._light_cache = self.client._service.get_light_artifacts(self.collection_name)
+                request = {
+                    "type": "get_light_artifacts",
+                    "collection_name": self.collection_name
+                }
+                serialized_artifacts = self.client._send_request(request)
+                
+                # Reconstruct artifacts from serialized format
+                reconstructed_artifacts = {}
+                for addr, artifact_info in serialized_artifacts.items():
+                    try:
+                        # Import the artifact class dynamically
+                        module_name = artifact_info['module']
+                        class_name = artifact_info['type']
+                        serialized_data = artifact_info['data']
+                        
+                        # Import the module and get the class
+                        module = __import__(module_name, fromlist=[class_name])
+                        artifact_class = getattr(module, class_name)
+                        
+                        # Reconstruct the artifact using its loads method
+                        artifact = artifact_class.loads(serialized_data)
+                        reconstructed_artifacts[addr] = artifact
+                        
+                    except Exception as e:
+                        _l.warning(f"Failed to reconstruct artifact at 0x{addr:x}: {e}")
+                        # Skip problematic artifacts rather than failing completely
+                        continue
+                
+                self._light_cache = reconstructed_artifacts
                 self._light_cache_timestamp = current_time
             except Exception as e:
                 _l.warning(f"Failed to fetch light artifacts for {self.collection_name}: {e}")
@@ -83,7 +224,12 @@ class FastClientArtifactDict(dict):
         
         # Key exists, get the full artifact from server
         try:
-            return self.client._service.get_full_artifact(self.collection_name, key)
+            request = {
+                "type": "get_full_artifact",
+                "collection_name": self.collection_name,
+                "key": key
+            }
+            return self.client._send_request(request)
         except Exception as e:
             if "not found" in str(e).lower():
                 raise KeyError(f"Key {key} not found in {self.collection_name}")
@@ -100,7 +246,12 @@ class FastClientArtifactDict(dict):
     def get_full(self, key):
         """Explicitly get a full artifact (with expensive operations like decompilation)"""
         try:
-            return self.client._service.get_full_artifact(self.collection_name, key)
+            request = {
+                "type": "get_full_artifact",
+                "collection_name": self.collection_name,
+                "key": key
+            }
+            return self.client._send_request(request)
         except Exception as e:
             if "not found" in str(e).lower():
                 raise KeyError(f"Key {key} not found in {self.collection_name}")
@@ -113,7 +264,7 @@ class FastClientArtifactDict(dict):
             raise ValueError(f"Expected {self.artifact_class.__name__}, got {type(value).__name__}")
         
         # Use the direct decompiler interface for setting artifacts
-        success = self.client._deci.set_artifact(value)
+        success = self.client.set_artifact(value)
         
         # Invalidate cache since we modified the collection
         self._invalidate_cache()
@@ -140,34 +291,30 @@ class FastClientArtifactDict(dict):
 
 class DecompilerClient:
     """
-    A client that connects to DecompilerServer via RPyC and provides the same interface as DecompilerInterface.
+    A client that connects to DecompilerServer via AF_UNIX sockets and provides the same interface as DecompilerInterface.
     
     This class acts as a transparent proxy to a remote DecompilerInterface, allowing users to
     write code that works identically whether using a local or remote decompiler.
     """
     
     def __init__(self, 
-                 host: str = "localhost", 
-                 port: int = 18861,
+                 socket_path: str,
                  timeout: float = 30.0):
         """
         Initialize the DecompilerClient.
         
         Args:
-            host: Server hostname or IP address
-            port: Server port number
+            socket_path: Path to the AF_UNIX socket
             timeout: Connection timeout in seconds
         """
-        self.host = host
-        self.port = port
+        self.socket_path = socket_path
         self.timeout = timeout
         
         # Connection state
-        self._conn = None
-        self._service = None
-        self._deci = None
+        self._socket = None
         self._connected = False
         self._server_info = None
+        self._socket_lock = threading.Lock()
         
         # Try to connect
         self._connect()
@@ -181,54 +328,114 @@ class DecompilerClient:
         self.enums = FastClientArtifactDict("enums", Enum, self)
         self.typedefs = FastClientArtifactDict("typedefs", Typedef, self)
         
-        _l.info(f"DecompilerClient connected to {host}:{port}")
+        # Initialize callback attributes to match DecompilerInterface
+        self.artifact_change_callbacks = defaultdict(list)
+        self.decompiler_closed_callbacks = []
+        self.decompiler_opened_callbacks = []
+        self.undo_event_callbacks = []
+        self._thread_artifact_callbacks = True
+        
+        # Create a proxy art_lifter that delegates to server
+        # art_lifter is typically used for address lifting operations
+        self.art_lifter = ArtLifterProxy(self)
+        
+        # Additional public attributes to match DecompilerInterface
+        self.type_parser = CTypeParser()  # Local type parser
+        self.artifact_write_lock = threading.Lock()  # Thread safety lock
+        self.config = LibbsConfig.update_or_make()  # Configuration object
+        self.gui_plugin = None  # GUI plugin reference
+        self.artifact_watchers_started = False  # Watcher state
+        
+        # These attributes will be fetched from server on first access
+        self._supports_undo = None
+        self._supports_type_scopes = None
+        self._qt_version = None
+        self._default_func_prefix = None
+        self._headless = None
+        self._force_click_recording = None
+        self._track_mouse_moves = None
+        
+        _l.info(f"DecompilerClient connected to {socket_path}")
     
     def _connect(self):
         """Establish connection to the server"""
         try:
-            _l.debug(f"Attempting to connect to RPyC server at {self.host}:{self.port}")
-            self._conn = rpyc.connect(
-                self.host, 
-                self.port,
-                config={
-                    'allow_public_attrs': True,
-                    'allow_pickle': True,
-                    'sync_request_timeout': self.timeout,
-                    'allow_setattr': True,
-                    'allow_delattr': True,
-                }
-            )
-            _l.debug("RPyC connection established")
+            _l.debug(f"Attempting to connect to AF_UNIX socket at {self.socket_path}")
             
-            self._service = self._conn.root
-            _l.debug("Got service root")
+            self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self._socket.settimeout(self.timeout)
+            self._socket.connect(self.socket_path)
+            
+            _l.debug("Socket connection established")
             
             # Test the connection by getting server info first
-            self._server_info = self._service.server_info()
+            self._server_info = self._send_request({"type": "server_info"})
             _l.debug(f"Got server info: {self._server_info}")
-            
-            # Now get the decompiler interface
-            self._deci = self._service.get_deci()
-            _l.debug("Got decompiler interface")
             
             self._connected = True
             
             _l.info(f"Connected to {self._server_info.get('name', 'DecompilerServer')} "
                    f"using {self._server_info.get('decompiler', 'unknown')} decompiler")
         except Exception as e:
-            import traceback
-            _l.error(f"Failed to connect to DecompilerServer at {self.host}:{self.port}: {e}")
-            _l.debug(f"Full traceback: {traceback.format_exc()}")
+            _l.error(f"Failed to connect to DecompilerServer at {self.socket_path}: {e}")
             
             # Provide helpful error messages for common issues
-            if "Connection refused" in str(e):
-                raise ConnectionError(f"Cannot connect to DecompilerServer at {self.host}:{self.port}. "
+            if "No such file or directory" in str(e):
+                raise ConnectionError(f"Cannot connect to DecompilerServer at {self.socket_path}. "
                                     f"Make sure the server is running with: libbs --server")
-            elif "not enough values to unpack" in str(e):
-                raise ConnectionError(f"RPyC protocol error. Make sure both client and server are using "
-                                    f"the same LibBS version with RPyC support.")
+            elif "Connection refused" in str(e):
+                raise ConnectionError(f"Cannot connect to DecompilerServer at {self.socket_path}. "
+                                    f"Make sure the server is running.")
             else:
                 raise ConnectionError(f"Cannot connect to DecompilerServer: {e}")
+    
+    def _send_request(self, request: Dict[str, Any]) -> Any:
+        """Send a request to the server and return the response"""
+        with self._socket_lock:
+            try:
+                SocketProtocol.send_message(self._socket, request)
+                response = SocketProtocol.recv_message(self._socket)
+                
+                # Check if response is an error
+                if isinstance(response, dict) and "error" in response:
+                    error_type = response.get("type", "Exception")
+                    error_msg = response.get("error", "Unknown error")
+                    
+                    # Try to reconstruct the original exception type
+                    if error_type == "KeyError":
+                        raise KeyError(error_msg)
+                    elif error_type == "ValueError":
+                        raise ValueError(error_msg)
+                    elif error_type == "AttributeError":
+                        raise AttributeError(error_msg)
+                    else:
+                        raise RuntimeError(f"{error_type}: {error_msg}")
+                
+                # Check if response is a serialized artifact
+                if isinstance(response, dict) and response.get("is_artifact"):
+                    try:
+                        # Reconstruct the artifact
+                        module_name = response['module']
+                        class_name = response['type']
+                        serialized_data = response['data']
+                        
+                        # Import the module and get the class
+                        module = __import__(module_name, fromlist=[class_name])
+                        artifact_class = getattr(module, class_name)
+                        
+                        # Reconstruct the artifact using its loads method
+                        artifact = artifact_class.loads(serialized_data)
+                        return artifact
+                        
+                    except Exception as e:
+                        _l.warning(f"Failed to reconstruct artifact response: {e}")
+                        # Fall back to returning the raw response
+                        return response
+                
+                return response
+            except Exception as e:
+                _l.error(f"Request failed: {e}")
+                raise
     
     # Properties - mirror DecompilerInterface properties
     @property
@@ -239,151 +446,155 @@ class DecompilerClient:
     @property
     def binary_base_addr(self) -> int:
         """Base address of the binary"""
-        return self._deci.binary_base_addr
+        return self._send_request({"type": "property_get", "property_name": "binary_base_addr"})
     
     @property
     def binary_hash(self) -> str:
         """Hash of the binary"""
-        return self._deci.binary_hash
+        return self._send_request({"type": "property_get", "property_name": "binary_hash"})
     
     @property
     def binary_path(self) -> Optional[str]:
         """Path to the binary"""
-        return self._deci.binary_path
+        return self._send_request({"type": "property_get", "property_name": "binary_path"})
     
     @property
     def decompiler_available(self) -> bool:
         """Whether decompiler is available"""
-        return self._deci.decompiler_available
+        return self._send_request({"type": "property_get", "property_name": "decompiler_available"})
     
     @property
     def default_pointer_size(self) -> int:
         """Default pointer size"""
-        return self._deci.default_pointer_size
+        return self._send_request({"type": "property_get", "property_name": "default_pointer_size"})
     
     # GUI API methods - delegate to remote decompiler
     def gui_active_context(self) -> Optional[Context]:
         """Get the active context from the GUI"""
-        return self._deci.gui_active_context()
+        return self._send_request({"type": "method_call", "method_name": "gui_active_context"})
     
     def gui_goto(self, func_addr) -> None:
         """Go to an address in the GUI"""
-        return self._deci.gui_goto(func_addr)
+        return self._send_request({"type": "method_call", "method_name": "gui_goto", "args": [func_addr]})
     
     def gui_show_type(self, type_name: str) -> None:
         """Show a type in the GUI"""
-        return self._deci.gui_show_type(type_name)
+        return self._send_request({"type": "method_call", "method_name": "gui_show_type", "args": [type_name]})
     
     def gui_ask_for_string(self, question: str, title: str = "Plugin Question") -> str:
         """Ask for a string input"""
-        return self._deci.gui_ask_for_string(question, title)
+        return self._send_request({"type": "method_call", "method_name": "gui_ask_for_string", "args": [question, title]})
     
     def gui_ask_for_choice(self, question: str, choices: list, title: str = "Plugin Question") -> str:
         """Ask for a choice from a list"""
-        return self._deci.gui_ask_for_choice(question, choices, title)
+        return self._send_request({"type": "method_call", "method_name": "gui_ask_for_choice", "args": [question, choices, title]})
     
     def gui_popup_text(self, text: str, title: str = "Plugin Message") -> bool:
         """Show a popup message"""
-        return self._deci.gui_popup_text(text, title)
+        return self._send_request({"type": "method_call", "method_name": "gui_popup_text", "args": [text, title]})
     
     # Core decompiler API methods - delegate to remote decompiler
     def fast_get_function(self, func_addr) -> Optional[Function]:
         """Get a light version of a function"""
-        return self._deci.fast_get_function(func_addr)
+        return self._send_request({"type": "method_call", "method_name": "fast_get_function", "args": [func_addr]})
     
     def get_func_size(self, func_addr) -> int:
         """Get the size of a function"""
-        return self._deci.get_func_size(func_addr)
+        return self._send_request({"type": "method_call", "method_name": "get_func_size", "args": [func_addr]})
     
     def decompile(self, addr: int, map_lines=False, **kwargs) -> Optional[Decompilation]:
         """Decompile a function"""
-        return self._deci.decompile(addr, map_lines=map_lines, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "decompile", "args": [addr], "kwargs": {"map_lines": map_lines, **kwargs}})
     
     def xrefs_to(self, artifact: Artifact, decompile=False, only_code=False) -> List[Artifact]:
         """Get cross-references to an artifact"""
-        return self._deci.xrefs_to(artifact, decompile=decompile, only_code=only_code)
+        return self._send_request({"type": "method_call", "method_name": "xrefs_to", "args": [artifact], "kwargs": {"decompile": decompile, "only_code": only_code}})
     
     def get_callgraph(self, only_names=False):
         """Get the call graph"""
-        return self._deci.get_callgraph(only_names=only_names)
+        return self._send_request({"type": "method_call", "method_name": "get_callgraph", "kwargs": {"only_names": only_names}})
     
     def get_dependencies(self, artifact: Artifact, decompile=True, max_resolves=50, **kwargs) -> List[Artifact]:
         """Get dependencies for an artifact"""
-        return self._deci.get_dependencies(artifact, decompile=decompile, 
-                                          max_resolves=max_resolves, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "get_dependencies", "args": [artifact], "kwargs": {"decompile": decompile, "max_resolves": max_resolves, **kwargs}})
     
     def get_func_containing(self, addr: int) -> Optional[Function]:
         """Get the function containing an address"""
-        return self._deci.get_func_containing(addr)
+        return self._send_request({"type": "method_call", "method_name": "get_func_containing", "args": [addr]})
     
     def get_decompilation_object(self, function: Function, **kwargs):
         """Get the decompilation object for a function"""
-        return self._deci.get_decompilation_object(function, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "get_decompilation_object", "args": [function], "kwargs": kwargs})
     
     def set_artifact(self, artifact: Artifact, lower=True, **kwargs) -> bool:
         """Set an artifact in the decompiler"""
-        return self._deci.set_artifact(artifact, lower=lower, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "set_artifact", "args": [artifact], "kwargs": {"lower": lower, **kwargs}})
     
     def get_defined_type(self, type_str: str):
         """Get a defined type by string"""
-        return self._deci.get_defined_type(type_str)
+        return self._send_request({"type": "method_call", "method_name": "get_defined_type", "args": [type_str]})
     
     # Optional API methods - delegate to remote decompiler
     def undo(self) -> None:
         """Undo the last operation"""
-        return self._deci.undo()
+        return self._send_request({"type": "method_call", "method_name": "undo"})
     
     def local_variable_names(self, func: Function) -> List[str]:
         """Get local variable names for a function"""
-        return self._deci.local_variable_names(func)
+        return self._send_request({"type": "method_call", "method_name": "local_variable_names", "args": [func]})
     
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str], **kwargs) -> bool:
         """Rename local variables by name map"""
-        return self._deci.rename_local_variables_by_names(func, name_map, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "rename_local_variables_by_names", "args": [func, name_map], "kwargs": kwargs})
     
     # Logging methods - delegate to remote decompiler
     def print(self, msg: str, **kwargs) -> None:
         """Print a message"""
-        return self._deci.print(msg, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "print", "args": [msg], "kwargs": kwargs})
     
     def info(self, msg: str, **kwargs) -> None:
         """Log an info message"""
-        return self._deci.info(msg, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "info", "args": [msg], "kwargs": kwargs})
     
     def debug(self, msg: str, **kwargs) -> None:
         """Log a debug message"""
-        return self._deci.debug(msg, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "debug", "args": [msg], "kwargs": kwargs})
     
     def warning(self, msg: str, **kwargs) -> None:
         """Log a warning message"""
-        return self._deci.warning(msg, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "warning", "args": [msg], "kwargs": kwargs})
     
     def error(self, msg: str, **kwargs) -> None:
         """Log an error message"""
-        return self._deci.error(msg, **kwargs)
+        return self._send_request({"type": "method_call", "method_name": "error", "args": [msg], "kwargs": kwargs})
     
     # Lifecycle methods
     def shutdown(self) -> None:
         """Shutdown the client"""
         _l.info("DecompilerClient shutting down")
-        if self._conn:
-            self._conn.close()
+        if self._socket:
+            try:
+                # Send shutdown request to server
+                self._send_request({"type": "shutdown_deci"})
+            except:
+                pass
+            self._socket.close()
         self._connected = False
     
     def is_connected(self) -> bool:
         """Check if connected to the server"""
-        return self._connected and self._conn and not self._conn.closed
+        return self._connected and self._socket
     
     def reconnect(self) -> None:
         """Reconnect to the server"""
-        if self._conn:
-            self._conn.close()
+        if self._socket:
+            self._socket.close()
         self._connect()
     
     def ping(self) -> bool:
         """Ping the server to check connectivity"""
         try:
-            self._service.server_info()
+            self._send_request({"type": "server_info"})
             return True
         except Exception:
             return False
@@ -405,7 +616,7 @@ class DecompilerClient:
         but connects to a remote server instead.
         
         Args:
-            server_url: URL of the server (e.g., "rpyc://localhost:18861")
+            server_url: URL of the server (e.g., "unix:///tmp/libbs_server_abc123/decompiler.sock")
             **kwargs: Additional arguments for DecompilerClient constructor
         
         Returns:
@@ -414,25 +625,264 @@ class DecompilerClient:
         if server_url:
             # Parse server URL
             if "://" in server_url:
-                protocol, rest = server_url.split("://", 1)
-                if protocol != "rpyc":
-                    _l.warning(f"Expected rpyc:// protocol, got {protocol}://")
-                if ":" in rest:
-                    host, port = rest.split(":", 1)
-                    port = int(port.rstrip("/"))
-                else:
-                    host = rest.rstrip("/")
-                    port = 18861  # Default RPyC port
+                protocol, path = server_url.split("://", 1)
+                if protocol != "unix":
+                    _l.warning(f"Expected unix:// protocol, got {protocol}://")
+                socket_path = path
             else:
-                # Assume it's host:port format
-                if ":" in server_url:
-                    host, port = server_url.split(":", 1)
-                    port = int(port)
-                else:
-                    host = server_url
-                    port = 18861
+                # Assume it's a direct path
+                socket_path = server_url
             
-            return DecompilerClient(host=host, port=port, **kwargs)
+            return DecompilerClient(socket_path=socket_path, **kwargs)
         else:
-            # Use default localhost:18861
-            return DecompilerClient(**kwargs)
+            # Try to find a default socket path (first in temp directories)
+            temp_dir = tempfile.gettempdir()
+            pattern = os.path.join(temp_dir, "libbs_server_*/decompiler.sock")
+            matches = glob.glob(pattern)
+            
+            if matches:
+                socket_path = matches[0]  # Use the first match
+                _l.info(f"Auto-discovered socket at {socket_path}")
+                return DecompilerClient(socket_path=socket_path, **kwargs)
+            else:
+                raise ConnectionError("No DecompilerServer found. Start one with: libbs --server")
+    
+    # Properties that fetch values from server on first access
+    @property
+    def supports_undo(self) -> bool:
+        """Check if the decompiler supports undo operations"""
+        if self._supports_undo is None:
+            self._supports_undo = self._send_request({"type": "property_get", "property_name": "supports_undo"})
+        return self._supports_undo
+    
+    @property
+    def supports_type_scopes(self) -> bool:
+        """Check if the decompiler supports type scopes"""
+        if self._supports_type_scopes is None:
+            self._supports_type_scopes = self._send_request({"type": "property_get", "property_name": "supports_type_scopes"})
+        return self._supports_type_scopes
+    
+    @property
+    def qt_version(self) -> str:
+        """Get the Qt version used by the decompiler"""
+        if self._qt_version is None:
+            self._qt_version = self._send_request({"type": "property_get", "property_name": "qt_version"})
+        return self._qt_version
+    
+    @property
+    def default_func_prefix(self) -> str:
+        """Get the default function prefix used by the decompiler"""
+        if self._default_func_prefix is None:
+            self._default_func_prefix = self._send_request({"type": "property_get", "property_name": "default_func_prefix"})
+        return self._default_func_prefix
+    
+    @property
+    def headless(self) -> bool:
+        """Check if the decompiler is running in headless mode"""
+        if self._headless is None:
+            self._headless = self._send_request({"type": "property_get", "property_name": "headless"})
+        return self._headless
+    
+    @property
+    def force_click_recording(self) -> bool:
+        """Check if click recording is forced"""
+        if self._force_click_recording is None:
+            self._force_click_recording = self._send_request({"type": "property_get", "property_name": "force_click_recording"})
+        return self._force_click_recording
+    
+    @property
+    def track_mouse_moves(self) -> bool:
+        """Check if mouse moves are tracked"""
+        if self._track_mouse_moves is None:
+            self._track_mouse_moves = self._send_request({"type": "property_get", "property_name": "track_mouse_moves"})
+        return self._track_mouse_moves
+    
+    @property
+    def default_pointer_size(self) -> int:
+        """Get default pointer size"""
+        return self._send_request({"type": "property_get", "property_name": "default_pointer_size"})
+    
+    # Artifact watcher methods
+    def start_artifact_watchers(self) -> None:
+        """Start artifact watchers on the remote decompiler"""
+        result = self._send_request({"type": "method_call", "method_name": "start_artifact_watchers"})
+        self.artifact_watchers_started = True
+        return result
+    
+    def stop_artifact_watchers(self) -> None:
+        """Stop artifact watchers on the remote decompiler"""
+        result = self._send_request({"type": "method_call", "method_name": "stop_artifact_watchers"})
+        self.artifact_watchers_started = False
+        return result
+    
+    def should_watch_artifacts(self) -> bool:
+        """Check if artifacts should be watched"""
+        return self._send_request({"type": "method_call", "method_name": "should_watch_artifacts"})
+    
+    # GUI registration methods (stubs since we can't proxy GUI operations)
+    def gui_register_ctx_menu(self, name: str, action_string: str, callback_func: Callable, category=None) -> bool:
+        """Register a context menu item (not supported in remote mode)"""
+        _l.warning("GUI context menu registration is not supported in remote decompiler mode")
+        return False
+    
+    def gui_register_ctx_menu_many(self, actions: dict) -> None:
+        """Register multiple context menu items (not supported in remote mode)"""
+        _l.warning("GUI context menu registration is not supported in remote decompiler mode")
+    
+    def gui_run_on_main_thread(self, func: Callable, *args, **kwargs):
+        """Run function on main thread (not supported in remote mode)"""
+        _l.warning("GUI main thread operations are not supported in remote decompiler mode")
+        raise NotImplementedError("GUI main thread operations not supported in remote mode")
+    
+    def gui_attach_qt_window(self, qt_window, title: str, target_window=None, position=None, *args, **kwargs) -> bool:
+        """Attach Qt window (not supported in remote mode)"""
+        _l.warning("GUI window attachment is not supported in remote decompiler mode")
+        return False
+    
+    # Event callback methods (these trigger callbacks locally but don't send to server)
+    def decompiler_opened_event(self, **kwargs):
+        """Handle decompiler opened event"""
+        for callback in self.decompiler_opened_callbacks:
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(**kwargs)
+            except Exception as e:
+                _l.error(f"Error in decompiler opened callback: {e}")
+    
+    def decompiler_closed_event(self, **kwargs):
+        """Handle decompiler closed event"""
+        for callback in self.decompiler_closed_callbacks:
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(**kwargs)
+            except Exception as e:
+                _l.error(f"Error in decompiler closed callback: {e}")
+    
+    def gui_undo_event(self, **kwargs):
+        """Handle GUI undo event"""
+        for callback in self.undo_event_callbacks:
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(**kwargs)
+            except Exception as e:
+                _l.error(f"Error in undo event callback: {e}")
+    
+    def gui_context_changed(self, ctx: Context, **kwargs) -> Context:
+        """Handle GUI context changed event"""
+        # This would typically be handled by GUI callbacks locally
+        return ctx
+    
+    # Artifact change event methods (these handle local callbacks)
+    def function_header_changed(self, fheader, **kwargs):
+        """Handle function header changed event"""
+        for callback in self.artifact_change_callbacks.get(type(fheader), []):
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, args=(fheader,), kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(fheader, **kwargs)
+            except Exception as e:
+                _l.error(f"Error in function header change callback: {e}")
+        return fheader
+    
+    def stack_variable_changed(self, svar, **kwargs):
+        """Handle stack variable changed event"""
+        for callback in self.artifact_change_callbacks.get(type(svar), []):
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, args=(svar,), kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(svar, **kwargs)
+            except Exception as e:
+                _l.error(f"Error in stack variable change callback: {e}")
+        return svar
+    
+    def comment_changed(self, comment: Comment, deleted=False, **kwargs) -> Comment:
+        """Handle comment changed event"""
+        kwargs["deleted"] = deleted
+        for callback in self.artifact_change_callbacks.get(Comment, []):
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, args=(comment,), kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(comment, **kwargs)
+            except Exception as e:
+                _l.error(f"Error in comment change callback: {e}")
+        return comment
+    
+    def struct_changed(self, struct: Struct, deleted=False, **kwargs) -> Struct:
+        """Handle struct changed event"""
+        kwargs["deleted"] = deleted
+        for callback in self.artifact_change_callbacks.get(Struct, []):
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, args=(struct,), kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(struct, **kwargs)
+            except Exception as e:
+                _l.error(f"Error in struct change callback: {e}")
+        return struct
+    
+    def enum_changed(self, enum: Enum, deleted=False, **kwargs) -> Enum:
+        """Handle enum changed event"""
+        kwargs["deleted"] = deleted
+        for callback in self.artifact_change_callbacks.get(Enum, []):
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, args=(enum,), kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(enum, **kwargs)
+            except Exception as e:
+                _l.error(f"Error in enum change callback: {e}")
+        return enum
+    
+    def typedef_changed(self, typedef: Typedef, deleted=False, **kwargs) -> Typedef:
+        """Handle typedef changed event"""
+        kwargs["deleted"] = deleted
+        for callback in self.artifact_change_callbacks.get(Typedef, []):
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, args=(typedef,), kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(typedef, **kwargs)
+            except Exception as e:
+                _l.error(f"Error in typedef change callback: {e}")
+        return typedef
+    
+    def global_variable_changed(self, gvar: GlobalVariable, **kwargs) -> GlobalVariable:
+        """Handle global variable changed event"""
+        for callback in self.artifact_change_callbacks.get(GlobalVariable, []):
+            try:
+                if self._thread_artifact_callbacks:
+                    import threading
+                    thread = threading.Thread(target=callback, args=(gvar,), kwargs=kwargs)
+                    thread.start()
+                else:
+                    callback(gvar, **kwargs)
+            except Exception as e:
+                _l.error(f"Error in global variable change callback: {e}")
+        return gvar
