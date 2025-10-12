@@ -1,6 +1,7 @@
 import logging
 import os
 from collections import defaultdict
+from functools import lru_cache
 from typing import Optional, Dict, List
 from pathlib import Path
 
@@ -39,6 +40,7 @@ class AngrInterface(DecompilerInterface):
         self._ctx_menu_items = []
         self._am_logger = None
         self._cfg = None
+        self._binary_arch = None
         super().__init__(name="angr", artifact_lifter=AngrArtifactLifter(self), **kwargs)
 
     def _init_headless_components(self, *args, **kwargs):
@@ -186,6 +188,15 @@ class AngrInterface(DecompilerInterface):
 
         return self.refresh_decompilation(func.addr)
 
+    @property
+    def binary_arch(self) -> str | None:
+        if self._binary_arch is None:
+            if self.main_instance.project.arch:
+                self._binary_arch = self.main_instance.project.arch.name
+
+        return self._binary_arch
+
+
     #
     # GUI API
     #
@@ -210,7 +221,8 @@ class AngrInterface(DecompilerInterface):
 
     def gui_active_context(self) -> Optional[Context]:
         curr_view = self.workspace.view_manager.current_tab
-        if not curr_view:
+        # current view is non-existent or does not support a "function" view type of context
+        if not curr_view or not hasattr(curr_view, "function"):
             return None
 
         try:
@@ -293,6 +305,11 @@ class AngrInterface(DecompilerInterface):
         funcs = {}
         for addr, func in self.main_instance.project.kb.functions.items():
             funcs[addr] = Function(addr, func.size)
+
+            # syscalls and simprocedures are not real funcs to sync
+            if func.is_syscall or func.is_simprocedure or not func.name:
+                continue
+
             funcs[addr].name = func.name
 
         return funcs
@@ -395,12 +412,31 @@ class AngrInterface(DecompilerInterface):
     # angr-management specific helpers
     #
 
+    # TODO: add LRU back one day
+    #@lru_cache(maxsize=1024)
+    def addr_starts_instruction(self, addr) -> bool:
+        """
+        Returns True when the provided address maps to a valid instruction address in the binary and that address
+        is at the start of the instruction (not in the middle). Useful for checking if an instruction is
+        incorrectly computed due to ARM THUMB.
+        """
+        cfg = self.project.kb.cfgs.get_most_accurate()
+        if cfg is None:
+            l.warning("Unable load CFG from angr. Other operations may be wrong.")
+            return False
+
+        node = cfg.get_any_node(addr, anyaddr=True)
+        if node is None:
+            return False
+
+        return addr in node.instruction_addrs
+
     def refresh_decompilation(self, func_addr):
         if self.headless:
             return False
 
-        self.main_instance.workspace.jump_to(func_addr)
-        view = self.main_instance.workspace._get_or_create_view("pseudocode", CodeView)
+        self.workspace.jump_to(func_addr)
+        view = self.workspace._get_or_create_view("pseudocode", CodeView)
         view.codegen.am_event()
         view.focus()
         return True
