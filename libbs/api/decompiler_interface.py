@@ -470,6 +470,13 @@ class DecompilerInterface:
     #
 
     @property
+    def binary_arch(self) -> str:
+        """
+        Returns a string of the currently loaded binary's architecture.
+        """
+        raise NotImplementedError
+
+    @property
     def default_pointer_size(self) -> int:
         """
         Returns the default pointer size of the binary. This is useful for calculating offsets
@@ -976,7 +983,7 @@ class DecompilerInterface:
             except Exception:
                 pass
 
-            if not force or has_bn_ui:
+            if has_bn_ui:
                 return BINJA_DECOMPILER
             available.add(BINJA_DECOMPILER)
         # error can be thrown for an invalid license
