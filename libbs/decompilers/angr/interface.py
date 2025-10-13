@@ -420,7 +420,7 @@ class AngrInterface(DecompilerInterface):
         is at the start of the instruction (not in the middle). Useful for checking if an instruction is
         incorrectly computed due to ARM THUMB.
         """
-        cfg = self.project.kb.cfgs.get_most_accurate()
+        cfg = self.main_instance.project.kb.cfgs.get_most_accurate()
         if cfg is None:
             l.warning("Unable load CFG from angr. Other operations may be wrong.")
             return False
