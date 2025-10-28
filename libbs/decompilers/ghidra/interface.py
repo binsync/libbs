@@ -18,6 +18,8 @@ from libbs.artifacts import (
 
 from .artifact_lifter import GhidraArtifactLifter
 from .compat.transaction import ghidra_transaction
+from .compat.headless import close_program, open_program
+from .compat.state import get_current_address
 
 if typing.TYPE_CHECKING:
     from ghidra.program.model.listing import Function as GhidraFunction, Program
@@ -92,7 +94,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
     def _deinit_headless_components(self):
         if self._program is not None and self._project is not None:
-            from .compat.headless import close_program
             close_program(self._program, self._project)
             self._project = None
             self._program = None
@@ -109,17 +110,16 @@ class GhidraDecompilerInterface(DecompilerInterface):
             if os.getenv("GHIDRA_INSTALL_DIR", None) is None:
                 raise RuntimeError("GHIDRA_INSTALL_DIR must be set in the environment to use Ghidra headless.")
 
-            from .compat.headless import open_program
             flat_api, project, program = open_program(
-                binary_path=self._binary_path,
-                analyze=self._headless_analyze,
-                project_location=self._headless_project_location,
-                project_name=self._headless_project_name,
-                program_name=self._program_name,
-                language=self._language,
-            )
-            if flat_api is None:
-                raise RuntimeError("Failed to open program with Pyhidra")
+            binary_path=self._binary_path,
+            analyze=self._headless_analyze,
+            project_location=self._headless_project_location,
+            project_name=self._headless_project_name,
+            program_name=self._program_name,
+            language=self._language,
+        )
+        if flat_api is None:
+            raise RuntimeError("Failed to open program with Pyhidra")
 
             self.flat_api = flat_api
             self._program = program
@@ -177,7 +177,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return answer if answer else ""
 
     def gui_active_context(self) -> Optional[Context]:
-        from compat.state import get_current_address
         active_addr = get_current_address(flat_api=self.flat_api)
         if (self._active_ctx is None) or (active_addr is not None and self._active_ctx.addr != active_addr):
             gfuncs = self.__fast_function(active_addr)

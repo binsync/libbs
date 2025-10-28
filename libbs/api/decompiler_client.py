@@ -434,7 +434,7 @@ class DecompilerClient:
                 
                 return response
             except Exception as e:
-                _l.error(f"Request failed: {e}")
+                _l.error(f"Request failed: {e} for {request}")
                 raise
     
     # Properties - mirror DecompilerInterface properties
@@ -580,7 +580,8 @@ class DecompilerClient:
                 pass
             self._socket.close()
         self._connected = False
-    
+        _l.info("DecompilerClient shut down complete")
+
     def is_connected(self) -> bool:
         """Check if connected to the server"""
         return self._connected and self._socket
