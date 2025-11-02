@@ -36,7 +36,14 @@ class Patch(Artifact):
         return data_dict
 
     def __setstate__(self, state):
+        # Pop and decode bytes data
         bytes_dat = state.pop("bytes", None)
+        decoded_bytes = None
         if bytes_dat:
-            self.bytes = codecs.decode(bytes_dat, "hex")
+            decoded_bytes = codecs.decode(bytes_dat, "hex")
+
+        # Put decoded bytes back in state
+        state["bytes"] = decoded_bytes
+
+        # Let super set all attributes at once
         super().__setstate__(state)

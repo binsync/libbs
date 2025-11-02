@@ -76,23 +76,6 @@ class Struct(Artifact):
 
         return data_dict
 
-    # TODO: fix how state dumping and loading works, see explanation below
-    #
-    # We, apparently, implemented __setestate__ and __getstate__ incorrectly for actual Pickle dumping and loading.
-    # When we try to access the `self.members` below, it seems that `self` does not yet have any of the attributes.
-    # This implies that `self` is not to be actually used, which also means we should be instead adding members
-    # to the bigger `members` dictionary.
-    #
-    # Remvoing just this case of `self` usage is easy... but we use `self` in almost every nested object Artifact.
-    # To make this get/set state actually useful they need to all be rewritten to not use `self`, which includes
-    # the top-level Artifact class (uses a list defined by objects to figure out what attributes should not be
-    # seralized when serializing objects).
-    #
-    # So, to make it work do the following:
-    # 1. Search through all artifact classes on setstate and make sure we do not actually use `self`
-    # 2. If use `self`, replace with the dictionary access and setting
-    # 3. For the use in Artifact, replace the dynamic lists with static lists, which is only really used by
-    #   by `Function` for excluding decompilation object.
     def __setstate__(self, state):
         # XXX: this is a backport of the old state format. Remove this after a few releases.
         if "metadata" in state:
@@ -100,14 +83,19 @@ class Struct(Artifact):
             metadata.update(state)
             state = metadata
 
+        # Pop nested object data and reconstruct in local variable
         members_dat = state.pop("members", None)
+        members = {}
         if members_dat:
             for off, member in members_dat.items():
                 sm = StructMember()
                 sm.__setstate__(member)
-                self.members[int(off, 0)] = sm
-        else:
-            self.members = {}
+                members[int(off, 0)] = sm
+
+        # Put reconstructed objects back in state
+        state["members"] = members
+
+        # Let super set all attributes at once
         super().__setstate__(state)
 
     def add_struct_member(self, mname, moff, mtype, size):
