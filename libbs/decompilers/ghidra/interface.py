@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import typing
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Union
@@ -22,12 +23,21 @@ from .artifact_lifter import GhidraArtifactLifter
 from .compat.bridge import FlatAPIWrapper, connect_to_bridge, shutdown_bridge, ui_remote_eval, is_bridge_alive
 from .compat.transaction import ghidra_transaction
 
+if typing.TYPE_CHECKING:
+    from ghidra.program.model.listing import Function as GhidraFunction, Program
+    from ghidra.program.flatapi import FlatProgramAPI
+    from ghidra.program.model.pcode import HighSymbol
+
+
+
 _l = logging.getLogger(__name__)
 bridge: Optional[GhidraBridge] = None
 
 
 class GhidraDecompilerInterface(DecompilerInterface):
     CACHE_TIMEOUT = 5
+    _program: Optional["Program"]
+    flat_api: "FlatProgramAPI"
 
     def __init__(
         self,
@@ -38,6 +48,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         project_location: Optional[Union[str, Path]] = None,
         project_name: Optional[str] = None,
         program_name: Optional[str] = None,
+        program_obj: Optional["Program"] = None,
         language: Optional[str] = None,
         **kwargs
     ):
@@ -51,7 +62,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._headless_project_name = project_name
         self._program_name = program_name
         self._project = None
-        self._program = None
+        self._program = program_obj
         self._language = language
 
         # ui-only attributes
@@ -109,24 +120,32 @@ class GhidraDecompilerInterface(DecompilerInterface):
             self._bridge = None
 
     def _init_headless_components(self, *args, **kwargs):
-        if os.getenv("GHIDRA_INSTALL_DIR", None) is None:
-            raise RuntimeError("GHIDRA_INSTALL_DIR must be set in the environment to use Ghidra headless.")
+        if self._program is not None:
+            # We were already provided a program object as part of the instantiation, so just use it
+            from ghidra.program.flatapi import FlatProgramAPI
+            self.flat_api = FlatProgramAPI(self._program)
+            return
 
-        from .compat.headless import open_program
-        flat_api, project, program = open_program(
-            binary_path=self._binary_path,
-            analyze=self._headless_analyze,
-            project_location=self._headless_project_location,
-            project_name=self._headless_project_name,
-            program_name=self._program_name,
-            language=self._language,
-        )
-        if flat_api is None:
-            raise RuntimeError("Failed to open program with Pyhidra")
+        else:
+            # This interface was not explicitly initialized as part of a GhidraScript, do the setup on our own
+            if os.getenv("GHIDRA_INSTALL_DIR", None) is None:
+                raise RuntimeError("GHIDRA_INSTALL_DIR must be set in the environment to use Ghidra headless.")
 
-        self.flat_api = flat_api
-        self._program = program
-        self._project = project
+            from .compat.headless import open_program
+            flat_api, project, program = open_program(
+                binary_path=self._binary_path,
+                analyze=self._headless_analyze,
+                project_location=self._headless_project_location,
+                project_name=self._headless_project_name,
+                program_name=self._program_name,
+                language=self._language,
+            )
+            if flat_api is None:
+                raise RuntimeError("Failed to open program with Pyhidra")
+
+            self.flat_api = flat_api
+            self._program = program
+            self._project = project
 
     #
     # GUI
@@ -912,13 +931,13 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def _get_nearest_function(self, addr: int) -> "GhidraFunction":
         func_manager = self.currentProgram.getFunctionManager()
         return func_manager.getFunctionContaining(self._to_gaddr(addr))
-    
+
     def _get_first_segment_base(self) -> int:
         """
         Get the virtual address of the first segment.
         """
         memory = self.currentProgram.getMemory()
-        
+
         # First, try to find an executable segment (typically the code segment)
         for block in memory.getBlocks():
             return int(block.getStart().getOffset())
