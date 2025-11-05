@@ -609,19 +609,26 @@ class DecompilerClient:
     
     # Static methods for compatibility
     @staticmethod
-    def discover(server_url: str = None, **kwargs) -> 'DecompilerClient':
+    def discover(server_url: str = None, binary_hash: str = None, **kwargs) -> 'DecompilerClient':
         """
         Discover and connect to a DecompilerServer.
-        
+
         This method provides a similar interface to DecompilerInterface.discover()
-        but connects to a remote server instead.
-        
+        but connects to a remote server instead. It intelligently handles:
+        - Stale socket files from previous server instances
+        - Multiple running servers
+        - Binary hash matching to connect to the correct server
+
         Args:
             server_url: URL of the server (e.g., "unix:///tmp/libbs_server_abc123/decompiler.sock")
+            binary_hash: Optional binary hash to match against server's binary_hash
             **kwargs: Additional arguments for DecompilerClient constructor
-        
+
         Returns:
             Connected DecompilerClient instance
+
+        Raises:
+            ConnectionError: If no suitable server is found or connection fails
         """
         if server_url:
             # Parse server URL
@@ -633,20 +640,81 @@ class DecompilerClient:
             else:
                 # Assume it's a direct path
                 socket_path = server_url
-            
-            return DecompilerClient(socket_path=socket_path, **kwargs)
+
+            # If binary_hash is provided, validate it matches
+            if binary_hash:
+                try:
+                    client = DecompilerClient(socket_path=socket_path, **kwargs)
+                    server_hash = client.binary_hash
+                    if server_hash != binary_hash:
+                        client.shutdown()
+                        raise ConnectionError(
+                            f"Server at {socket_path} has binary_hash={server_hash}, "
+                            f"but expected {binary_hash}"
+                        )
+                    return client
+                except Exception as e:
+                    raise ConnectionError(f"Failed to connect to server at {socket_path}: {e}")
+            else:
+                return DecompilerClient(socket_path=socket_path, **kwargs)
         else:
-            # Try to find a default socket path (first in temp directories)
+            # Auto-discovery: find all socket files and try to connect to each
             temp_dir = tempfile.gettempdir()
             pattern = os.path.join(temp_dir, "libbs_server_*/decompiler.sock")
             matches = glob.glob(pattern)
-            
-            if matches:
-                socket_path = matches[0]  # Use the first match
-                _l.info(f"Auto-discovered socket at {socket_path}")
-                return DecompilerClient(socket_path=socket_path, **kwargs)
-            else:
+
+            if not matches:
                 raise ConnectionError("No DecompilerServer found. Start one with: libbs --server")
+
+            # Sort by modification time (newest first) to prefer recently started servers
+            matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+
+            _l.debug(f"Found {len(matches)} potential server socket(s)")
+
+            # Try each socket, filtering by binary_hash if provided
+            successful_connections = []
+            for socket_path in matches:
+                try:
+                    _l.debug(f"Attempting connection to {socket_path}")
+                    test_client = DecompilerClient(socket_path=socket_path, **kwargs)
+
+                    # Successfully connected, now check binary_hash if needed
+                    if binary_hash:
+                        try:
+                            server_hash = test_client.binary_hash
+                            if server_hash == binary_hash:
+                                _l.info(f"Auto-discovered server at {socket_path} with matching binary_hash")
+                                return test_client
+                            else:
+                                _l.debug(f"Server at {socket_path} has binary_hash={server_hash}, skipping")
+                                test_client.shutdown()
+                        except Exception as e:
+                            _l.debug(f"Failed to get binary_hash from {socket_path}: {e}")
+                            test_client.shutdown()
+                    else:
+                        # No binary_hash filter, use the first working server
+                        _l.info(f"Auto-discovered server at {socket_path}")
+                        return test_client
+
+                except ConnectionError as e:
+                    # This socket is defunct (server stopped), skip it
+                    _l.debug(f"Failed to connect to {socket_path}: {e}")
+                    continue
+                except Exception as e:
+                    _l.debug(f"Unexpected error connecting to {socket_path}: {e}")
+                    continue
+
+            # No suitable server found
+            if binary_hash:
+                raise ConnectionError(
+                    f"No DecompilerServer found with binary_hash={binary_hash}. "
+                    f"Found {len(matches)} socket(s) but none matched."
+                )
+            else:
+                raise ConnectionError(
+                    f"No working DecompilerServer found. Found {len(matches)} socket(s) "
+                    f"but all connections failed. Start a new server with: libbs --server"
+                )
     
     # Properties that fetch values from server on first access
     @property
