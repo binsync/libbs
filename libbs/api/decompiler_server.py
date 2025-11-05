@@ -103,7 +103,8 @@ class SocketServerHandler:
                 "name": "LibBS DecompilerServer (AF_UNIX)",
                 "version": "3.0.0",
                 "decompiler": self.deci.name if self.deci else "unknown",
-                "protocol": "unix_socket"
+                "protocol": "unix_socket",
+                "binary_hash": self.deci.binary_hash if self.deci else None
             }
         
         elif request_type == "get_light_artifacts":
