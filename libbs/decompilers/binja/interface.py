@@ -174,7 +174,7 @@ class BinjaInterface(DecompilerInterface):
     @property
     def binary_path(self) -> Optional[str]:
         try:
-            return self.bv.file.filename
+            return self.bv.file.original_filename
         except Exception:
             return None
 
