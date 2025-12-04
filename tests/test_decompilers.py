@@ -154,6 +154,11 @@ class TestHeadlessInterfaces(unittest.TestCase):
             assert type_name == "off_t"
             assert "typedef" not in func.header.args[1].type
 
+            # grab the size of a type that is used as an arg in function '_init'
+            func = deci.functions[0x1120]
+            arg0 = func.header.args[0]
+            assert arg0.size == 8, "Unexpected arg size for _init arg0, it is a pointer!"
+
     def test_ghidra_artifact_dependency_resolving(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             proj_name = "fdupes_ghidra"
