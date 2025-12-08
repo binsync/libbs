@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import Union, Optional, Tuple
 
-from pyhidra.core import _analyze_program, _get_language, _get_compiler_spec
+from pyghidra.core import _analyze_program, _get_language, _get_compiler_spec
 from jpype import JClass
 
 _l = logging.getLogger(__name__)

@@ -6,6 +6,7 @@ import toml
 
 from .formatting import ArtifactFormat, TomlHexEncoder
 
+from toml.tz import TomlTz
 
 class Artifact:
     """
@@ -30,12 +31,42 @@ class Artifact:
         self.scope = scope
         self._attr_ignore_set = set()
 
+    @staticmethod
+    def _normalize_datetime(dt):
+        """
+        Convert TomlTz datetime objects to standard Python datetime objects.
+        TomlTz objects from TOML deserialization don't pickle correctly.
+        """
+        if not isinstance(dt, datetime.datetime):
+            return dt
+
+        # If the datetime has a TomlTz tzinfo, convert it to standard timezone
+        if dt.tzinfo is not None and isinstance(dt.tzinfo, TomlTz):
+            # Get the offset and convert to standard timezone
+            offset = dt.utcoffset()
+            if offset is not None:
+                std_tz = datetime.timezone(offset)
+                # Replace the TomlTz with standard timezone
+                return dt.replace(tzinfo=std_tz)
+
+        return dt
+
     def __getstate__(self) -> Dict:
-        return dict(
-            (k, getattr(self, k)) for k in self.slots
-        )
+        state = {}
+        for k in self.slots:
+            value = getattr(self, k)
+            # Normalize datetime objects to ensure they pickle correctly
+            if isinstance(value, datetime.datetime):
+                value = self._normalize_datetime(value)
+            state[k] = value
+        return state
 
     def __setstate__(self, state):
+        # When pickle calls __setstate__, __init__ is never called, so we need to
+        # initialize _attr_ignore_set before accessing self.slots (which uses it)
+        if not hasattr(self, '_attr_ignore_set'):
+            self._attr_ignore_set = set()
+
         for k in self.slots:
             if k in state:
                 setattr(self, k, state[k])
