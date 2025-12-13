@@ -40,8 +40,11 @@ class IDAInterface(DecompilerInterface):
         self._deleted_artifacts = defaultdict(set)
         self.cached_ord_to_type_names = {}
 
+        compatible_qt_version = "PySide6"
+        if idaapi.IDA_SDK_VERSION < 920:
+            compatible_qt_version = "PyQt5"
         super().__init__(
-            name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self),
+            name="ida", qt_version=compatible_qt_version, artifact_lifter=IDAArtifactLifter(self),
             decompiler_available=compat.initialize_decompiler(), **kwargs
         )
 
