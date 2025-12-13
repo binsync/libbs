@@ -565,8 +565,12 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
 #
 
 if IDA_IS_INTERACTIVE:
-    from PyQt5 import QtCore
-    from PyQt5.QtGui import QKeyEvent
+    if idaapi.IDA_SDK_VERSION < 920:
+        from PyQt5 import QtCore
+        from PyQt5.QtGui import QKeyEvent
+    else:
+        from PySide6 import QtCore
+        from PySide6.QtGui import QKeyEvent
 
     class IDAHotkeyHook(ida_kernwin.UI_Hooks):
         def __init__(self, keys_to_pass, uiptr):
