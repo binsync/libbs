@@ -111,19 +111,18 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 raise RuntimeError("GHIDRA_INSTALL_DIR must be set in the environment to use Ghidra headless.")
 
             flat_api, project, program = open_program(
-            binary_path=self._binary_path,
-            analyze=self._headless_analyze,
-            project_location=self._headless_project_location,
-            project_name=self._headless_project_name,
-            program_name=self._program_name,
-            language=self._language,
-        )
-        if flat_api is None:
-            raise RuntimeError("Failed to open program with Pyhidra")
-
-            self.flat_api = flat_api
+                binary_path=self._binary_path,
+                analyze=self._headless_analyze,
+                project_location=self._headless_project_location,
+                project_name=self._headless_project_name,
+                program_name=self._program_name,
+                language=self._language,
+            )
             self._program = program
             self._project = project
+            self.flat_api = flat_api
+        if flat_api is None:
+            raise RuntimeError("Failed to open program with Pyhidra")
 
     #
     # GUI
@@ -154,7 +153,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return self._results_queue.get()
 
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
-        # TODO: fix, this is broken due to being unable to inherit in JPype
+        # TODO: this is currently broken, see create_context_action for why
         return None
         from .hooks import create_context_action
 

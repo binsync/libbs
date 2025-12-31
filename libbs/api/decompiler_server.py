@@ -7,7 +7,6 @@ import time
 import tempfile
 import os
 from typing import Optional, Dict, Any, List
-from pathlib import Path
 
 from libbs.api.decompiler_interface import DecompilerInterface
 
@@ -23,12 +22,16 @@ class SocketProtocol:
         try:
             pickled_data = pickle.dumps(data)
             msg_len = len(pickled_data)
-            
+
             # Send 4-byte length prefix
             sock.sendall(struct.pack('!I', msg_len))
             # Send pickled data
             sock.sendall(pickled_data)
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            # Expected during shutdown when socket is closed, just re-raise
+            raise
         except Exception as e:
+            # Unexpected error - log it
             _l.error(f"Failed to send message (pickle.dumps): {e}")
             _l.error(f"Data type: {type(data)}")
             if hasattr(data, '__dict__'):
@@ -38,34 +41,40 @@ class SocketProtocol:
     @staticmethod
     def recv_message(sock: socket.socket) -> Any:
         """Receive a pickled message with length prefix"""
+        pickled_data = b''
         try:
             # Receive 4-byte length prefix
             len_data = sock.recv(4)
             if len(len_data) != 4:
                 raise ConnectionError("Failed to receive message length")
-            
+
             msg_len = struct.unpack('!I', len_data)[0]
-            
+
             # Receive the pickled data
-            pickled_data = b''
             while len(pickled_data) < msg_len:
                 chunk = sock.recv(msg_len - len(pickled_data))
                 if not chunk:
                     raise ConnectionError("Connection closed while receiving message")
                 pickled_data += chunk
-            
+
             return pickle.loads(pickled_data)
+        except (ConnectionError, socket.timeout):
+            # Expected during shutdown or normal timeout, just re-raise without logging
+            raise
         except Exception as e:
+            # Unexpected error - log it
             _l.error(f"Failed to receive message (pickle.loads): {e}")
-            _l.error(f"Received {len(pickled_data)} bytes of pickle data")
+            if pickled_data:
+                _l.error(f"Received {len(pickled_data)} bytes of pickle data")
             raise
 
 
 class SocketServerHandler:
     """Handler for individual client connections"""
-    
-    def __init__(self, deci: DecompilerInterface):
+
+    def __init__(self, deci: DecompilerInterface, server: 'DecompilerServer' = None):
         self.deci = deci
+        self.server = server
         self._light_caches = {}
         self._cache_lock = threading.Lock()
         self._cache_ttl = 10.0
@@ -73,12 +82,12 @@ class SocketServerHandler:
     def handle_client(self, client_socket: socket.socket, addr: str):
         """Handle a client connection"""
         _l.info(f"Client connected: {addr}")
-        
+
         try:
             while True:
                 try:
                     request = SocketProtocol.recv_message(client_socket)
-                    response = self._process_request(request)
+                    response = self._process_request(request, client_socket=client_socket)
                     SocketProtocol.send_message(client_socket, response)
                 except ConnectionError:
                     # Client disconnected
@@ -91,14 +100,43 @@ class SocketServerHandler:
                     except:
                         break
         finally:
+            # Remove from event subscribers if subscribed
+            if self.server:
+                with self.server._event_subscribers_lock:
+                    if client_socket in self.server._event_subscribers:
+                        self.server._event_subscribers.remove(client_socket)
+                        _l.debug("Removed client from event subscribers")
+
             client_socket.close()
             _l.info(f"Client disconnected: {addr}")
     
-    def _process_request(self, request: Dict[str, Any]) -> Any:
+    def _process_request(self, request: Dict[str, Any], client_socket: socket.socket = None) -> Any:
         """Process a client request and return response"""
         request_type = request.get("type")
-        
-        if request_type == "server_info":
+
+        if request_type == "subscribe_events":
+            # Client wants to subscribe to artifact change events
+            if self.server and client_socket:
+                with self.server._event_subscribers_lock:
+                    if client_socket not in self.server._event_subscribers:
+                        self.server._event_subscribers.append(client_socket)
+                        _l.info(f"Client subscribed to events (total subscribers: {len(self.server._event_subscribers)})")
+                return {"status": "subscribed"}
+            else:
+                return {"status": "error", "message": "Server not available"}
+
+        elif request_type == "unsubscribe_events":
+            # Client wants to unsubscribe from events
+            if self.server and client_socket:
+                with self.server._event_subscribers_lock:
+                    if client_socket in self.server._event_subscribers:
+                        self.server._event_subscribers.remove(client_socket)
+                        _l.info(f"Client unsubscribed from events (total subscribers: {len(self.server._event_subscribers)})")
+                return {"status": "unsubscribed"}
+            else:
+                return {"status": "error", "message": "Server not available"}
+
+        elif request_type == "server_info":
             return {
                 "name": "LibBS DecompilerServer (AF_UNIX)",
                 "version": "3.0.0",
@@ -264,19 +302,33 @@ class DecompilerServer:
         self._running = False
         self._clients = []
         self._client_threads = []
+
+        # Event subscription tracking
+        self._event_subscribers = []  # List of sockets subscribed to events
+        self._event_subscribers_lock = threading.Lock()
         
         # Initialize the decompiler interface
         if decompiler_interface is not None:
             self.deci = decompiler_interface
         else:
-            _l.info("Discovering decompiler interface...")
+            if interface_kwargs and interface_kwargs.get("headless", False):
+                forced_decompiler = interface_kwargs.get("force_decompiler", None)
+                if forced_decompiler is None:
+                    _l.warning(f"Using a headless interface without setting a decompiler has unpredictable behavior!")
+                _l.info(f"Using headless interface utilizing %s", forced_decompiler)
+            else:
+                _l.info("Discovering decompiler interface...")
+
             self.deci = DecompilerInterface.discover(**interface_kwargs)
             if self.deci is None:
                 raise RuntimeError("Failed to discover decompiler interface")
         
         # Create socket handler
-        self.handler = SocketServerHandler(self.deci)
-        
+        self.handler = SocketServerHandler(self.deci, server=self)
+
+        # Register artifact change callbacks to broadcast events
+        self._register_artifact_callbacks()
+
         # Generate socket path if not provided
         if self.socket_path is None:
             temp_dir = tempfile.mkdtemp(prefix="libbs_server_")
@@ -287,7 +339,74 @@ class DecompilerServer:
         
         _l.info(f"DecompilerServer initialized with {self.deci.name} interface")
         _l.info(f"Socket path: {self.socket_path}")
-    
+
+    def _register_artifact_callbacks(self):
+        """Register callbacks to broadcast artifact changes to subscribed clients"""
+        from libbs.artifacts import Comment, Struct, Enum, Typedef, GlobalVariable, FunctionHeader, StackVariable
+
+        # Register callbacks for different artifact types
+        self.deci.artifact_change_callbacks[Comment].append(
+            lambda artifact, **kwargs: self._broadcast_event("comment_changed", artifact, **kwargs)
+        )
+        self.deci.artifact_change_callbacks[Struct].append(
+            lambda artifact, **kwargs: self._broadcast_event("struct_changed", artifact, **kwargs)
+        )
+        self.deci.artifact_change_callbacks[Enum].append(
+            lambda artifact, **kwargs: self._broadcast_event("enum_changed", artifact, **kwargs)
+        )
+        self.deci.artifact_change_callbacks[Typedef].append(
+            lambda artifact, **kwargs: self._broadcast_event("typedef_changed", artifact, **kwargs)
+        )
+        self.deci.artifact_change_callbacks[GlobalVariable].append(
+            lambda artifact, **kwargs: self._broadcast_event("global_variable_changed", artifact, **kwargs)
+        )
+        self.deci.artifact_change_callbacks[FunctionHeader].append(
+            lambda artifact, **kwargs: self._broadcast_event("function_header_changed", artifact, **kwargs)
+        )
+        self.deci.artifact_change_callbacks[StackVariable].append(
+            lambda artifact, **kwargs: self._broadcast_event("stack_variable_changed", artifact, **kwargs)
+        )
+
+    def _broadcast_event(self, event_type: str, artifact, **kwargs):
+        """Broadcast an artifact change event to all subscribed clients"""
+        with self._event_subscribers_lock:
+            if not self._event_subscribers:
+                _l.debug(f"No subscribers for event: {event_type}")
+                return
+
+            # Serialize the artifact
+            try:
+                serialized_artifact = {
+                    'type': artifact.__class__.__name__,
+                    'module': artifact.__class__.__module__,
+                    'data': artifact.dumps(),
+                    'is_artifact': True
+                }
+
+                event_message = {
+                    "event_type": event_type,
+                    "artifact": serialized_artifact,
+                    "kwargs": kwargs
+                }
+
+                # Send to all subscribers
+                dead_subscribers = []
+                for subscriber_socket in self._event_subscribers:
+                    try:
+                        SocketProtocol.send_message(subscriber_socket, event_message)
+                        _l.debug(f"Broadcasted {event_type} to subscriber")
+                    except Exception as e:
+                        _l.warning(f"Failed to send event to subscriber: {e}")
+                        dead_subscribers.append(subscriber_socket)
+
+                # Remove dead subscribers
+                for dead_socket in dead_subscribers:
+                    self._event_subscribers.remove(dead_socket)
+                    _l.debug("Removed dead subscriber")
+
+            except Exception as e:
+                _l.error(f"Failed to broadcast event {event_type}: {e}")
+
     def start(self):
         """Start the server in a separate thread"""
         if self._running:
@@ -298,11 +417,14 @@ class DecompilerServer:
         
         # Create AF_UNIX socket
         self._server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        
+
+        # Set timeout so accept() doesn't block forever
+        self._server_socket.settimeout(1.0)
+
         # Remove socket file if it exists
         if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
-        
+
         # Bind and listen
         self._server_socket.bind(self.socket_path)
         self._server_socket.listen(5)
@@ -324,7 +446,7 @@ class DecompilerServer:
                 try:
                     client_socket, addr = self._server_socket.accept()
                     self._clients.append(client_socket)
-                    
+
                     # Handle client in separate thread
                     client_thread = threading.Thread(
                         target=self.handler.handle_client,
@@ -333,13 +455,16 @@ class DecompilerServer:
                     )
                     self._client_threads.append(client_thread)
                     client_thread.start()
-                    
+
+                except socket.timeout:
+                    # Normal timeout, continue loop to check if we should stop
+                    continue
                 except OSError:
                     # Socket was closed
                     break
                 except Exception as e:
                     _l.error(f"Error accepting client: {e}")
-                    
+
         except Exception as e:
             _l.error(f"Server loop error: {e}")
         finally:
@@ -365,13 +490,13 @@ class DecompilerServer:
         if self._server_socket:
             self._server_socket.close()
         
-        # Wait for threads to finish
+        # Wait for threads to finish (short timeout since we use daemon threads)
         if self._server_thread and self._server_thread.is_alive():
-            self._server_thread.join(timeout=5.0)
-        
+            self._server_thread.join(timeout=2.0)
+
         for thread in self._client_threads:
             if thread.is_alive():
-                thread.join(timeout=1.0)
+                thread.join(timeout=0.5)
         
         # Clean up socket file and temp directory
         if os.path.exists(self.socket_path):
@@ -382,7 +507,14 @@ class DecompilerServer:
                 os.rmdir(self._temp_dir)
             except:
                 pass
-        
+
+        # Shutdown the decompiler interface
+        if self.deci:
+            try:
+                self.deci.shutdown()
+            except Exception as e:
+                _l.warning(f"Error shutting down decompiler: {e}")
+
         _l.info("DecompilerServer stopped")
     
     def is_running(self) -> bool:

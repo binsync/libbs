@@ -1,6 +1,5 @@
 import logging
 import socket
-import threading
 import time
 import os
 import glob
@@ -345,6 +344,13 @@ class DecompilerClient:
         self.config = LibbsConfig.update_or_make()  # Configuration object
         self.gui_plugin = None  # GUI plugin reference
         self.artifact_watchers_started = False  # Watcher state
+
+        # Event listener state for receiving callbacks from server
+        self._event_listener_running = False
+        self._subscribed_to_events = False
+        self._event_listener_thread = None
+        self._event_socket = None
+        self._event_socket_lock = threading.Lock()
         
         # These attributes will be fetched from server on first access
         self._supports_undo = None
@@ -568,10 +574,164 @@ class DecompilerClient:
         """Log an error message"""
         return self._send_request({"type": "method_call", "method_name": "error", "args": [msg], "kwargs": kwargs})
     
+    def _start_event_listener(self) -> None:
+        """Start the event listener thread to receive callbacks from server"""
+        if self._event_listener_running:
+            _l.debug("Event listener already running")
+            return
+
+        _l.debug("Starting event listener")
+
+        # Create a separate socket connection for receiving events
+        try:
+            self._event_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self._event_socket.settimeout(self.timeout)
+            self._event_socket.connect(self.socket_path)
+
+            # Send subscription request to server
+            SocketProtocol.send_message(self._event_socket, {"type": "subscribe_events"})
+            response = SocketProtocol.recv_message(self._event_socket)
+
+            if response.get("status") == "subscribed":
+                self._subscribed_to_events = True
+                _l.debug("Successfully subscribed to events")
+
+                # Start event listener thread
+                self._event_listener_running = True
+                self._event_listener_thread = threading.Thread(
+                    target=self._event_listener_loop,
+                    daemon=True
+                )
+                self._event_listener_thread.start()
+                _l.info("Event listener started")
+            else:
+                _l.error(f"Failed to subscribe to events: {response}")
+                self._event_socket.close()
+                self._event_socket = None
+
+        except Exception as e:
+            _l.error(f"Failed to start event listener: {e}")
+            if self._event_socket:
+                self._event_socket.close()
+                self._event_socket = None
+
+    def _stop_event_listener(self) -> None:
+        """Stop the event listener thread"""
+        if not self._event_listener_running:
+            _l.debug("Event listener not running")
+            return
+
+        _l.debug("Stopping event listener")
+        self._event_listener_running = False
+
+        # Send unsubscribe request
+        if self._event_socket and self._subscribed_to_events:
+            try:
+                SocketProtocol.send_message(self._event_socket, {"type": "unsubscribe_events"})
+            except:
+                pass
+
+        # Close event socket
+        if self._event_socket:
+            try:
+                self._event_socket.close()
+            except:
+                pass
+            self._event_socket = None
+
+        # Wait for thread to finish
+        if self._event_listener_thread and self._event_listener_thread.is_alive():
+            self._event_listener_thread.join(timeout=2.0)
+
+        self._subscribed_to_events = False
+        _l.info("Event listener stopped")
+
+    def _event_listener_loop(self) -> None:
+        """Event listener thread loop that receives events from server"""
+        _l.debug("Event listener loop started")
+
+        try:
+            while self._event_listener_running:
+                try:
+                    # Set a timeout so we can periodically check if we should stop
+                    self._event_socket.settimeout(1.0)
+                    event = SocketProtocol.recv_message(self._event_socket)
+
+                    # Process the event
+                    self._process_event(event)
+
+                except socket.timeout:
+                    # Normal timeout, continue loop
+                    continue
+                except ConnectionError as e:
+                    _l.warning(f"Event listener connection error: {e}")
+                    break
+                except Exception as e:
+                    _l.error(f"Error in event listener loop: {e}")
+                    break
+
+        except Exception as e:
+            _l.error(f"Fatal error in event listener loop: {e}")
+        finally:
+            _l.debug("Event listener loop ended")
+            self._event_listener_running = False
+
+    def _process_event(self, event: Dict[str, Any]) -> None:
+        """Process an event received from the server"""
+        try:
+            event_type = event.get("event_type")
+            artifact_data = event.get("artifact")
+
+            if not event_type or not artifact_data:
+                _l.warning(f"Invalid event received: {event}")
+                return
+
+            # Reconstruct the artifact from serialized data
+            if isinstance(artifact_data, dict) and artifact_data.get("is_artifact"):
+                module_name = artifact_data['module']
+                class_name = artifact_data['type']
+                serialized_data = artifact_data['data']
+
+                # Import the module and get the class
+                module = __import__(module_name, fromlist=[class_name])
+                artifact_class = getattr(module, class_name)
+
+                # Reconstruct the artifact
+                artifact = artifact_class.loads(serialized_data)
+
+                # Extract additional kwargs
+                kwargs = event.get("kwargs", {})
+
+                # Dispatch to appropriate handler based on event type
+                if event_type == "comment_changed":
+                    self.comment_changed(artifact, **kwargs)
+                elif event_type == "function_header_changed":
+                    self.function_header_changed(artifact, **kwargs)
+                elif event_type == "stack_variable_changed":
+                    self.stack_variable_changed(artifact, **kwargs)
+                elif event_type == "struct_changed":
+                    self.struct_changed(artifact, **kwargs)
+                elif event_type == "enum_changed":
+                    self.enum_changed(artifact, **kwargs)
+                elif event_type == "typedef_changed":
+                    self.typedef_changed(artifact, **kwargs)
+                elif event_type == "global_variable_changed":
+                    self.global_variable_changed(artifact, **kwargs)
+                else:
+                    _l.warning(f"Unknown event type: {event_type}")
+
+        except Exception as e:
+            _l.error(f"Error processing event: {e}")
+
     # Lifecycle methods
     def shutdown(self) -> None:
         """Shutdown the client"""
         _l.info("DecompilerClient shutting down")
+
+        # Stop event listener first
+        if self._event_listener_running:
+            self._stop_event_listener()
+
         if self._socket:
             try:
                 # Send shutdown request to server
@@ -776,10 +936,17 @@ class DecompilerClient:
         """Start artifact watchers on the remote decompiler"""
         result = self._send_request({"type": "method_call", "method_name": "start_artifact_watchers"})
         self.artifact_watchers_started = True
+
+        # Start event listener to receive callbacks from server
+        self._start_event_listener()
+
         return result
     
     def stop_artifact_watchers(self) -> None:
         """Stop artifact watchers on the remote decompiler"""
+        # Stop event listener first
+        self._stop_event_listener()
+
         result = self._send_request({"type": "method_call", "method_name": "stop_artifact_watchers"})
         self.artifact_watchers_started = False
         return result

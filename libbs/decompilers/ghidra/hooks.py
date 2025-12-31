@@ -208,6 +208,10 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
 
 
 def create_context_action(name, action_string, callback_func, category=None):
+    """
+    TODO: this is broken due to JPype: you can't subclass a Ghidra class. To fix this requires
+        creating a Java class that allows us to _implement_ ProgramLocationContextAction in Python.
+    """
     from .compat.imports import ProgramLocationContextAction, MenuData
 
     # XXX: you can't ever use super().__init__() due to some remote import issues
