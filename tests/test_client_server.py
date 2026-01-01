@@ -550,11 +550,107 @@ class TestClientServer(unittest.TestCase):
             self.assertIn("deleted", received_metadata[0], "Metadata should include deleted flag")
             self.assertTrue(received_metadata[0]["deleted"], "deleted flag should be True")
 
+    def test_artifact_watchers_integration(self):
+        """
+        Test artifact callbacks with client-server architecture (adapted from test_remote_ghidra).
+
+        Note: This test manually triggers callbacks on the server to test the event broadcast system,
+        since Ghidra's artifact watchers don't function in headless mode.
+        """
+        from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment
+        from collections import defaultdict
+
+        with tempfile.TemporaryDirectory() as proj_dir:
+            # Start server
+            self.server = DecompilerServer(
+                force_decompiler=GHIDRA_DECOMPILER,
+                headless=True,
+                binary_path=FAUXWARE_PATH,
+                project_location=proj_dir,
+                project_name="test_artifact_watchers"
+            )
+            self.server.start()
+            time.sleep(1)
+
+            # Connect client
+            self.client = DecompilerClient(socket_path=self.server.socket_path)
+
+            # Track callback hits
+            hits = defaultdict(list)
+            def func_hit(artifact, **kwargs):
+                hits[artifact.__class__].append(artifact)
+
+            # Register callbacks for different artifact types
+            for typ in (FunctionHeader, StackVariable, Enum, Struct, GlobalVariable, Comment):
+                self.client.artifact_change_callbacks[typ].append(func_hit)
+
+            # Start event listener
+            self.client.start_artifact_watchers()
+            time.sleep(0.5)
+
+            # Test FunctionHeader callback by manually triggering on server
+            # (Ghidra headless watchers don't work, so we manually trigger)
+            func_addr = self.client.art_lifter.lift_addr(0x400664)
+            main = self.client.functions[func_addr]
+
+            # Trigger callback on server side directly
+            test_header = FunctionHeader("test_func", func_addr, type_="int")
+            self.server.deci.function_header_changed(test_header)
+            time.sleep(0.5)
+
+            # Verify callback was received on client
+            self.assertGreaterEqual(len(hits[FunctionHeader]), 1,
+                                   "FunctionHeader callback should be triggered")
+
+            # Test Comment callback
+            test_comment = Comment(func_addr, "Test comment for integration test")
+            self.server.deci.comment_changed(test_comment)
+            time.sleep(0.5)
+
+            self.assertGreaterEqual(len(hits[Comment]), 1,
+                                   "Comment callback should be triggered")
+
+            # Test Struct callback
+            test_struct = Struct("TestStruct", 0x10, members={})
+            self.server.deci.struct_changed(test_struct)
+            time.sleep(0.5)
+
+            self.assertGreaterEqual(len(hits[Struct]), 1,
+                                   "Struct callback should be triggered")
+
+            # Test Enum callback
+            test_enum = Enum("TestEnum", members={"VALUE1": 1, "VALUE2": 2})
+            self.server.deci.enum_changed(test_enum)
+            time.sleep(0.5)
+
+            self.assertGreaterEqual(len(hits[Enum]), 1,
+                                   "Enum callback should be triggered")
+
+            # Test GlobalVariable callback
+            g_addr = self.client.art_lifter.lift_addr(0x4008e0)
+            test_gvar = GlobalVariable(g_addr, "test_global", "int", 4)
+            self.server.deci.global_variable_changed(test_gvar)
+            time.sleep(0.5)
+
+            self.assertGreaterEqual(len(hits[GlobalVariable]), 1,
+                                   "GlobalVariable callback should be triggered")
+
+            # Test that client can also modify artifacts through the server
+            # and they persist correctly
+            main.name = "modified_main"
+            self.client.functions[func_addr] = main
+            time.sleep(0.5)
+
+            # Retrieve and verify the change persisted
+            modified_main = self.client.functions[func_addr]
+            self.assertEqual(modified_main.name, "modified_main",
+                           "Function name modification should persist")
+
+            # Clean up
+            self.client.stop_artifact_watchers()
+            self.assertFalse(self.client._event_listener_running,
+                           "Event listener should be stopped")
+
 
 if __name__ == "__main__":
-    # Only run tests if we have the test binaries
-    if FAUXWARE_PATH.exists():
-        unittest.main()
-    else:
-        print(f"Skipping tests - test binary not found at {FAUXWARE_PATH}")
-        print("Set TEST_BINARIES_DIR environment variable to the path containing test binaries")
+    unittest.main()
