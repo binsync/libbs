@@ -69,7 +69,8 @@ def _setup_project(
         project_location = binary_path.parent
     if not project_name:
         project_name = f"{binary_path.name}_ghidra"
-    project_location /= project_name
+
+    # Ensure the project location directory exists
     project_location.mkdir(exist_ok=True, parents=True)
 
     if isinstance(loader, str):
