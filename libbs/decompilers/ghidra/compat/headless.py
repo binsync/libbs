@@ -58,6 +58,7 @@ def _setup_project(
     loader: Union[str, JClass] = None
 ) -> Tuple["GhidraProject", "Program"]:
     from ghidra.base.project import GhidraProject
+    from ghidra.util.exception import NotFoundException
     from java.lang import ClassLoader
     from java.io import IOException
 
@@ -69,6 +70,7 @@ def _setup_project(
         project_location = binary_path.parent
     if not project_name:
         project_name = f"{binary_path.name}_ghidra"
+    project_location /= project_name
 
     # Ensure the project location directory exists
     project_location.mkdir(exist_ok=True, parents=True)
@@ -96,7 +98,7 @@ def _setup_project(
                 program_name = binary_path.name
             if project.getRootFolder().getFile(program_name):
                 program = project.openProgram("/", program_name, False)
-    except IOException:
+    except (IOException, NotFoundException):
         project = GhidraProject.createProject(project_location, project_name, False)
 
     # NOTE: GhidraProject.importProgram behaves differently when a loader is provided
