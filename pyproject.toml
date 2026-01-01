@@ -21,10 +21,8 @@ dependencies = [
     "setuptools",
     "prompt_toolkit",
     "tqdm",
-    "jfx_bridge",
-    "ghidra_bridge",
     "psutil",
-    "pyhidra",
+    "pyghidra",
     "platformdirs",
     "filelock",
     "networkx"
