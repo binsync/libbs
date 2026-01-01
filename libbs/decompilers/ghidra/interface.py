@@ -136,7 +136,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         from .hooks import create_data_monitor
         if not self.artifact_watchers_started:
             if self.flat_api is None:
-                raise RuntimeError("Cannot start artifact watchers without Ghidra Bridge connection.")
+                raise RuntimeError("Cannot start artifact watchers without FlatProgramAPI.")
 
             self._data_monitor = create_data_monitor(self)
             self.currentProgram.addListener(self._data_monitor)

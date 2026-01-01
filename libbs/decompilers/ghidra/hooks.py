@@ -214,7 +214,7 @@ def create_context_action(name, action_string, callback_func, category=None):
     """
     from .compat.imports import ProgramLocationContextAction, MenuData
 
-    # XXX: you can't ever use super().__init__() due to some remote import issues
+    # XXX: you can't ever use super().__init__() due to JPype limitations with Java class subclassing
     class GenericDecompilerCtxAction(ProgramLocationContextAction):
         def actionPerformed(self, ctx):
             threading.Thread(target=callback_func, daemon=True).start()

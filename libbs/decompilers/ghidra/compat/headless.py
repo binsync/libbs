@@ -22,12 +22,12 @@ def open_program(
     Taken from Pyhidra, but updated to also return the project associated with the program:
     https://github.com/dod-cyber-crime-center/pyhidra/blob/c878e91b53498f65f2eb0255e22189a6d172917c/pyhidra/core.py#L178
     """
-    from pyhidra.launcher import PyhidraLauncher, HeadlessPyhidraLauncher
+    from pyghidra.launcher import PyGhidraLauncher, HeadlessPyGhidraLauncher
     if binary_path is None and project_location is None:
         raise ValueError("You must provide either a binary path or a project location.")
 
-    if not PyhidraLauncher.has_launched():
-        HeadlessPyhidraLauncher().start()
+    if not PyGhidraLauncher.has_launched():
+        HeadlessPyGhidraLauncher().start()
 
     from ghidra.app.script import GhidraScriptUtil
     from ghidra.program.flatapi import FlatProgramAPI
