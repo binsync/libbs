@@ -153,8 +153,6 @@ class GhidraDecompilerInterface(DecompilerInterface):
         return self._results_queue.get()
 
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
-        # TODO: this is currently broken, see create_context_action for why
-        return None
         from .hooks import create_context_action
 
         def callback_func_wrap(*args, **kwargs):
@@ -163,8 +161,10 @@ class GhidraDecompilerInterface(DecompilerInterface):
             except Exception as e:
                 self.warning(f"Exception in ctx menu callback {name}: {e}")
                 raise
-        ctx_menu_action = create_context_action(name, action_string, callback_func_wrap, category or "LibBS")
-        self.flat_api.getState().getTool().addAction(ctx_menu_action)
+        create_context_action(
+            name, action_string, callback_func_wrap, category=(category or "LibBS"),
+            tool=self.flat_api.getState().getTool()
+        )
         return True
 
     def gui_ask_for_string(self, question, title="Plugin Question") -> str:

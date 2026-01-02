@@ -207,21 +207,20 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
     return data_monitor
 
 
-def create_context_action(name, action_string, callback_func, category=None):
-    """
-    TODO: this is broken due to JPype: you can't subclass a Ghidra class. To fix this requires
-        creating a Java class that allows us to _implement_ ProgramLocationContextAction in Python.
-    """
-    from .compat.imports import ProgramLocationContextAction, MenuData
+def create_context_action(name, action_string, callback_func, category=None, plugin_name="libbs_ghidra", tool=None):
+    from .compat.imports import ProgramLocationActionContext, ActionBuilder
+    def _invoke(ctx: ProgramLocationActionContext):
+        threading.Thread(target=callback_func, daemon=True).start()
 
-    # XXX: you can't ever use super().__init__() due to JPype limitations with Java class subclassing
-    class GenericDecompilerCtxAction(ProgramLocationContextAction):
-        def actionPerformed(self, ctx):
-            threading.Thread(target=callback_func, daemon=True).start()
+    menu_path = []
+    if category is not None and "/" in category:
+        menu_path.extend(category.split("/"))
+    menu_path.append(action_string)
 
-    action = GenericDecompilerCtxAction(name, category)
-    category_list = category.split("/") if category else []
-    category_start = category_list[0] if category_list else category
-    action.setPopupMenuData(MenuData(category_list + [action_string], None, category_start))
+    b = (ActionBuilder(name, plugin_name)
+            .popupMenuPath(list(menu_path))
+            .withContext(ProgramLocationActionContext)
+            .validContextWhen(lambda ctx: ctx is not None and ctx.getAddress() is not None)
+            .onAction(_invoke))
 
-    return action
+    return b.buildAndInstall(tool)

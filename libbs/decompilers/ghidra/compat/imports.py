@@ -22,7 +22,7 @@ from ghidra.program.database.symbol import CodeSymbol, FunctionSymbol
 from ghidra.program.model.listing import CodeUnit
 from ghidra.app.cmd.comments import SetCommentCmd
 from ghidra.app.cmd.label import RenameLabelCmd
-from ghidra.app.context import ProgramLocationContextAction
+from ghidra.app.context import ProgramLocationContextAction, ProgramLocationActionContext
 from ghidra.app.decompiler import DecompInterface
 from ghidra.app.plugin.core.analysis import AutoAnalysisManager
 from ghidra.app.util.cparser.C import CParserUtils
@@ -31,6 +31,7 @@ from ghidra.util.task import ConsoleTaskMonitor
 from ghidra.util.data import DataTypeParser
 from ghidra.util.exception import CancelledException
 from docking.action import MenuData
+from docking.action.builder import ActionBuilder
 
 EnumDB = get_private_class("ghidra.program.database.data.EnumDB")
 StructureDB = get_private_class("ghidra.program.database.data.StructureDB")
@@ -48,7 +49,9 @@ __all__ = [
     "CodeSymbol",
     "FunctionSymbol",
     "ProgramLocationContextAction",
+    "ProgramLocationActionContext",
     "MenuData",
+    "ActionBuilder",
     "HighFunctionDBUtil",
     "DataTypeConflictHandler",
     "StructureDataType",

@@ -991,6 +991,13 @@ class DecompilerInterface:
             if "License is not valid" in str(e):
                 _l.warning("Binary Ninja license is invalid, skipping...")
 
+        # Ghidra
+        this_obj = DecompilerInterface._find_global_in_call_frames("__this__")
+        if (this_obj is not None) and (hasattr(this_obj, "currentProgram")):
+            available.add(GHIDRA_DECOMPILER)
+            if not force:
+                return GHIDRA_DECOMPILER
+
         # angr-management
         try:
             import angr
@@ -1014,15 +1021,6 @@ class DecompilerInterface:
             available.add(IDA_DECOMPILER)
         except Exception:
             pass
-
-        # Ghidra
-        # It is always available, and we don't have an import check, because when started in headless mode we create
-        # the interface by which ghidra can now be imported.
-        this_obj = DecompilerInterface._find_global_in_call_frames("__this__")
-        if (this_obj is not None) and (hasattr(this_obj, "currentProgram")):
-            available.add(GHIDRA_DECOMPILER)
-            if not force:
-                return GHIDRA_DECOMPILER
 
         if not available:
             _l.critical("LibBS was unable to find the current decompiler you are running in or any headless instances!")
