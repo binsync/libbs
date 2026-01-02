@@ -13,14 +13,12 @@ pip install libbs
 ```
 
 The minimum Python version is **3.10**.
-**If you plan on using libbs alone (without installing some other plugin), 
-you must do `libbs --install` after pip install**. This will copy the appropriate files to your decompiler. 
 
 ## Supported Decompilers
 - IDA Pro: **>= 8.4** (if you have an older version, use `v1.26.0`)
 - Binary Ninja: **>= 2.4**
 - angr-management: **>= 9.0**
-- Ghidra: **>= 11.2**
+- Ghidra: **>= 12.0** (started in PyGhidra mode)
 
 ## Usage
 LibBS exposes all decompiler API through the abstract class `DecompilerInterface`. The `DecompilerInterface` 
@@ -45,6 +43,9 @@ for addr in deci.functions:
         deci.functions[function.addr] = function
 ```
 
+Note that for Ghidra in UI mode you must first start it in PyGhidra mode. You can do this by going to your install dir
+and running `./support/pyghidraRun`.
+
 ### Headless Mode 
 To use headless mode you must specify a decompiler to use. You can get the traditional interface using the following:
 
@@ -54,8 +55,8 @@ from libbs.api import DecompilerInterface
 deci = DecompilerInterface.discover(force_decompiler="ghidra", headless=True)
 ```
 
-In the case of Ghidra, you must have the environment variable `GHIDRA_HEADLESS_PATH` set to the path of the Ghidra
-headless binary. This is usually `ghidraRun` or `ghidraHeadlessAnalyzer`.
+In the case of Ghidra, you must have the environment variable `GHIDRA_INSTALL_DIR` set to the path of the Ghidra 
+installation (the place the `ghidraRun` script is located).
 
 ### Artifact Access Caveats
 In designing the dictionaries that contain all Artifacts in a decompiler, we had a clash between ease-of-use and speed. 
@@ -85,7 +86,7 @@ loaded_func = Function.loads(json_str, fmt="json")
 ```
 
 ## Sponsors
-BinSync and it's associated projects would not be possible without sponsorship.
+BinSync and its associated projects would not be possible without sponsorship.
 In no particular order, we'd like to thank all the organizations that have previously or are currently sponsoring
 one of the many BinSync projects.
 
