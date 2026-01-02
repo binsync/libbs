@@ -70,6 +70,7 @@ class FunctionHeader(Artifact):
         return data_dict
 
     def __setstate__(self, state):
+        # Pop nested object data and reconstruct in local variable
         args_dict = state.pop("args", {})
         new_args_dict = {}
         for k, v in args_dict.items():
@@ -77,7 +78,10 @@ class FunctionHeader(Artifact):
             fa.__setstate__(v)
             new_args_dict[int(k, 0)] = fa
 
-        self.args = new_args_dict
+        # Put reconstructed objects back in state
+        state["args"] = new_args_dict
+
+        # Let super set all attributes at once
         super().__setstate__(state)
 
     def diff(self, other, **kwargs) -> Dict:
@@ -239,38 +243,50 @@ class Function(Artifact):
         return state
 
     def __setstate__(self, state):
+        # When pickle calls __setstate__, __init__ is never called
+        # Initialize _attr_ignore_set and add dec_obj to it (as done in __init__)
+        if not hasattr(self, '_attr_ignore_set'):
+            self._attr_ignore_set = set()
+        self._attr_ignore_set.add("dec_obj")
+
         # XXX: this is a backport of the old state format. Remove this after a few releases.
         if "metadata" in state:
             metadata: Dict = state.pop("metadata")
             metadata.update(state)
             state = metadata
 
+        # Pop nested object data and reconstruct in local variables
         header_dat = state.pop("header", None)
         if header_dat:
             header = FunctionHeader()
             header.__setstate__(header_dat)
         else:
             header = None
-        self.header = header
 
-        # alias for name overrides header if it exists
-        if "name" in state:
-            self.name = state.pop("name")
-        # alias for type overrides header if it exists
-        if "type" in state:
-            self.type = state.pop("type")
+        # Handle name/type aliases that override header values
+        # We modify the header object directly instead of using property setters
+        # to avoid accessing self.header and self.addr before they're initialized
+        name_override = state.pop("name", None)
+        type_override = state.pop("type", None)
+
+        if name_override is not None and header is not None:
+            header.name = name_override
+        if type_override is not None and header is not None:
+            header.type = type_override
 
         stack_vars_dat = state.pop("stack_vars", {})
+        stack_vars = {}
         if stack_vars_dat:
-            stack_vars = {}
             for off, stack_var in stack_vars_dat.items():
                 sv = StackVariable()
                 sv.__setstate__(stack_var)
                 stack_vars[int(off, 0)] = sv
-        else:
-            stack_vars = None
-        self.stack_vars = stack_vars or {}
 
+        # Put reconstructed objects back in state
+        state["header"] = header
+        state["stack_vars"] = stack_vars
+
+        # Let super set all attributes at once
         super().__setstate__(state)
 
     def diff(self, other, **kwargs) -> Dict:

@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import Union, Optional, Tuple
 
-from pyhidra.core import _analyze_program, _get_language, _get_compiler_spec
+from pyghidra.core import _analyze_program, _get_language, _get_compiler_spec
 from jpype import JClass
 
 _l = logging.getLogger(__name__)
@@ -22,12 +22,12 @@ def open_program(
     Taken from Pyhidra, but updated to also return the project associated with the program:
     https://github.com/dod-cyber-crime-center/pyhidra/blob/c878e91b53498f65f2eb0255e22189a6d172917c/pyhidra/core.py#L178
     """
-    from pyhidra.launcher import PyhidraLauncher, HeadlessPyhidraLauncher
+    from pyghidra.launcher import PyGhidraLauncher, HeadlessPyGhidraLauncher
     if binary_path is None and project_location is None:
         raise ValueError("You must provide either a binary path or a project location.")
 
-    if not PyhidraLauncher.has_launched():
-        HeadlessPyhidraLauncher().start()
+    if not PyGhidraLauncher.has_launched():
+        HeadlessPyGhidraLauncher().start()
 
     from ghidra.app.script import GhidraScriptUtil
     from ghidra.program.flatapi import FlatProgramAPI
@@ -58,6 +58,7 @@ def _setup_project(
     loader: Union[str, JClass] = None
 ) -> Tuple["GhidraProject", "Program"]:
     from ghidra.base.project import GhidraProject
+    from ghidra.util.exception import NotFoundException
     from java.lang import ClassLoader
     from java.io import IOException
 
@@ -70,6 +71,8 @@ def _setup_project(
     if not project_name:
         project_name = f"{binary_path.name}_ghidra"
     project_location /= project_name
+
+    # Ensure the project location directory exists
     project_location.mkdir(exist_ok=True, parents=True)
 
     if isinstance(loader, str):
@@ -95,7 +98,7 @@ def _setup_project(
                 program_name = binary_path.name
             if project.getRootFolder().getFile(program_name):
                 program = project.openProgram("/", program_name, False)
-    except IOException:
+    except (IOException, NotFoundException):
         project = GhidraProject.createProject(project_location, project_name, False)
 
     # NOTE: GhidraProject.importProgram behaves differently when a loader is provided

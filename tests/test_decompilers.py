@@ -12,7 +12,6 @@ from libbs.api import DecompilerInterface
 from libbs.artifacts import FunctionHeader, StackVariable, Struct, GlobalVariable, Enum, Comment, ArtifactFormat, \
     Decompilation, Function, StructMember, Typedef, Segment
 from libbs.decompilers import IDA_DECOMPILER, ANGR_DECOMPILER, BINJA_DECOMPILER, GHIDRA_DECOMPILER
-from libbs.decompilers.ghidra.testing import HeadlessGhidraDecompiler
 
 GHIDRA_HEADLESS_PATH = Path(os.environ.get('GHIDRA_INSTALL_DIR', "")) / "support" / "analyzeHeadless"
 IDA_HEADLESS_PATH = Path(os.environ.get('IDA_HEADLESS_PATH', ""))

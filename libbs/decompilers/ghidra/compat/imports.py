@@ -1,11 +1,6 @@
 import logging
-from typing import Tuple, Iterable
 
 _l = logging.getLogger(__name__)
-
-from ..interface import bridge
-bridge = bridge or globals().get("binsync_ghidra_bridge", None)
-HEADLESS = bridge is None
 
 
 def get_private_class(path: str):
@@ -15,66 +10,32 @@ def get_private_class(path: str):
     gcl = ClassLoader.getSystemClassLoader()
     return JClass(path, loader=gcl)
 
+from ghidra.framework.model import DomainObjectListener
+from ghidra.program.model.symbol import SourceType, SymbolType
+from ghidra.program.model.pcode import HighFunctionDBUtil
+from ghidra.program.model.data import (
+    DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath, TypedefDataType
+)
+from ghidra.program.util import ChangeManager, ProgramChangeRecord, FunctionChangeRecord
+from ghidra.program.database.function import VariableDB, FunctionDB
+from ghidra.program.database.symbol import CodeSymbol, FunctionSymbol
+from ghidra.program.model.listing import CodeUnit
+from ghidra.app.cmd.comments import SetCommentCmd
+from ghidra.app.cmd.label import RenameLabelCmd
+from ghidra.app.context import ProgramLocationContextAction, ProgramLocationActionContext
+from ghidra.app.decompiler import DecompInterface
+from ghidra.app.plugin.core.analysis import AutoAnalysisManager
+from ghidra.app.util.cparser.C import CParserUtils
+from ghidra.app.decompiler import PrettyPrinter
+from ghidra.util.task import ConsoleTaskMonitor
+from ghidra.util.data import DataTypeParser
+from ghidra.util.exception import CancelledException
+from docking.action import MenuData
+from docking.action.builder import ActionBuilder
 
-def import_objs(path: str, objs: Iterable[str]):
-    module = bridge.remote_import(path)
-    new_objs = [getattr(module, obj) for obj in objs]
-    return new_objs if len(new_objs) > 1 else new_objs[0]
-
-
-if HEADLESS:
-    from ghidra.framework.model import DomainObjectListener
-    from ghidra.program.model.symbol import SourceType, SymbolType
-    from ghidra.program.model.pcode import HighFunctionDBUtil
-    from ghidra.program.model.data import (
-        DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath, TypedefDataType
-    )
-    from ghidra.program.util import ChangeManager, ProgramChangeRecord, FunctionChangeRecord
-    from ghidra.program.database.function import VariableDB, FunctionDB
-    from ghidra.program.database.symbol import CodeSymbol, FunctionSymbol
-    from ghidra.program.model.listing import CodeUnit
-    from ghidra.app.cmd.comments import SetCommentCmd
-    from ghidra.app.cmd.label import RenameLabelCmd
-    from ghidra.app.context import ProgramLocationContextAction
-    from ghidra.app.decompiler import DecompInterface
-    from ghidra.app.plugin.core.analysis import AutoAnalysisManager
-    from ghidra.app.util.cparser.C import CParserUtils
-    from ghidra.app.decompiler import PrettyPrinter
-    from ghidra.util.task import ConsoleTaskMonitor
-    from ghidra.util.data import DataTypeParser
-    from ghidra.util.exception import CancelledException
-    from docking.action import MenuData
-
-    EnumDB = get_private_class("ghidra.program.database.data.EnumDB")
-    StructureDB = get_private_class("ghidra.program.database.data.StructureDB")
-    TypedefDB = get_private_class("ghidra.program.database.data.TypedefDB")
-else:
-    DomainObjectListener = import_objs("ghidra.framework.model", ("DomainObjectListener",))
-    SourceType, SymbolType = import_objs("ghidra.program.model.symbol", ("SourceType", "SymbolType"))
-    HighFunctionDBUtil = import_objs("ghidra.program.model.pcode", ("HighFunctionDBUtil",))
-    DataTypeConflictHandler, StructureDataType, ByteDataType, EnumDataType, CategoryPath, TypedefDataType = import_objs(
-        "ghidra.program.model.data",
-        ("DataTypeConflictHandler", "StructureDataType", "ByteDataType", "EnumDataType", "CategoryPath", "TypedefDataType")
-    )
-    ChangeManager, ProgramChangeRecord, FunctionChangeRecord = import_objs("ghidra.program.util", ("ChangeManager", "ProgramChangeRecord", "FunctionChangeRecord"))
-    VariableDB, FunctionDB = import_objs("ghidra.program.database.function", ("VariableDB", "FunctionDB"))
-    CodeSymbol, FunctionSymbol = import_objs("ghidra.program.database.symbol", ("CodeSymbol", "FunctionSymbol"))
-    CodeUnit = import_objs("ghidra.program.model.listing", ("CodeUnit",))
-    SetCommentCmd = import_objs("ghidra.app.cmd.comments", ("SetCommentCmd",))
-    RenameLabelCmd = import_objs("ghidra.app.cmd.label", ("RenameLabelCmd",))
-    ProgramLocationContextAction = import_objs("ghidra.app.context", ("ProgramLocationContextAction",))
-    DecompInterface = import_objs("ghidra.app.decompiler", ("DecompInterface",))
-    AutoAnalysisManager = import_objs("ghidra.app.plugin.core.analysis", ("AutoAnalysisManager",))
-    CParserUtils = import_objs("ghidra.app.util.cparser.C", ("CParserUtils",))
-    PrettyPrinter = import_objs("ghidra.app.decompiler", ("PrettyPrinter",))
-    ConsoleTaskMonitor = import_objs("ghidra.util.task", ("ConsoleTaskMonitor",))
-    DataTypeParser = import_objs("ghidra.util.data", ("DataTypeParser",))
-    CancelledException = import_objs("ghidra.util.exception", ("CancelledException",))
-    MenuData = import_objs("docking.action", ("MenuData",))
-    EnumDB = import_objs("ghidra.program.database.data", ("EnumDB",))
-    StructureDB = import_objs("ghidra.program.database.data", ("StructureDB",))
-    TypedefDB = import_objs("ghidra.program.database.data", ("TypedefDB",))
-
+EnumDB = get_private_class("ghidra.program.database.data.EnumDB")
+StructureDB = get_private_class("ghidra.program.database.data.StructureDB")
+TypedefDB = get_private_class("ghidra.program.database.data.TypedefDB")
 
 __all__ = [
     # forcefully imported objects
@@ -88,7 +49,9 @@ __all__ = [
     "CodeSymbol",
     "FunctionSymbol",
     "ProgramLocationContextAction",
+    "ProgramLocationActionContext",
     "MenuData",
+    "ActionBuilder",
     "HighFunctionDBUtil",
     "DataTypeConflictHandler",
     "StructureDataType",

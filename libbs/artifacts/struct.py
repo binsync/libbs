@@ -83,14 +83,19 @@ class Struct(Artifact):
             metadata.update(state)
             state = metadata
 
+        # Pop nested object data and reconstruct in local variable
         members_dat = state.pop("members", None)
+        members = {}
         if members_dat:
             for off, member in members_dat.items():
                 sm = StructMember()
                 sm.__setstate__(member)
-                self.members[int(off, 0)] = sm
-        else:
-            self.members = {}
+                members[int(off, 0)] = sm
+
+        # Put reconstructed objects back in state
+        state["members"] = members
+
+        # Let super set all attributes at once
         super().__setstate__(state)
 
     def add_struct_member(self, mname, moff, mtype, size):

@@ -41,19 +41,18 @@ jobs:
         python ./.github/binja/download_headless.py --serial ${{ env.BN_SERIAL }} --output .github/binja/BinaryNinja-headless.zip
         unzip .github/binja/BinaryNinja-headless.zip -d .github/binja/
         python .github/binja/binaryninja/scripts/install_api.py --install-on-root --silent
-    - name: Set up Java 17
+    - name: Set up Java 21
       uses: actions/setup-java@v4
       with:
         distribution: "oracle"
-        java-version: "17"
+        java-version: "21"
     - name: Install Ghidra
       uses: antoniovazquezblanco/setup-ghidra@v2.0.12
       with:
-        version: "11.1"
+        version: "12.0"
         auth_token: ${{ secrets.GITHUB_TOKEN }}
     - name: Pytest
       run: |
         # these two test must be run in separate python environments, due to the way ghidra bridge works
         # you also must run these tests in the exact order shown here
-        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_remote_ghidra.py -s
-        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest ./tests/test_decompilers.py -s
+        TEST_BINARIES_DIR=/tmp/bs-artifacts/binaries pytest tests/test_decompilers.py tests/test_client_server.py -sv
