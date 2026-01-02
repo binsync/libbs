@@ -13,7 +13,7 @@ from collections import defaultdict
 import threading
 
 from libbs.artifacts import (
-    Artifact, Function, Comment, Patch, GlobalVariable, 
+    Artifact, Function, Comment, Patch, GlobalVariable, Segment,
     Struct, Enum, Typedef, Context, Decompilation
 )
 from libbs.api.decompiler_server import SocketProtocol
@@ -327,6 +327,7 @@ class DecompilerClient:
         self.comments = FastClientArtifactDict("comments", Comment, self)
         self.patches = FastClientArtifactDict("patches", Patch, self)
         self.global_vars = FastClientArtifactDict("global_vars", GlobalVariable, self)
+        self.segments = FastClientArtifactDict("segments", Segment, self)
         self.structs = FastClientArtifactDict("structs", Struct, self)
         self.enums = FastClientArtifactDict("enums", Enum, self)
         self.typedefs = FastClientArtifactDict("typedefs", Typedef, self)
