@@ -1,9 +1,6 @@
 import argparse
 import sys
 import logging
-from pathlib import Path
-import importlib
-import importlib.resources
 
 from libbs.plugin_installer import LibBSPluginInstaller
 
@@ -105,11 +102,9 @@ def main():
             """,
             epilog="""
             Examples:
-            libbs --install
-            libbs --server --socket-path /tmp/my_server.sock
+            libbs --install | 
+            libbs --server --socket-path /tmp/my_server.sock | 
             libbs --server --decompiler ghidra --binary-path /path/to/binary --headless
-            libbs --client --server-url unix:///tmp/libbs_server_abc123/decompiler.sock
-            libbs --client  # Auto-discover server
             """
     )
     parser.add_argument(
@@ -123,11 +118,6 @@ def main():
     parser.add_argument(
         "--server", action="store_true", help="""
         Start the DecompilerServer to expose DecompilerInterface APIs over AF_UNIX sockets.
-        """
-    )
-    parser.add_argument(
-        "--client", action="store_true", help="""
-        Test the DecompilerClient connection to a running DecompilerServer.
         """
     )
     parser.add_argument(
@@ -172,8 +162,6 @@ def main():
             binary_path=args.binary_path,
             headless=args.headless
         )
-    elif args.client:
-        test_client(server_url=args.server_url)
     else:
         parser.print_help()
 
