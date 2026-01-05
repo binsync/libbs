@@ -11,6 +11,7 @@ from libbs.artifacts import (
 from libbs.api.decompiler_interface import requires_decompilation
 from . import compat
 from .artifact_lifter import IDAArtifactLifter
+from .compat import get_ida_gui_version
 from .hooks import ContextMenuHooks, ScreenHook, IDBHooks, IDPHooks, HexraysHooks
 
 if compat.IDA_IS_INTERACTIVE:
@@ -41,7 +42,7 @@ class IDAInterface(DecompilerInterface):
         self.cached_ord_to_type_names = {}
 
         super().__init__(
-            name="ida", qt_version="PyQt5", artifact_lifter=IDAArtifactLifter(self),
+            name="ida", qt_version=get_ida_gui_version(), artifact_lifter=IDAArtifactLifter(self),
             decompiler_available=compat.initialize_decompiler(), **kwargs
         )
 

@@ -57,7 +57,7 @@ def get_form_to_type_name():
             idaapi.BWN_FUNCS: "functions",
             idaapi.BWN_STRINGS: "strings"
         }
-        if get_ida_version() >= Version("9.0"):
+        if get_ida_version() >= 900:
             mapping.update({
                 idaapi.BWN_TILIST: "types"
             })
@@ -216,21 +216,19 @@ def set_func_ret_type(ea, return_type_str):
 #
 
 
-@execute_write
-def _get_ida_version():
-    return idaapi.get_kernel_version()
-
-
 def get_ida_version():
     global _IDA_VERSION
     if _IDA_VERSION is None:
-        _IDA_VERSION = Version(_get_ida_version())
+        _IDA_VERSION = idaapi.IDA_SDK_VERSION
 
     return _IDA_VERSION
 
+def get_ida_gui_version() -> str:
+    return "PySide6" if get_ida_version() >= 920 else "PyQt5"
+
 
 def new_ida_typing_system():
-    return get_ida_version() >= Version("8.4")
+    return get_ida_version() >= 840
 
 
 def get_ordinal_count():
@@ -842,7 +840,7 @@ def get_frame_info(func_addr) -> typing.Tuple[int, int]:
     return frame_size, last_member_size
 
 def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
-    if get_ida_version() < Version("9.0"):
+    if get_ida_version() < 900:
         return _deprecated_ida_to_bs_offset(func_addr, ida_stack_off)
 
     frame_size, last_member_size = get_frame_info(func_addr)
@@ -853,7 +851,7 @@ def ida_to_bs_stack_offset(func_addr: int, ida_stack_off: int):
     return bs_soff
 
 def bs_to_ida_stack_offset(func_addr: int, bs_stack_off: int):
-    if get_ida_version() < Version("9.0"):
+    if get_ida_version() < 900:
         # maintain backwards compatibility
         return _deprecated_bs_to_ida_offset(func_addr, bs_stack_off)
 
@@ -1194,7 +1192,7 @@ def set_ida_struct(struct: Struct) -> bool:
 
     # expand the struct to the desired size
     # XXX: do not increment API here, why? Not sure, but you cant do it here.
-    if get_ida_version() >= Version("9.0"):
+    if get_ida_version() >= 900:
         expand_ida_struct(sid, struct.size)
     else:
         idc.expand_struc(struct_identifier, 0, struct.size, False)
@@ -1484,7 +1482,7 @@ def set_enum(bs_enum: Enum):
 
 
 def use_new_typedef_check():
-    return get_ida_version() >= Version("8.4")
+    return get_ida_version() >= 900
 
 
 def typedef_info(tif, use_new_check=False) -> typing.Tuple[bool, typing.Optional[str], typing.Optional[str]]:
@@ -1726,15 +1724,8 @@ def initialize_decompiler():
 
 def has_older_hexrays_version():
     wait_for_idc_initialization()
-    try:
-        vers = ida_hexrays.get_hexrays_version()
-    except Exception:
-        return False
-    
-    if not isinstance(vers, str):
-        return False 
-
-    return not vers.startswith("8.2")
+    # any 8.2 versions is bad
+    return 820 <= get_ida_version() < 830
 
 
 @execute_write
