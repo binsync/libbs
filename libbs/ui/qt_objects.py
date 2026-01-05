@@ -62,6 +62,7 @@ if ui_version == "PySide6":
         QPen,
         QCursor,
     )
+    from shiboken6 import wrapInstance
 else:
     from PyQt5.QtCore import (
         QDir, Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, QPersistentModelIndex,
@@ -126,3 +127,10 @@ else:
         QPen,
         QCursor,
     )
+    try:
+        # new location for sip
+        # https://www.riverbankcomputing.com/static/Docs/PyQt5/incompatibilities.html#pyqt-v5-11
+        from PyQt5.sip import wrapinstance as wrapInstance
+    except ImportError:
+        from sip import wrapinstance as wrapInstance
+

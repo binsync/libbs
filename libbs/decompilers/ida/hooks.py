@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 from packaging.version import Version
 import datetime
 
-from .compat import IDA_IS_INTERACTIVE
+from .compat import IDA_IS_INTERACTIVE, get_ida_gui_version
 
 import ida_bytes
 import ida_funcs
@@ -75,7 +75,7 @@ class IDBHooks(ida_idp.IDB_Hooks):
         ida_idp.IDB_Hooks.__init__(self)
         self.interface: "IDAInterface" = interface
         self._seen_function_prototypes = {}
-        self._ver_9_or_higher = compat.get_ida_version() >= Version("9.0")
+        self._ver_9_or_higher = compat.get_ida_version() >= 900
 
     def bs_type_deleted(self, ordinal):
         old_name, old_type = self.interface.cached_ord_to_type_names[ordinal]
@@ -565,8 +565,9 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
 #
 
 if IDA_IS_INTERACTIVE:
-    from PyQt5 import QtCore
-    from PyQt5.QtGui import QKeyEvent
+    from libbs.ui.version import set_ui_version
+    set_ui_version(get_ida_gui_version())
+    from libbs.ui.qt_objects import QKeyEvent, QEvent, Qt
 
     class IDAHotkeyHook(ida_kernwin.UI_Hooks):
         def __init__(self, keys_to_pass, uiptr):
@@ -580,7 +581,7 @@ if IDA_IS_INTERACTIVE:
             key_event = uie.get_source_QEvent()
             keycode = key_event.key()
             if keycode[0] in self.keys_to_pass:
-                ke = QKeyEvent(QtCore.QEvent.KeyPress, keycode[0], QtCore.Qt.NoModifier)
+                ke = QKeyEvent(QEvent.KeyPress, keycode[0], Qt.NoModifier)
                 # send new event
                 self.ui.event(ke)
                 # consume the event so ida doesn't take it

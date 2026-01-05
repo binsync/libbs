@@ -1,14 +1,12 @@
 import logging
 
 import idaapi
-try:
-    import sip
-except ImportError:
-    import PyQt5.sip as sip
+
+from .compat import get_ida_gui_version
 
 from libbs.ui.version import set_ui_version
-set_ui_version("PyQt5")
-from libbs.ui.qt_objects import QWidget, QVBoxLayout
+set_ui_version(get_ida_gui_version())
+from libbs.ui.qt_objects import QWidget, QVBoxLayout, wrapInstance
 
 _l = logging.getLogger(__name__)
 
@@ -39,7 +37,7 @@ def ask_choice(question, choices, title="Choose an option"):
 class IDAWidgetWrapper(object):
     def __init__(self, qt_cls, window_name: str, *args, **kwargs):
         self.twidget = idaapi.create_empty_widget(window_name)
-        self.widget = sip.wrapinstance(int(self.twidget), QWidget)
+        self.widget = wrapInstance(int(self.twidget), QWidget)
         self.name = window_name
         self.widget.name = window_name
         self.width_hint = 250
