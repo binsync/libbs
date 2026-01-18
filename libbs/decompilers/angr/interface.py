@@ -12,7 +12,8 @@ from libbs.api.decompiler_interface import (
     DecompilerInterface,
 )
 from libbs.artifacts import (
-    Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact, Decompilation, Context
+    Function, FunctionHeader, Comment, StackVariable, FunctionArgument, Artifact, Decompilation, Context,
+    Struct, StructMember
 )
 from .artifact_lifter import AngrArtifactLifter
 
@@ -256,8 +257,9 @@ class AngrInterface(DecompilerInterface):
         # re-decompile a function if needed
         decompilation = self.decompile_function(angr_func).codegen
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
-        if not self.headless:
-            self.refresh_decompilation(func.addr)
+        if not self.headless and changes:
+            # Use "retype_variable" event to trigger proper UI refresh including type reflow
+            self.refresh_decompilation(func.addr, event="retype_variable")
 
         return changes
 
@@ -348,11 +350,33 @@ class AngrInterface(DecompilerInterface):
             return changed
 
         dec_svar = AngrInterface.find_stack_var_in_codegen(decompilation, svar.offset)
-        if dec_svar and svar.name and svar.name != dec_svar.name:
-            # TODO: set the types of the stack vars
+        if not dec_svar:
+            return changed
+
+        # Set the name if provided and different
+        if svar.name and svar.name != dec_svar.name:
             dec_svar.name = svar.name
             dec_svar.renamed = True
             changed = True
+
+        # Set the type if provided
+        if svar.type:
+            try:
+                from angr.sim_type import parse_type
+                types_store = self.main_instance.project.kb.types
+                arch = self.main_instance.project.arch
+
+                # Parse the type string into a SimType
+                sim_type = parse_type(svar.type, predefined_types=types_store, arch=arch)
+                sim_type = sim_type.with_arch(arch)
+
+                # Get the variable manager and set the type
+                variable_kb = decompilation._variable_kb if hasattr(decompilation, '_variable_kb') else self.main_instance.project.kb
+                variable_manager = variable_kb.variables[svar.addr]
+                variable_manager.set_variable_type(dec_svar, sim_type, all_unified=True, mark_manual=True)
+                changed = True
+            except Exception as e:
+                l.warning(f"Failed to set stack variable type for {svar.name}: {e}")
 
         return changed
 
@@ -381,6 +405,109 @@ class AngrInterface(DecompilerInterface):
 
         func_addr = comment.func_addr or self.get_closest_function(comment.addr)
         return changed & self.refresh_decompilation(func_addr)
+
+    # structs
+    def _structs(self) -> Dict[str, Struct]:
+        """
+        Returns a dict of libbs.Struct that contain the name and size of each struct in the decompiler.
+        """
+        from angr.sim_type import SimStruct, TypeRef
+        structs = {}
+        types_store = self.main_instance.project.kb.types
+
+        for type_ref in types_store.iter_own():
+            if not isinstance(type_ref, TypeRef):
+                continue
+            sim_type = type_ref.type
+            if isinstance(sim_type, SimStruct):
+                structs[type_ref.name] = Struct(type_ref.name, sim_type.size // 8 if sim_type.size else 0, {})
+
+        return structs
+
+    def _get_struct(self, name) -> Optional[Struct]:
+        """
+        Get a struct by name from the TypesStore.
+        """
+        from angr.sim_type import SimStruct, TypeRef
+        types_store = self.main_instance.project.kb.types
+
+        try:
+            type_ref = types_store[name]
+        except KeyError:
+            return None
+
+        if not isinstance(type_ref, TypeRef):
+            return None
+
+        sim_struct = type_ref.type
+        if not isinstance(sim_struct, SimStruct):
+            return None
+
+        return self._angr_struct_to_libbs(name, sim_struct)
+
+    def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
+        """
+        Create or update a struct in the TypesStore.
+        """
+        from angr.sim_type import SimStruct, TypeRef, parse_type
+        from collections import OrderedDict
+
+        types_store = self.main_instance.project.kb.types
+        arch = self.main_instance.project.arch
+
+        # Build the fields OrderedDict from LibBS struct members
+        fields = OrderedDict()
+        if members and struct.members:
+            sorted_members = sorted(struct.members.items(), key=lambda x: x[0])
+            for offset, member in sorted_members:
+                # Parse the member type string into a SimType
+                try:
+                    sim_type = parse_type(member.type, predefined_types=types_store, arch=arch)
+                except Exception:
+                    # Fallback to a simple int type with the right size if parsing fails
+                    from angr.sim_type import SimTypeInt
+                    sim_type = SimTypeInt(signed=False).with_arch(arch)
+
+                fields[member.name] = sim_type.with_arch(arch)
+
+        # Create the SimStruct
+        sim_struct = SimStruct(fields, name=struct.name, pack=True)
+        sim_struct = sim_struct.with_arch(arch)
+
+        # Wrap it in a TypeRef and store it
+        type_ref = TypeRef(struct.name, sim_struct)
+        types_store[struct.name] = type_ref
+
+        return True
+
+    def _del_struct(self, name) -> bool:
+        """
+        Delete a struct from the TypesStore.
+        """
+        types_store = self.main_instance.project.kb.types
+
+        if name in types_store.data:
+            del types_store.data[name]
+            return True
+
+        return False
+
+    @staticmethod
+    def _angr_struct_to_libbs(name: str, sim_struct: "angr.sim_type.SimStruct") -> Struct:
+        """
+        Convert an angr SimStruct to a LibBS Struct.
+        """
+        members = {}
+        if sim_struct._arch is not None:
+            offsets = sim_struct.offsets
+            for field_name, sim_type in sim_struct.fields.items():
+                offset = offsets.get(field_name, 0)
+                type_str = sim_type.c_repr() if sim_type else None
+                size = sim_type.size // 8 if sim_type and sim_type.size else 0
+                members[offset] = StructMember(field_name, offset, type_str, size)
+
+        size = sim_struct.size // 8 if sim_struct.size else 0
+        return Struct(name, size, members)
 
     #
     #   Utils
@@ -431,13 +558,16 @@ class AngrInterface(DecompilerInterface):
 
         return addr in node.instruction_addrs
 
-    def refresh_decompilation(self, func_addr):
+    def refresh_decompilation(self, func_addr, event=None):
         if self.headless:
             return False
 
         self.workspace.jump_to(func_addr)
         view = self.workspace._get_or_create_view("pseudocode", CodeView)
-        view.codegen.am_event()
+        if event:
+            view.codegen.am_event(event=event)
+        else:
+            view.codegen.am_event()
         view.focus()
         return True
 
