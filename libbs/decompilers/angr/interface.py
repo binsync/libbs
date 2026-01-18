@@ -257,8 +257,9 @@ class AngrInterface(DecompilerInterface):
         # re-decompile a function if needed
         decompilation = self.decompile_function(angr_func).codegen
         changes = super()._set_function(func, decompilation=decompilation, **kwargs)
-        if not self.headless:
-            self.refresh_decompilation(func.addr)
+        if not self.headless and changes:
+            # Use "retype_variable" event to trigger proper UI refresh including type reflow
+            self.refresh_decompilation(func.addr, event="retype_variable")
 
         return changes
 
@@ -557,13 +558,16 @@ class AngrInterface(DecompilerInterface):
 
         return addr in node.instruction_addrs
 
-    def refresh_decompilation(self, func_addr):
+    def refresh_decompilation(self, func_addr, event=None):
         if self.headless:
             return False
 
         self.workspace.jump_to(func_addr)
         view = self.workspace._get_or_create_view("pseudocode", CodeView)
-        view.codegen.am_event()
+        if event:
+            view.codegen.am_event(event=event)
+        else:
+            view.codegen.am_event()
         view.focus()
         return True
 
