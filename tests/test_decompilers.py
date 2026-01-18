@@ -436,12 +436,99 @@ class TestHeadlessInterfaces(unittest.TestCase):
             headless=True,
             binary_path=self.FAUXWARE_PATH
         )
+        self.deci = deci
         func_addr = deci.art_lifter.lift_addr(0x400664)
         main = deci.functions[func_addr]
         main.name = self.RENAMED_NAME
         deci.functions[func_addr] = main
         assert deci.functions[func_addr].name == self.RENAMED_NAME
         assert self.RENAMED_NAME in deci.main_instance.project.kb.functions
+
+        #
+        # Struct support
+        #
+
+        # test struct creation
+        new_struct = Struct()
+        new_struct.name = "my_angr_struct"
+        new_struct.add_struct_member('char_member', 0, 'char', 1)
+        new_struct.add_struct_member('int_member', 1, 'int', 4)
+        deci.structs[new_struct.name] = new_struct
+
+        # verify struct was created
+        updated = deci.structs[new_struct.name]
+        assert updated is not None, "Struct was not created"
+        assert updated.name == new_struct.name
+
+        # verify members are present
+        assert 0 in updated.members, "First member not found"
+        assert 1 in updated.members, "Second member not found"
+
+        # test struct listing
+        struct_items = list(deci.structs.items())
+        struct_names = [k for k, v in struct_items]
+        assert new_struct.name in struct_names, "Struct not found in listing"
+
+        #
+        # Stack variable type setting
+        #
+
+        # Get the main function which has stack variables
+        main_func_addr = deci.art_lifter.lift_addr(0x40071d)
+        main_func = deci.functions[main_func_addr]
+
+        # Check that we have stack variables
+        assert len(main_func.stack_vars) > 0, "No stack variables found in main function"
+
+        # Get the first stack variable and change its type to a primitive
+        first_offset = list(main_func.stack_vars.keys())[0]
+        original_svar = main_func.stack_vars[first_offset]
+
+        # Set a new type (change to int)
+        original_svar.type = "int"
+        deci.functions[main_func_addr] = main_func
+
+        # Verify the type was set by re-fetching the function
+        updated_func = deci.functions[main_func_addr]
+        updated_svar = updated_func.stack_vars.get(first_offset)
+        assert updated_svar is not None, "Stack variable not found after update"
+        # The type should contain "int" (may be formatted differently by angr)
+        assert "int" in updated_svar.type.lower() if updated_svar.type else False, \
+            f"Stack variable type was not updated to int, got: {updated_svar.type}"
+
+        #
+        # Stack variable type setting with struct type
+        #
+
+        # Re-fetch the function to get fresh stack variables
+        main_func = deci.functions[main_func_addr]
+
+        # Get a stack variable (use the same one or another if available)
+        svar_offsets = list(main_func.stack_vars.keys())
+        struct_test_offset = svar_offsets[0] if len(svar_offsets) == 1 else svar_offsets[1]
+        struct_test_svar = main_func.stack_vars[struct_test_offset]
+
+        # Set the type to a pointer to our struct
+        struct_ptr_type = f"struct {new_struct.name} *"
+        struct_test_svar.type = struct_ptr_type
+        deci.functions[main_func_addr] = main_func
+
+        # Verify the struct type was set
+        updated_func = deci.functions[main_func_addr]
+        updated_svar = updated_func.stack_vars.get(struct_test_offset)
+        assert updated_svar is not None, "Stack variable not found after struct type update"
+        assert updated_svar.type is not None, "Stack variable type is None after struct type update"
+        # The type should contain the struct name
+        assert new_struct.name in updated_svar.type, \
+            f"Stack variable type was not updated to struct pointer, got: {updated_svar.type}"
+
+        # Now test struct deletion (after we're done using it for stack var types)
+        del deci.structs[new_struct.name]
+        struct_items = list(deci.structs.items())
+        struct_keys = [k for k, v in struct_items]
+        assert new_struct.name not in struct_keys, "Struct was not deleted"
+
+        deci.shutdown()
 
     def test_binja(self):
         deci = DecompilerInterface.discover(
