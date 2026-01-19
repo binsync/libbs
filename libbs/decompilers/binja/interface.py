@@ -145,9 +145,9 @@ class BinjaInterface(DecompilerInterface):
         )
         return True
 
-    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+    def gui_ask_for_string(self, question, title="Plugin Question", default_answer="") -> str:
         resp = binaryninja.get_text_line_input(question, title)
-        return resp.decode() if resp else ""
+        return resp.decode() if resp else default_answer
 
     def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
         choice_idx = binaryninja.get_choice_input(question, title, choices)

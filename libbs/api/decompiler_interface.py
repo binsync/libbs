@@ -195,13 +195,13 @@ class DecompilerInterface:
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         raise NotImplementedError
 
-    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+    def gui_ask_for_string(self, question, title="Plugin Question", default_answer="") -> str:
         """
         Opens a GUI dialog box that asks the user for a string. If not overriden by the decompiler interface,
         this will default to a Qt dialog box that is based on the decompilers Qt version.
         """
         from libbs.ui.utils import gui_ask_for_string
-        return gui_ask_for_string(question, title=title)
+        return gui_ask_for_string(question, title=title, default_answer=default_answer)
 
     def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
         """

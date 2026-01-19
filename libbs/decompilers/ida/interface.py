@@ -101,9 +101,9 @@ class IDAInterface(DecompilerInterface):
     # GUI
     #
 
-    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        resp = idaapi.ask_str("", 0, question)
-        return resp if resp else ""
+    def gui_ask_for_string(self, question, title="Plugin Question", default_answer="") -> str:
+        resp = idaapi.ask_str(default_answer, 0, question)
+        return resp if resp else default_answer
 
     def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
         return ida_ui.ask_choice(question, choices, title=title)
