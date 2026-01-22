@@ -226,7 +226,7 @@ class CTypeParser:
 
         failed_parse = False
         try:
-            node = self._type_parser_singleton.parse_type_with_name(text=defn)
+            node = self._type_parser_singleton.parse(text=defn)
         except ParseError:
             failed_parse = True
 
@@ -236,7 +236,7 @@ class CTypeParser:
         #
         if failed_parse:
             try:
-                node = self._type_parser_singleton.parse_type_with_name(text="struct " + defn)
+                node = self._type_parser_singleton.parse(text="struct " + defn)
             except Exception:
                 return (None, )
 
