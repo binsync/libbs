@@ -95,13 +95,6 @@ class CTypeParser:
 
         # hack in type parsing
         self._type_parser_singleton = pycparser.CParser()
-        self._type_parser_singleton.cparser = pycparser.ply.yacc.yacc(
-            module=self._type_parser_singleton,
-            start='parameter_declaration',
-            debug=False,
-            optimize=False,
-            errorlog=errorlog
-        )
         self.ALL_TYPES = {}
         self.BASIC_TYPES = {}
         self.STDINT_TYPES = {}
@@ -207,15 +200,15 @@ class CTypeParser:
 
         return type_name
 
-    def parse_type(self, defn, preprocess=True, predefined_types=None, arch=None) -> Optional[CType]:  # pylint:disable=unused-argument
+    def parse_type(self, defn, predefined_types=None, arch=None) -> Optional[CType]:  # pylint:disable=unused-argument
         """
         Parse a simple type expression into a SimType
 
         >>> self.parse_type('int *')
         """
-        return self.parse_type_with_name(defn, preprocess=preprocess, predefined_types=predefined_types, arch=arch)[0]
+        return self.parse_type_with_name(defn, predefined_types=predefined_types, arch=arch)[0]
 
-    def parse_type_with_name(self, defn, preprocess=True, predefined_types=None, arch=None):  # pylint:disable=unused-argument
+    def parse_type_with_name(self, defn, predefined_types=None, arch=None):  # pylint:disable=unused-argument
         """
         Parse a simple type expression into a SimType, returning the a tuple of the type object and any associated name
         that might be found in the place a name would go in a type declaration.
@@ -228,12 +221,12 @@ class CTypeParser:
         if pycparser is None:
             raise ImportError("Please install pycparser in order to parse C definitions")
 
-        if preprocess:
-            defn = re.sub(r"/\*.*?\*/", r"", defn)
+        defn = re.sub(r"/\*.*?\*/", r"", defn, flags=re.DOTALL)
+        defn = re.sub(r"//.*?$", r"", defn, flags=re.MULTILINE)
 
         failed_parse = False
         try:
-            node = self._type_parser_singleton.parse(text=defn)
+            node = self._type_parser_singleton.parse_type_with_name(text=defn)
         except ParseError:
             failed_parse = True
 
@@ -243,7 +236,7 @@ class CTypeParser:
         #
         if failed_parse:
             try:
-                node = self._type_parser_singleton.parse(text="struct " + defn)
+                node = self._type_parser_singleton.parse_type_with_name(text="struct " + defn)
             except Exception:
                 return (None, )
 
