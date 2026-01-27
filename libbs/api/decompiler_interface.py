@@ -1016,8 +1016,16 @@ class DecompilerInterface:
                 return IDA_DECOMPILER
         except Exception:
             pass
+
         try:
+            # for IDA 9 Beta
             import ida
+            available.add(IDA_DECOMPILER)
+        except ImportError:
+            pass
+        try:
+            # for IDA 9+
+            import idapro
             available.add(IDA_DECOMPILER)
         except Exception:
             pass

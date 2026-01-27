@@ -28,8 +28,11 @@ assert TEST_BINARIES_DIR.exists(), f"Test binaries dir {TEST_BINARIES_DIR} does 
 _l = logging.getLogger(__name__)
 
 def custom_load_ida(binary_path: Path, extra_args: list[str] | None = None, delete_old_idb=True) -> None:
-    import ida
-    idat_path = Path(ida.__file__).parent / "bin/idat64"
+    try:
+        import idapro
+    except ImportError:
+        import ida as idapro
+    idat_path = Path(idapro.__file__).parent / "bin/idat64"
     assert idat_path.exists(), "IDA executable not found, this cannot run"
 
     # first, assure no idb currently reside there
