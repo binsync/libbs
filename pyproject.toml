@@ -16,8 +16,7 @@ urls = {Homepage = "https://github.com/binsync/libbs"}
 requires-python = ">= 3.10"
 dependencies = [
     "toml",
-    "ply",
-    "pycparser",
+    "pycparser<3.0",
     "setuptools",
     "prompt_toolkit",
     "tqdm",
