@@ -27,7 +27,12 @@ if not IDA_IS_INTERACTIVE:
         pass
 
 if not IDA_IS_INTERACTIVE:
-    import ida
+    try:
+        # IDA 9+
+        import idapro
+    except ImportError:
+        # IDA 9 Beta
+        import ida as idapro
 
 import idc, idaapi, ida_kernwin, ida_hexrays, ida_funcs, \
     ida_bytes, ida_idaapi, ida_typeinf, idautils, ida_kernwin, ida_segment

@@ -17,7 +17,12 @@ from .hooks import ContextMenuHooks, ScreenHook, IDBHooks, IDPHooks, HexraysHook
 if compat.IDA_IS_INTERACTIVE:
     from . import ida_ui
 else:
-    import ida
+    try:
+        # IDA 9+
+        import idapro
+    except ImportError:
+        # IDA 9 Beta
+        import ida as idapro
 
 import idc
 import idaapi
@@ -60,7 +65,7 @@ class IDAInterface(DecompilerInterface):
         This also means that this feature is only supported in IDA versions >= 9.0
         """
         super()._init_headless_components(*args, **kwargs)
-        failure = ida.open_database(str(self.binary_path), True)
+        failure = idapro.open_database(str(self.binary_path), True)
         if failure:
             raise RuntimeError(f"Failed to open database {self.binary_path}")
 
@@ -69,7 +74,7 @@ class IDAInterface(DecompilerInterface):
         This function deinitializes the headless functionality of IDA through idalib.
         This also means that this feature is only supported in IDA versions >= 9.0
         """
-        ida.close_database(False)
+        idapro.close_database(False)
 
     def _init_gui_hooks(self):
         """
