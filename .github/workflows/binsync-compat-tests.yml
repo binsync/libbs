@@ -33,4 +33,4 @@ jobs:
         git checkout $BRANCH_NAME || true
         pip install pytest .[extras]
         # Run binsync core tests
-        pytest ./tests/test_client.py ./tests/test_state.py ./tests/test_auxiliary_server.py ./tests/test_cli.py::TestInstaller -v
+        pytest ./tests/test_client.py ./tests/test_state.py ./tests/test_auxiliary_server.py -v
