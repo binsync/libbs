@@ -5,6 +5,8 @@ from pathlib import Path
 
 import unittest
 
+from libbs.plugin_installer import LibBSPluginInstaller
+
 
 class TestCommandline(unittest.TestCase):
     def test_change_watcher_plugin_cli(self):
@@ -22,8 +24,6 @@ class TestInstaller(unittest.TestCase):
 
     def test_install_ida_to_custom_path(self):
         """Test installing IDA plugin to a custom path."""
-        from libbs.plugin_installer import LibBSPluginInstaller
-
         with tempfile.TemporaryDirectory() as tmpdir:
             installer = LibBSPluginInstaller(targets=["ida"])
             result = installer.install(interactive=False, paths_by_target={"ida": tmpdir})
@@ -33,8 +33,6 @@ class TestInstaller(unittest.TestCase):
 
     def test_install_binja_to_custom_path(self):
         """Test installing Binary Ninja plugin to a custom path."""
-        from libbs.plugin_installer import LibBSPluginInstaller
-
         with tempfile.TemporaryDirectory() as tmpdir:
             installer = LibBSPluginInstaller(targets=["binja"])
             result = installer.install(interactive=False, paths_by_target={"binja": tmpdir})
@@ -44,8 +42,6 @@ class TestInstaller(unittest.TestCase):
 
     def test_install_ghidra_to_custom_path(self):
         """Test installing Ghidra plugin to a custom path."""
-        from libbs.plugin_installer import LibBSPluginInstaller
-
         with tempfile.TemporaryDirectory() as tmpdir:
             installer = LibBSPluginInstaller(targets=["ghidra"])
             result = installer.install(interactive=False, paths_by_target={"ghidra": tmpdir})
@@ -55,8 +51,6 @@ class TestInstaller(unittest.TestCase):
 
     def test_install_angr_skipped_without_angrmanagement(self):
         """Test that angr install is skipped when angr-management is not installed."""
-        from libbs.plugin_installer import LibBSPluginInstaller
-
         with tempfile.TemporaryDirectory() as tmpdir:
             installer = LibBSPluginInstaller(targets=["angr"])
             # angr install requires angr-management to be installed, so it should be skipped
@@ -67,8 +61,6 @@ class TestInstaller(unittest.TestCase):
 
     def test_install_all_decompilers_to_custom_paths(self):
         """Test installing all decompilers to custom paths."""
-        from libbs.plugin_installer import LibBSPluginInstaller
-
         with tempfile.TemporaryDirectory() as tmpdir:
             ida_path = Path(tmpdir) / "ida"
             binja_path = Path(tmpdir) / "binja"
