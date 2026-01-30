@@ -40,7 +40,8 @@ import idc
 from . import compat
 from libbs.artifacts import (
     FunctionHeader, StackVariable,
-    Comment, GlobalVariable, Enum, Struct, Context, Typedef, StructMember
+    Comment, GlobalVariable, Enum, Struct, Context, Typedef, StructMember,
+    Decompilation
 )
 
 if TYPE_CHECKING:
@@ -516,11 +517,13 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
     @while_should_watch
     def lvar_name_changed(self, vdui, lvar, new_name, *args):
         self.local_var_changed(vdui, lvar, reset_type=True, var_name=new_name)
+        self._send_decompilation_event(vdui.cfunc)
         return 0
 
     @while_should_watch
     def lvar_type_changed(self, vu: "vdui_t", v: "lvar_t", *args) -> int:
         self.local_var_changed(vu, v, reset_name=True)
+        self._send_decompilation_event(vu.cfunc)
         return 0
 
     @while_should_watch
@@ -528,11 +531,29 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
         self.interface.comment_changed(
             Comment(treeloc.ea, cmt_str, func_addr=cfunc.entry_ea, decompiled=True), deleted=not cmt_str
         )
+        self._send_decompilation_event(cfunc)
+        return 0
+
+    @while_should_watch
+    def refresh_pseudocode(self, vu):
+        self._send_decompilation_event(vu.cfunc)
         return 0
 
     #
     # helpers
     #
+
+    def _send_decompilation_event(self, cfunc):
+        if cfunc is None:
+            return
+
+        dec = Decompilation(
+            # only IDA support for now
+            addr=cfunc.entry_ea,
+            text=str(cfunc),
+            decompiler="ida"
+        )
+        self.interface.decompilation_changed(dec)
 
     def local_var_changed(self, vdui, lvar, reset_type=False, reset_name=False, var_name=None):
         func_addr = vdui.cfunc.entry_ea
