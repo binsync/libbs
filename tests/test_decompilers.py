@@ -923,6 +923,39 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         assert event_triggered, "Decompilation change event was not triggered"
 
+        deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
 
-if __name__ == "__main__":
-    unittest.main()
+        # mock objects to simulate IDA's HexRays structures
+        class MockCfunc:
+            entry_ea = 0x40071d
+            def __str__(self):
+                return "void main() { int var_1; ... }"
+
+        class MockVdui:
+            cfunc = MockCfunc()
+
+        class MockLoc:
+            def stkoff(self): return 0
+
+        class MockLvar:
+            is_arg_var = False
+            def is_stk_var(self): return True
+            def is_reg_var(self): return False
+            def type(self):
+                class MockType:
+                    def __str__(self): return "int"
+                return MockType()
+            width = 4
+            name = "var_1"
+            location = MockLoc()
+
+        # trigger the hook manually
+        hexrays_hook.lvar_name_changed(MockVdui(), MockLvar(), "new_var_name")
+
+        # wait for thread if necessary
+        if deci._thread_artifact_callbacks:
+            time.sleep(0.5)
+
+        assert event_triggered, "Decompilation change event was not triggered by HexRays hook"
+
+        deci.shutdown()
