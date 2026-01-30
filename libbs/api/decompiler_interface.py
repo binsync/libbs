@@ -813,6 +813,17 @@ class DecompilerInterface:
 
         return lifted_struct
 
+    def decompilation_changed(self, decompilation: Decompilation, **kwargs) -> Decompilation:
+        lifted_dcmp = self.art_lifter.lift(decompilation)
+        for callback_func in self.artifact_change_callbacks[Decompilation]:
+            args = (lifted_dcmp,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
+
+        return lifted_dcmp
+
     def enum_changed(self, enum: Enum, deleted=False, **kwargs) -> Enum:
         kwargs["deleted"] = deleted
         lifted_enum = self.art_lifter.lift(enum)

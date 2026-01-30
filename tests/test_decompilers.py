@@ -883,7 +883,77 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
             deci.shutdown()
 
+    def test_ida_hook_decompilation_event(self):
+        """
+        Tests that the HexRays hooks correctly trigger the decompilation_changed event.
+        This will manually invoke the hook method with mock objects to verify this functionality.
+        """
+        deci = DecompilerInterface.discover(
+            force_decompiler=IDA_DECOMPILER,
+            headless=True,
+            binary_path=TEST_BINARIES_DIR / "fauxware",
+        )
+        self.deci = deci
 
+        # initialize hooks
+        deci.start_artifact_watchers()
+        # force analysis to finished for the watch check
+        deci._ida_analysis_finished = True
 
-if __name__ == "__main__":
-    unittest.main()
+        # find the HexraysHooks instance
+        from libbs.decompilers.ida.hooks import HexraysHooks
+        hexrays_hook = None
+        for hook in deci._artifact_watcher_hooks:
+            if isinstance(hook, HexraysHooks):
+                hexrays_hook = hook
+                break
+        
+        if hexrays_hook is None:
+            deci.shutdown()
+            self.skipTest("HexraysHooks not found")
+
+        # register our callback
+        event_triggered = False
+        def on_decompilation_change(decompilation):
+            nonlocal event_triggered
+            event_triggered = True
+            assert decompilation.addr is not None
+            assert decompilation.text is not None
+            assert decompilation.decompiler == "ida"
+
+        deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
+
+        # mock objects to simulate IDA's HexRays structures
+        class MockCfunc:
+            entry_ea = 0x40071d
+            def __str__(self):
+                return "void main() { int var_1; ... }"
+
+        class MockVdui:
+            cfunc = MockCfunc()
+
+        class MockLoc:
+            def stkoff(self): return 0
+
+        class MockLvar:
+            is_arg_var = False
+            def is_stk_var(self): return True
+            def is_reg_var(self): return False
+            def type(self): 
+                class MockType:
+                    def __str__(self): return "int"
+                return MockType()
+            width = 4
+            name = "var_1"
+            location = MockLoc()
+
+        # trigger the hook manually
+        hexrays_hook.lvar_name_changed(MockVdui(), MockLvar(), "new_var_name")
+
+        # wait for thread if necessary
+        if deci._thread_artifact_callbacks:
+            time.sleep(0.5)
+
+        assert event_triggered, "Decompilation change event was not triggered by HexRays hook"
+
+        deci.shutdown()
