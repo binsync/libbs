@@ -885,8 +885,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
     def test_ida_hook_decompilation_event(self):
         """
-        Tests that the HexRays hooks correctly trigger the decompilation_changed event.
-        This will manually invoke the hook method with mock objects to verify this functionality.
+        Tests that the HexRays hooks correctly trigger the decompilation_changed event
+        by performing a variable rename and observing the callback.
         """
         deci = DecompilerInterface.discover(
             force_decompiler=IDA_DECOMPILER,
@@ -897,22 +897,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # initialize hooks
         deci.start_artifact_watchers()
-        # force analysis to finished for the watch check
-        deci._ida_analysis_finished = True
 
-        # find the HexraysHooks instance
-        from libbs.decompilers.ida.hooks import HexraysHooks
-        hexrays_hook = None
-        for hook in deci._artifact_watcher_hooks:
-            if isinstance(hook, HexraysHooks):
-                hexrays_hook = hook
-                break
-        
-        if hexrays_hook is None:
-            deci.shutdown()
-            self.skipTest("HexraysHooks not found")
-
-        # register our callback
+        # register a callback to observe decompilation changes
         event_triggered = False
         def on_decompilation_change(decompilation):
             nonlocal event_triggered
@@ -923,38 +909,19 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
 
-        # mock objects to simulate IDA's HexRays structures
-        class MockCfunc:
-            entry_ea = 0x40071d
-            def __str__(self):
-                return "void main() { int var_1; ... }"
+        # perform a variable rename on main to trigger the hook
+        func_addr = deci.art_lifter.lift_addr(0x40071d)
+        main_func = deci.functions[func_addr]
+        local_var_names = deci.local_variable_names(main_func)
+        assert len(local_var_names) > 0, "No local variables found in main"
+        old_name = local_var_names[0]
+        deci.rename_local_variables_by_names(main_func, {old_name: "bs_renamed_var"})
 
-        class MockVdui:
-            cfunc = MockCfunc()
-
-        class MockLoc:
-            def stkoff(self): return 0
-
-        class MockLvar:
-            is_arg_var = False
-            def is_stk_var(self): return True
-            def is_reg_var(self): return False
-            def type(self): 
-                class MockType:
-                    def __str__(self): return "int"
-                return MockType()
-            width = 4
-            name = "var_1"
-            location = MockLoc()
-
-        # trigger the hook manually
-        hexrays_hook.lvar_name_changed(MockVdui(), MockLvar(), "new_var_name")
-
-        # wait for thread if necessary
+        # wait for threaded callback if necessary
         if deci._thread_artifact_callbacks:
             time.sleep(0.5)
 
-        assert event_triggered, "Decompilation change event was not triggered by HexRays hook"
+        assert event_triggered, "Decompilation change event was not triggered by variable rename"
 
         deci.shutdown()
 
