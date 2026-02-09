@@ -909,37 +909,19 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
 
-        # trigger decompilation_changed indirectly via a local variable rename
+        # perform a variable rename on main to trigger the hook
         func_addr = ida_deci.art_lifter.lift_addr(0x40071d)
-        func = Function(func_addr, 0)
-        lvar_names = ida_deci.local_variable_names(func)
-        assert lvar_names, "No local variables found in main"
-        old_name = lvar_names[0]
-        ida_deci.rename_local_variables_by_names(func, {old_name: old_name + "_test"})
+        main_func = ida_deci.functions[func_addr]
+        local_var_names = ida_deci.local_variable_names(main_func)
+        assert len(local_var_names) > 0, "No local variables found in main"
+        old_name = local_var_names[0]
+        ida_deci.rename_local_variables_by_names(main_func, {old_name: "bs_renamed_var"})
 
         # wait for threaded callback if necessary
         if ida_deci._thread_artifact_callbacks:
             time.sleep(0.5)
 
-        assert event_triggered, "Decompilation change event was not triggered"
-
-        deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
-
-        # perform a variable rename on main to trigger the hook
-        func_addr = deci.art_lifter.lift_addr(0x40071d)
-        main_func = deci.functions[func_addr]
-        local_var_names = deci.local_variable_names(main_func)
-        assert len(local_var_names) > 0, "No local variables found in main"
-        old_name = local_var_names[0]
-        deci.rename_local_variables_by_names(main_func, {old_name: "bs_renamed_var"})
-
-        # wait for threaded callback if necessary
-        if deci._thread_artifact_callbacks:
-            time.sleep(0.5)
-
         assert event_triggered, "Decompilation change event was not triggered by variable rename"
-
-        deci.shutdown()
 
 
 if __name__ == "__main__":
