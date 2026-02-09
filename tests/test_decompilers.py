@@ -923,6 +923,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         assert event_triggered, "Decompilation change event was not triggered by variable rename"
 
+        ida_deci.shutdown()
+
 
 if __name__ == "__main__":
     unittest.main()
