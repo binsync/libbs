@@ -548,7 +548,6 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
             return
 
         dec = Decompilation(
-            # only IDA support for now
             addr=cfunc.entry_ea,
             text=str(cfunc),
             decompiler="ida"
