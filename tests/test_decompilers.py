@@ -909,13 +909,11 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
 
-        # perform a variable rename on main to trigger the hook
+        # decompile a function and fire the decompilation changed event
         func_addr = ida_deci.art_lifter.lift_addr(0x40071d)
-        main_func = ida_deci.functions[func_addr]
-        local_var_names = ida_deci.local_variable_names(main_func)
-        assert len(local_var_names) > 0, "No local variables found in main"
-        old_name = local_var_names[0]
-        ida_deci.rename_local_variables_by_names(main_func, {old_name: "bs_renamed_var"})
+        dec = ida_deci.decompile(func_addr)
+        assert dec is not None, "Failed to decompile main"
+        ida_deci.decompilation_changed(dec)
 
         # wait for threaded callback if necessary
         if ida_deci._thread_artifact_callbacks:
