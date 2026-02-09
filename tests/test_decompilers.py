@@ -888,15 +888,15 @@ class TestHeadlessInterfaces(unittest.TestCase):
         Tests that the HexRays hooks correctly trigger the decompilation_changed event
         by performing a variable rename and observing the callback.
         """
-        deci = DecompilerInterface.discover(
+        ida_deci = DecompilerInterface.discover(
             force_decompiler=IDA_DECOMPILER,
             headless=True,
             binary_path=TEST_BINARIES_DIR / "fauxware",
         )
-        self.deci = deci
+        self.deci = ida_deci
 
         # initialize hooks
-        deci.start_artifact_watchers()
+        ida_deci.start_artifact_watchers()
 
         # register a callback to observe decompilation changes
         event_triggered = False
@@ -907,23 +907,21 @@ class TestHeadlessInterfaces(unittest.TestCase):
             assert decompilation.text is not None
             assert decompilation.decompiler == "ida"
 
-        deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
+        ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
 
         # perform a variable rename on main to trigger the hook
-        func_addr = deci.art_lifter.lift_addr(0x40071d)
-        main_func = deci.functions[func_addr]
-        local_var_names = deci.local_variable_names(main_func)
+        func_addr = ida_deci.art_lifter.lift_addr(0x40071d)
+        main_func = ida_deci.functions[func_addr]
+        local_var_names = ida_deci.local_variable_names(main_func)
         assert len(local_var_names) > 0, "No local variables found in main"
         old_name = local_var_names[0]
-        deci.rename_local_variables_by_names(main_func, {old_name: "bs_renamed_var"})
+        ida_deci.rename_local_variables_by_names(main_func, {old_name: "bs_renamed_var"})
 
         # wait for threaded callback if necessary
-        if deci._thread_artifact_callbacks:
+        if ida_deci._thread_artifact_callbacks:
             time.sleep(0.5)
 
         assert event_triggered, "Decompilation change event was not triggered by variable rename"
-
-        deci.shutdown()
 
 
 if __name__ == "__main__":
