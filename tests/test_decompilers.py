@@ -886,7 +886,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
     def test_ida_hook_decompilation_event(self):
         """
         Tests that the HexRays hooks correctly trigger the decompilation_changed event
-        by performing a variable rename and observing the callback.
+        by performing a decompilation and observing the callback.
         """
         ida_deci = DecompilerInterface.discover(
             force_decompiler=IDA_DECOMPILER,
@@ -919,7 +919,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         if ida_deci._thread_artifact_callbacks:
             time.sleep(0.5)
 
-        assert event_triggered, "Decompilation change event was not triggered by variable rename"
+        assert event_triggered, "Decompilation change event was not triggered"
 
 
 if __name__ == "__main__":
