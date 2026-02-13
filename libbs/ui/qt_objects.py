@@ -47,6 +47,7 @@ if ui_version == "PySide6":
         QGraphicsLineItem,
         QGraphicsItem,
         QToolTip,
+        QStackedLayout,
     )
     from PySide6.QtGui import (
         QFontDatabase,
@@ -114,6 +115,7 @@ else:
         QGraphicsLineItem,
         QGraphicsItem,
         QToolTip,
+        QStackedLayout,
     )
     from PyQt5.QtGui import (
         QFontDatabase,
