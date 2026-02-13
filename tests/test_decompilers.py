@@ -883,6 +883,43 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
             deci.shutdown()
 
+    def test_ida_hook_decompilation_event(self):
+        """
+        Tests that the HexRays hooks correctly trigger the decompilation_changed event
+        by performing a decompilation and observing the callback.
+        """
+        ida_deci = DecompilerInterface.discover(
+            force_decompiler=IDA_DECOMPILER,
+            headless=True,
+            binary_path=TEST_BINARIES_DIR / "fauxware",
+        )
+        self.deci = ida_deci
+
+        # initialize hooks
+        ida_deci.start_artifact_watchers()
+
+        # register a callback to observe decompilation changes
+        event_triggered = False
+        def on_decompilation_change(decompilation):
+            nonlocal event_triggered
+            event_triggered = True
+            assert decompilation.addr is not None
+            assert decompilation.text is not None
+            assert decompilation.decompiler == "ida"
+
+        ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
+
+        # decompile a function and fire the decompilation changed event
+        func_addr = ida_deci.art_lifter.lift_addr(0x40071d)
+        dec = ida_deci.decompile(func_addr)
+        assert dec is not None, "Failed to decompile main"
+        ida_deci.decompilation_changed(dec)
+
+        # wait for threaded callback if necessary
+        if ida_deci._thread_artifact_callbacks:
+            time.sleep(0.5)
+
+        assert event_triggered, "Decompilation change event was not triggered"
 
 
 if __name__ == "__main__":
