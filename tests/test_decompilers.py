@@ -912,10 +912,12 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # trigger decompilation_changed indirectly via a local variable rename
         func_addr = ida_deci.art_lifter.lift_addr(0x40071d)
         func = Function(func_addr, 0)
-        lvar_names = ida_deci.local_variable_names(func)
+        dec_obj = ida_deci.get_decompilation_object(func)
+        assert dec_obj is not None, "Failed to decompile main"
+        lvar_names = [lvar.name for lvar in dec_obj.get_lvars() if lvar.name]
         assert lvar_names, "No local variables found in main"
         old_name = lvar_names[0]
-        ida_deci.rename_local_variables_by_names(func, {old_name: old_name + "_test"})
+        ida_deci.rename_local_variables_by_names(func, {old_name: old_name + "_renamed"})
 
         # wait for threaded callback if necessary
         if ida_deci._thread_artifact_callbacks:
