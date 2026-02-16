@@ -911,18 +911,14 @@ class TestHeadlessInterfaces(unittest.TestCase):
         ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
 
         # trigger decompilation_changed indirectly via a local variable rename
-        func_addr = ida_deci.art_lifter.lift_addr(0x400664)
-        func = ida_deci.functions[func_addr]
-        assert func is not None, "Failed to load target function"
-
-        dec_obj = ida_deci.get_decompilation_object(func)
-        assert dec_obj is not None, "Failed to decompile target function"
-        old_name = next((lvar.name for lvar in dec_obj.get_lvars() if lvar.name), None)
-        assert old_name is not None, "No renameable variables found"
-
-        import ida_hexrays
-        changed = ida_hexrays.rename_lvar(func.addr, old_name, f"{old_name}_renamed")
-        assert changed, "Variable rename did not apply"
+        func_addr = ida_deci.art_lifter.lift_addr(0x40071d)
+        func = Function(func_addr, 0)
+        func.dec_obj = ida_deci.get_decompilation_object(func)
+        assert func.dec_obj is not None, "Failed to decompile main"
+        lvar_names = [lvar.name for lvar in func.dec_obj.get_lvars() if lvar.name]
+        assert lvar_names, "No local variables found in main"
+        old_name = lvar_names[0]
+        ida_deci.rename_local_variables_by_names(func, {old_name: old_name + "_renamed"})
 
         # wait for threaded callback if necessary
         if ida_deci._thread_artifact_callbacks:
