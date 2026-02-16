@@ -886,7 +886,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
     def test_ida_hook_decompilation_event(self):
         """
         Tests that the HexRays hooks correctly trigger the decompilation_changed event
-        by performing a decompilation and observing the callback.
+        by performing a function rename and observing the callback.
         """
         ida_deci = DecompilerInterface.discover(
             force_decompiler=IDA_DECOMPILER,
@@ -900,6 +900,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # register a callback to observe decompilation changes
         event_triggered = False
+
         def on_decompilation_change(decompilation):
             nonlocal event_triggered
             event_triggered = True
@@ -909,15 +910,14 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
 
-        # trigger decompilation_changed indirectly via a local variable rename
+        # trigger decompilation_changed indirectly via a function rename
         func_addr = ida_deci.art_lifter.lift_addr(0x40071d)
-        func = Function(func_addr, 0)
-        dec_obj = ida_deci.get_decompilation_object(func)
-        assert dec_obj is not None, "Failed to decompile main"
-        lvar_names = [lvar.name for lvar in dec_obj.get_lvars() if lvar.name]
-        assert lvar_names, "No local variables found in main"
-        old_name = lvar_names[0]
-        ida_deci.rename_local_variables_by_names(func, {old_name: old_name + "_renamed"})
+        func = ida_deci.functions[func_addr]
+        assert func is not None, "Failed to load main"
+        old_name = func.name
+        assert old_name, "Main function has no name"
+        func.name = f"{old_name}_renamed"
+        ida_deci.functions[func_addr] = func
 
         # wait for threaded callback if necessary
         if ida_deci._thread_artifact_callbacks:
