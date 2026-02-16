@@ -297,7 +297,12 @@ class IDAInterface(DecompilerInterface):
     @requires_decompilation
     def rename_local_variables_by_names(self, func: Function, name_map: Dict[str, str], **kwargs) -> bool:
         func = self.art_lifter.lower(func)
-        return compat.rename_local_variables_by_names(func, name_map)
+        changed = compat.rename_local_variables_by_names(func, name_map)
+        if changed:
+            dec = self._decompile(func)
+            if dec is not None:
+                self.decompilation_changed(dec)
+        return changed
 
     #
     # Artifact API
