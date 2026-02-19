@@ -892,7 +892,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
             force_decompiler=IDA_DECOMPILER,
             headless=True,
             binary_path=TEST_BINARIES_DIR / "fauxware",
-            thread_artifact_callbacks=False,
         )
         self.deci = ida_deci
 
