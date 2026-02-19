@@ -892,6 +892,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
             force_decompiler=IDA_DECOMPILER,
             headless=True,
             binary_path=TEST_BINARIES_DIR / "fauxware",
+            thread_artifact_callbacks=False,
         )
         self.deci = ida_deci
 
@@ -915,7 +916,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert event_triggered, "Decompilation change event was not triggered"
 
         ida_deci.shutdown()
-        self.deci = None
 
 if __name__ == "__main__":
     unittest.main()
