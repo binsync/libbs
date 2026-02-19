@@ -910,14 +910,16 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
 
-        # trigger a Hex-Rays decompilation update indirectly by renaming a decompiled argument
+        # trigger a decompilation update indirectly through lvar rename
         func_addr = ida_deci.art_lifter.lift_addr(0x40071d)
         func = ida_deci.functions[func_addr]
         assert func.header.args, "Expected main to have at least one argument"
 
-        arg_off = next(iter(func.header.args))
-        func.header.args[arg_off].name = "test_arg0"
-        ida_deci.functions[func_addr] = func
+        old_name = next(iter(func.header.args.values())).name
+        assert old_name, "Expected first function argument to have a name"
+        new_name = f"{old_name}_bs" if not old_name.endswith("_bs") else f"{old_name}_bs2"
+        changed = ida_deci.rename_local_variables_by_names(func, {old_name: new_name})
+        assert changed, "Failed to rename a local variable through lvar rename"
 
         # wait for threaded callback if necessary
         if ida_deci._thread_artifact_callbacks:
