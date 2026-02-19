@@ -912,7 +912,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # trigger a decompilation update indirectly through a decompiled comment
         func = ida_deci.functions[ida_deci.art_lifter.lift_addr(0x40071d)]
-        assert ida_deci._set_comment(Comment(func.addr, "test comment!", func_addr=func.addr, decompiled=True))
+        func.dec_obj = ida_deci.get_decompilation_object(func)
+        assert func.dec_obj is not None, "Failed to decompile main"
+        ida_addr = func.dec_obj.entry_ea
+        ida_deci._set_comment(Comment(ida_addr, "test comment!", func_addr=ida_addr, decompiled=True))
 
         # wait for threaded callback if necessary
         if ida_deci._thread_artifact_callbacks:
