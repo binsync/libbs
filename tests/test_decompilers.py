@@ -912,12 +912,9 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # trigger a decompilation update indirectly through a decompiled comment
         ida_deci.comments[1821] = Comment(addr=1821, comment="test comment!", func_addr=1821, decompiled=True)
-
-        # wait for threaded callback if necessary
-        if ida_deci._thread_artifact_callbacks:
-            time.sleep(0.5)
-
         assert event_triggered, "Decompilation change event was not triggered"
+
+        ida_deci.shutdown()
 
 if __name__ == "__main__":
     unittest.main()
