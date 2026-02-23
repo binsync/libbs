@@ -547,12 +547,14 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
         if cfunc is None:
             return
 
+        lifted_addr = self.interface.art_lifter.lift_addr(cfunc.entry_ea)
+        function = self.interface.fast_get_function(lifted_addr)
         dec = Decompilation(
             addr=cfunc.entry_ea,
             text=str(cfunc),
             decompiler="ida"
         )
-        self.interface.decompilation_changed(dec)
+        self.interface.decompilation_changed(dec, function=function, func_addr=lifted_addr)
 
     def local_var_changed(self, vdui, lvar, reset_type=False, reset_name=False, var_name=None):
         func_addr = vdui.cfunc.entry_ea
