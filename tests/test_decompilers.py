@@ -797,6 +797,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # trigger a decompilation update indirectly through a decompiled comment
         ida_deci.comments[1821] = Comment(addr=1821, comment="test comment!", func_addr=1821, decompiled=True)
         assert event_triggered, "Decompilation change event was not triggered"
+        ida_deci.shutdown()
 
     def test_ida_segment(self):
         """
