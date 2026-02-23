@@ -779,15 +779,14 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # initialize hooks
         ida_deci.start_artifact_watchers()
+        ida_deci._thread_artifact_callbacks = False
 
         # register a callback to observe decompilation changes
         event_triggered = False
-        callback_kwargs = {}
 
         def on_decompilation_change(decompilation, **kwargs):
             nonlocal event_triggered
             event_triggered = True
-            callback_kwargs.update(kwargs)
             assert decompilation.addr is not None
             assert decompilation.text is not None
             assert decompilation.decompiler == "ida"
@@ -797,8 +796,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
         # trigger a decompilation update indirectly through a decompiled comment
         ida_deci.comments[1821] = Comment(addr=1821, comment="test comment!", func_addr=1821, decompiled=True)
         assert event_triggered, "Decompilation change event was not triggered"
-        ida_deci.shutdown()
-        self.deci = None
+        ida_deci.stop_artifact_watchers()
 
     def test_ida_segment(self):
         """
