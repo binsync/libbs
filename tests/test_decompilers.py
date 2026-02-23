@@ -782,10 +782,12 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # register a callback to observe decompilation changes
         event_triggered = False
+        callback_kwargs = {}
 
-        def on_decompilation_change(decompilation):
+        def on_decompilation_change(decompilation, **kwargs):
             nonlocal event_triggered
             event_triggered = True
+            callback_kwargs.update(kwargs)
             assert decompilation.addr is not None
             assert decompilation.text is not None
             assert decompilation.decompiler == "ida"
