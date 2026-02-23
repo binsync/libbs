@@ -765,6 +765,37 @@ class TestHeadlessInterfaces(unittest.TestCase):
         assert debug_type.name in ida_deci.typedefs
         ida_deci.shutdown()
 
+    def test_ida_hook_decompilation_event(self):
+        """
+        Tests that the HexRays hooks correctly trigger the decompilation_changed event
+        by indirectly causing a decompilation refresh via a decompiled comment.
+        """
+        ida_deci = DecompilerInterface.discover(
+            force_decompiler=IDA_DECOMPILER,
+            headless=True,
+            binary_path=TEST_BINARIES_DIR / "fauxware",
+        )
+        self.deci = ida_deci
+
+        # initialize hooks
+        ida_deci.start_artifact_watchers()
+
+        # register a callback to observe decompilation changes
+        event_triggered = False
+
+        def on_decompilation_change(decompilation):
+            nonlocal event_triggered
+            event_triggered = True
+            assert decompilation.addr is not None
+            assert decompilation.text is not None
+            assert decompilation.decompiler == "ida"
+
+        ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
+
+        # trigger a decompilation update indirectly through a decompiled comment
+        ida_deci.comments[1821] = Comment(addr=1821, comment="test comment!", func_addr=1821, decompiled=True)
+        assert event_triggered, "Decompilation change event was not triggered"
+
     def test_ida_segment(self):
         """
         Test segment CRUD operations specifically for IDA Pro.
@@ -882,38 +913,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
             assert deci.functions[my_func.addr].name == my_func.name
 
             deci.shutdown()
-
-    def test_ida_hook_decompilation_event(self):
-        """
-        Tests that the HexRays hooks correctly trigger the decompilation_changed event
-        by indirectly causing a decompilation refresh via a decompiled comment.
-        """
-        ida_deci = DecompilerInterface.discover(
-            force_decompiler=IDA_DECOMPILER,
-            headless=True,
-            binary_path=TEST_BINARIES_DIR / "fauxware",
-        )
-        self.deci = ida_deci
-
-        # initialize hooks
-        ida_deci.start_artifact_watchers()
-
-        # register a callback to observe decompilation changes
-        event_triggered = False
-
-        def on_decompilation_change(decompilation):
-            nonlocal event_triggered
-            event_triggered = True
-            assert decompilation.addr is not None
-            assert decompilation.text is not None
-            assert decompilation.decompiler == "ida"
-
-        ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
-
-        # trigger a decompilation update indirectly through a decompiled comment
-        ida_deci.comments[1821] = Comment(addr=1821, comment="test comment!", func_addr=1821, decompiled=True)
-        assert event_triggered, "Decompilation change event was not triggered"
-
 
 if __name__ == "__main__":
     unittest.main()
