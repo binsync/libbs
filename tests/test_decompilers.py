@@ -779,6 +779,7 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # initialize hooks
         ida_deci.start_artifact_watchers()
+        ida_deci._thread_artifact_callbacks = False
 
         # register a callback to observe decompilation changes
         event_triggered = False
@@ -794,7 +795,6 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         # trigger a decompilation update indirectly through a decompiled comment
         ida_deci.comments[1821] = Comment(addr=1821, comment="test comment!", func_addr=1821, decompiled=True)
-        time.sleep(0.5)
         assert event_triggered, "Decompilation change event was not triggered"
         ida_deci.stop_artifact_watchers()
 
