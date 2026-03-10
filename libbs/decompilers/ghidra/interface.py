@@ -378,7 +378,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         decompilation = decompilation or self._ghidra_decompile(self._get_nearest_function(func_addr))
         args = {}
         arg_offset = 0
-        for sym in decompilation.getHighFunction().getLocalSymbolMap().getSymbols():
+        for param_idx in range(decompilation.getHighFunction().getLocalSymbolMap().getNumParams()):
+            sym = decompilation.getHighFunction().getLocalSymbolMap().getParamSymbol(param_idx)
             if not sym.isParameter():
                 continue
 
