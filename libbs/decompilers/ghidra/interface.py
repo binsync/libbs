@@ -377,16 +377,14 @@ class GhidraDecompilerInterface(DecompilerInterface):
     def _function_args(self, func_addr: int, decompilation=None) -> Dict[int, FunctionArgument]:
         decompilation = decompilation or self._ghidra_decompile(self._get_nearest_function(func_addr))
         args = {}
-        arg_offset = 0
         for param_idx in range(decompilation.getHighFunction().getLocalSymbolMap().getNumParams()):
             sym = decompilation.getHighFunction().getLocalSymbolMap().getParamSymbol(param_idx)
             if not sym.isParameter():
                 continue
 
-            args[arg_offset] = FunctionArgument(
-                offset=arg_offset, name=str(sym.getName()), type_=str(sym.getDataType().getPathName()), size=int(sym.getSize())
+            args[param_idx] = FunctionArgument(
+                offset=param_idx, name=str(sym.getName()), type_=str(sym.getDataType().getPathName()), size=int(sym.getSize())
             )
-            arg_offset += 1
 
         return args
 
