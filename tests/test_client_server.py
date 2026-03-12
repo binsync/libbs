@@ -1,4 +1,6 @@
 import os
+import contextlib
+import socket
 import tempfile
 import threading
 import time
@@ -17,6 +19,19 @@ if not TEST_BINARIES_DIR.exists():
     TEST_BINARIES_DIR = Path(__file__).parent.parent.parent / "bs-artifacts" / "binaries"
 
 FAUXWARE_PATH = TEST_BINARIES_DIR / "fauxware"
+
+
+@contextlib.contextmanager
+def simulate_no_af_unix():
+    if hasattr(socket, "AF_UNIX"):
+        af_unix_val = socket.AF_UNIX
+        delattr(socket, "AF_UNIX")
+        try:
+            yield
+        finally:
+            setattr(socket, "AF_UNIX", af_unix_val)
+    else:
+        yield
 
 class TestClientServer(unittest.TestCase):
     """Test the new AF_UNIX socket-based DecompilerClient and DecompilerServer"""
@@ -67,6 +82,38 @@ class TestClientServer(unittest.TestCase):
             self.assertIsNotNone(self.client.binary_path)
             self.assertIsNotNone(self.client.binary_hash)
             self.assertTrue(self.client.decompiler_available)
+
+    def test_inet_fallback(self):
+        """Test the AF_INET fallback mechanism when AF_UNIX is missing"""
+        with simulate_no_af_unix():
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as proj_dir:
+                self.server = DecompilerServer(
+                    force_decompiler=GHIDRA_DECOMPILER,
+                    headless=True,
+                    binary_path=FAUXWARE_PATH,
+                    project_location=proj_dir,
+                    project_name="test_fauxware_inet"
+                )
+                self.server.start()
+                
+                # Give server time to start
+                time.sleep(2)
+                
+                # Verify that it binds to a port and writes to the socket path
+                self.assertTrue(os.path.exists(self.server.socket_path))
+                with open(self.server.socket_path, 'r') as f:
+                    port_str = f.read().strip()
+                self.assertTrue(port_str.isdigit())
+                
+                # Connect client
+                self.client = DecompilerClient(socket_path=self.server.socket_path)
+                
+                # Verify connection works
+                self.assertTrue(self.client.is_connected())
+                self.assertTrue(self.client.ping())
+                
+                self.client.shutdown()
+                self.server.stop()
     
     def test_artifact_collections_match_local(self):
         """Test that client artifact collections behave like local interface"""
