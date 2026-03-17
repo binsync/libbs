@@ -779,8 +779,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
         self.deci = ida_deci
 
         # initialize hooks
-        #ida_deci.start_artifact_watchers()
-        #ida_deci._thread_artifact_callbacks = False
+        ida_deci.start_artifact_watchers()
+        ida_deci._thread_artifact_callbacks = False
 
         # register a callback to observe decompilation changes
         event_triggered = False
@@ -794,9 +794,10 @@ class TestHeadlessInterfaces(unittest.TestCase):
 
         ida_deci.artifact_change_callbacks[Decompilation].append(on_decompilation_change)
 
+        # TODO: uncomment the below when IDA 9.2 is put in CI so comment setting works headlessly
         # trigger a decompilation update indirectly through a decompiled comment
         #ida_deci.comments[1821] = Comment(addr=1821, comment="test comment!", func_addr=1821, decompiled=True)
-        ida_deci.shutdown()
+        #ida_deci.shutdown()
         #assert event_triggered, "Decompilation change event was not triggered"
 
     def test_ida_segment(self):
