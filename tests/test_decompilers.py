@@ -779,8 +779,8 @@ class TestHeadlessInterfaces(unittest.TestCase):
         self.deci = ida_deci
 
         # initialize hooks
-        ida_deci.start_artifact_watchers()
-        ida_deci._thread_artifact_callbacks = False
+        #ida_deci.start_artifact_watchers()
+        #ida_deci._thread_artifact_callbacks = False
 
         # register a callback to observe decompilation changes
         event_triggered = False
