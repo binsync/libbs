@@ -9,6 +9,7 @@ class Decompilation(Artifact):
         "text",
         "line_map",
         "decompiler",
+        "bs_func",
     )
 
     def __init__(
@@ -17,6 +18,7 @@ class Decompilation(Artifact):
         text: str = None,
         line_map: dict = None,
         decompiler: str = None,
+        bs_func = None,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -24,6 +26,7 @@ class Decompilation(Artifact):
         self.text = text
         self.line_map = line_map or {}
         self.decompiler = decompiler
+        self.bs_func = bs_func
 
     def __str__(self):
         return f"//ADDR: {hex(self.addr)}\n// SOURCE: {self.decompiler}\n{self.text}"
