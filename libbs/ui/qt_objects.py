@@ -4,7 +4,7 @@ if ui_version == "PySide6":
     from PySide6.QtCore import (
         QDir, Qt, Signal, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, QPersistentModelIndex,
         QEvent, QThread, Slot, QObject, QPropertyAnimation, QAbstractAnimation, QParallelAnimationGroup,
-        QLineF, QTimer, QRect,
+        QLineF, QTimer, QRect, QDateTime,
     )
     from PySide6.QtWidgets import (
         QAbstractItemView,
@@ -48,6 +48,7 @@ if ui_version == "PySide6":
         QGraphicsItem,
         QToolTip,
         QStackedLayout,
+        QDateTimeEdit,
     )
     from PySide6.QtGui import (
         QFontDatabase,
@@ -69,7 +70,7 @@ else:
     from PyQt5.QtCore import (
         QDir, Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, QPersistentModelIndex,
         QEvent, QThread, QObject, QPropertyAnimation, QAbstractAnimation, QParallelAnimationGroup,
-        QLineF, QTimer, QRect,
+        QLineF, QTimer, QRect, QDateTime,
     )
     from PyQt5.QtCore import pyqtSignal as Signal
     from PyQt5.QtCore import pyqtSlot as Slot
@@ -116,6 +117,7 @@ else:
         QGraphicsItem,
         QToolTip,
         QStackedLayout,
+        QDateTimeEdit,
     )
     from PyQt5.QtGui import (
         QFontDatabase,
