@@ -13,6 +13,7 @@ classifiers = [
 license = {text = "BSD 2 Clause"}
 description = "Your Only Decompiler API Lib - A generic API to script in and out of decompilers"
 urls = {Homepage = "https://github.com/binsync/libbs"}
+version = "3.3.4"
 requires-python = ">= 3.10"
 dependencies = [
     "toml",
@@ -27,7 +28,6 @@ dependencies = [
     "filelock",
     "networkx"
 ]
-dynamic = ["version"]
 
 [project.readme]
 file = "README.md"
@@ -41,11 +41,15 @@ test = [
     "ipdb"
 ]
 ghidra = [
-    "PySide6-Essentials>=6.4.2,!=6.7.0"
+    "PySide6-Essentials>=6.4.2,!=6.7.0; python_version < '3.15'"
 ]
 
 [project.scripts]
 libbs = "libbs.__main__:main"
+
+[tool.pytest.ini_options]
+# faulthandler conflicts with JPype's JVM on Windows
+addopts = "-p no:faulthandler"
 
 [tool.setuptools]
 include-package-data = true
@@ -54,5 +58,3 @@ license-files = ["LICENSE"]
 [tool.setuptools.packages]
 find = {namespaces = false}
 
-[tool.setuptools.dynamic]
-version = {attr = "libbs.__version__"}
