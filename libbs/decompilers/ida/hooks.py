@@ -552,7 +552,8 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
         dec = Decompilation(
             addr=cfunc.entry_ea,
             text=str(cfunc),
-            decompiler="ida"
+            decompiler="ida",
+            bs_func=function
         )
         self.interface.decompilation_changed(dec, function=function, func_addr=lifted_addr)
 
