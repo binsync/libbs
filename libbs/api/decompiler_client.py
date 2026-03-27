@@ -504,9 +504,9 @@ class DecompilerClient:
         """Show a type in the GUI"""
         return self._send_request({"type": "method_call", "method_name": "gui_show_type", "args": [type_name]})
     
-    def gui_ask_for_string(self, question: str, title: str = "Plugin Question") -> str:
+    def gui_ask_for_string(self, question: str, title: str = "Plugin Question", default: str = "") -> str:
         """Ask for a string input"""
-        return self._send_request({"type": "method_call", "method_name": "gui_ask_for_string", "args": [question, title]})
+        return self._send_request({"type": "method_call", "method_name": "gui_ask_for_string", "args": [question, title, default]})
     
     def gui_ask_for_choice(self, question: str, choices: list, title: str = "Plugin Question") -> str:
         """Ask for a choice from a list"""
