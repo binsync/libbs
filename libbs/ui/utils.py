@@ -19,7 +19,7 @@ def gui_popup_text(text, title="Plugin Info") -> bool:
         return False
 
 
-def gui_ask_for_string(question, title="Plugin Question") -> str:
+def gui_ask_for_string(question, title="Plugin Question", default="") -> str:
     dialog = QDialog()
     dialog.setWindowTitle(title)
 
@@ -31,6 +31,8 @@ def gui_ask_for_string(question, title="Plugin Question") -> str:
 
     # Text input field
     text_input = QLineEdit()
+    if default:
+        text_input.setText(default)
     layout.addWidget(text_input)
 
     # Submit button

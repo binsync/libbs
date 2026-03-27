@@ -167,8 +167,8 @@ class GhidraDecompilerInterface(DecompilerInterface):
         )
         return True
 
-    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
-        answer = self.flat_api.askString(title, question)
+    def gui_ask_for_string(self, question, title="Plugin Question", default="") -> str:
+        answer = self.flat_api.askString(title, question, default)
         return answer if answer else ""
 
     def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
