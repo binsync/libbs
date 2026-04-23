@@ -211,13 +211,19 @@ class AngrInterface(DecompilerInterface):
     def gui_goto(self, func_addr):
         self.workspace.jump_to(self.art_lifter.lower_addr(func_addr))
 
-    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None, shortcut=None) -> bool:
         if self.gui_plugin is None:
             l.critical("Cannot register context menu item without a GUI plugin.")
             return False
 
         self._ctx_menu_items.append((name, action_string, callback_func, category))
         self.gui_plugin.context_menu_items = self._ctx_menu_items
+
+        if shortcut:
+            try:
+                self.gui_plugin.register_shortcut(name, shortcut, callback_func, deci=self)
+            except Exception as e:
+                l.warning("Failed to register angr shortcut %r for %s: %s", shortcut, name, e)
         return True
 
     def gui_active_context(self) -> Optional[Context]:

@@ -192,7 +192,18 @@ class DecompilerInterface:
         """
         pass
 
-    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None, shortcut=None) -> bool:
+        """
+        Register a context menu / plugin action.
+
+        :param name: unique identifier for the action
+        :param action_string: human-readable label shown in the menu
+        :param callback_func: function to invoke when the action fires
+        :param category: optional menu category / sub-path
+        :param shortcut: optional keyboard shortcut in Qt format (e.g. "Ctrl+Shift+D").
+            Implementations translate this to their native format. When the native
+            decompiler cannot bind a shortcut programmatically, this is a no-op.
+        """
         raise NotImplementedError
 
     def gui_ask_for_string(self, question, title="Plugin Question", default="") -> str:
@@ -253,8 +264,11 @@ class DecompilerInterface:
     def gui_register_ctx_menu_many(self, actions: dict[str, tuple[str, Callable]]):
         parsed_actions = self._parse_ctx_menu_actions(actions)
         for action in parsed_actions:
-            category, name, action_string, callback_func = action
-            self.gui_register_ctx_menu(name, action_string, callback_func, category=category)
+            category, name, action_string, callback_func = action[:4]
+            shortcut = action[4] if len(action) > 4 else None
+            self.gui_register_ctx_menu(
+                name, action_string, callback_func, category=category, shortcut=shortcut
+            )
 
     #
     # Override Mandatory API

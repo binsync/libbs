@@ -131,7 +131,7 @@ class BinjaInterface(DecompilerInterface):
         func_addr = self.art_lifter.lower_addr(func_addr)
         self.bv.offset = func_addr
 
-    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None, shortcut=None) -> bool:
         # TODO: this needs to have a wrapper function that passes the bv to the current deci
         # correct name, category, and action_string for Binja
         action_string = action_string.replace("/", "\\")
@@ -143,6 +143,19 @@ class BinjaInterface(DecompilerInterface):
             callback_func,
             is_valid=self.is_bn_func
         )
+
+        if shortcut and BN_UI_AVAILABLE:
+            try:
+                from binaryninjaui import UIAction, UIActionHandler
+                action_name = f"{category}\\{action_string}" if category else action_string
+                UIAction.registerAction(action_name, shortcut)
+                # UIAction expects a callable taking a UIActionContext
+                UIActionHandler.globalActions().bindAction(
+                    action_name, UIAction(lambda ctx: callback_func(None))
+                )
+            except Exception as e:
+                l.warning(f"Failed to register Binja shortcut {shortcut!r} for {name}: {e}")
+
         return True
 
     def gui_ask_for_string(self, question, title="Plugin Question", default="") -> str:

@@ -152,7 +152,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
         self._main_thread_queue.put((func, args, kwargs))
         return self._results_queue.get()
 
-    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None, shortcut=None) -> bool:
         from .hooks import create_context_action
 
         def callback_func_wrap(*args, **kwargs):
@@ -163,7 +163,7 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 raise
         create_context_action(
             name, action_string, callback_func_wrap, category=(category or "LibBS"),
-            tool=self.flat_api.getState().getTool()
+            tool=self.flat_api.getState().getTool(), shortcut=shortcut,
         )
         return True
 
