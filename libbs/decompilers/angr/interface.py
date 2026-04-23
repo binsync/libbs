@@ -236,11 +236,15 @@ class AngrInterface(DecompilerInterface):
         if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
             return False
 
+        changed = False
         for v in codegen.cfunc.variable_manager._unified_variables:
-            if v.name in name_map:
+            if v.name in name_map and v.name != name_map[v.name]:
                 v.name = name_map[v.name]
+                changed = True
 
-        return self.refresh_decompilation(func.addr)
+        if not self.headless:
+            self.refresh_decompilation(func.addr)
+        return changed
 
     @property
     def binary_arch(self) -> str | None:

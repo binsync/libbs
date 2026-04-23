@@ -13,6 +13,7 @@ import os
 from typing import Optional, Dict, Any, List
 
 from libbs.api.decompiler_interface import DecompilerInterface
+from libbs.api import server_registry
 
 _l = logging.getLogger(__name__)
 
@@ -146,7 +147,9 @@ class SocketServerHandler:
                 "version": "3.0.0",
                 "decompiler": self.deci.name if self.deci else "unknown",
                 "protocol": "unix_socket",
-                "binary_hash": self.deci.binary_hash if self.deci else None
+                "binary_hash": self.deci.binary_hash if self.deci else None,
+                "binary_path": str(self.deci.binary_path) if (self.deci and self.deci.binary_path) else None,
+                "server_id": self.server.server_id if self.server else None,
             }
         
         elif request_type == "get_light_artifacts":
@@ -285,22 +288,29 @@ class DecompilerServer:
     to all its public methods and artifact collections through AF_UNIX sockets.
     """
     
-    def __init__(self, 
+    def __init__(self,
                  decompiler_interface: Optional[DecompilerInterface] = None,
                  socket_path: Optional[str] = None,
+                 server_id: Optional[str] = None,
+                 register: bool = True,
                  **interface_kwargs):
         """
         Initialize the DecompilerServer.
-        
+
         Args:
             decompiler_interface: An existing DecompilerInterface instance. If None,
                                 one will be created using DecompilerInterface.discover()
-            socket_path: Path for the AF_UNIX socket. If None, a temporary path will be used
+            socket_path: Path for the AF_UNIX socket. If None, a path is derived from server_id.
+            server_id:   Optional explicit server ID. If None, a new one is generated.
+            register:    If True, write the server info into the shared registry.
             **interface_kwargs: Arguments passed to DecompilerInterface.discover() if
                               decompiler_interface is None
         """
-        
+
+        self.server_id = server_id or server_registry.new_server_id()
         self.socket_path = socket_path
+        self._register = register
+        self._registered = False
         self._server_socket = None
         self._server_thread = None
         self._running = False
@@ -335,13 +345,13 @@ class DecompilerServer:
 
         # Generate socket path if not provided
         if self.socket_path is None:
-            temp_dir = tempfile.mkdtemp(prefix="libbs_server_")
-            self.socket_path = os.path.join(temp_dir, "decompiler.sock")
-            self._temp_dir = temp_dir
+            socket_path = server_registry.default_socket_path(self.server_id)
+            self.socket_path = socket_path
+            self._temp_dir = os.path.dirname(socket_path)
         else:
             self._temp_dir = None
-        
-        _l.info(f"DecompilerServer initialized with {self.deci.name} interface")
+
+        _l.info(f"DecompilerServer initialized with {self.deci.name} interface (id={self.server_id})")
         _l.info(f"Socket path: {self.socket_path}")
 
     def _register_artifact_callbacks(self):
@@ -440,11 +450,31 @@ class DecompilerServer:
         
         # Set running flag before starting thread
         self._running = True
-        
+
         # Start server in a separate thread
         self._server_thread = threading.Thread(target=self._server_loop, daemon=True)
         self._server_thread.start()
-        
+
+        # Register in shared registry so other processes can find us.
+        if self._register:
+            try:
+                binary_path = str(self.deci.binary_path) if self.deci and self.deci.binary_path else None
+                binary_hash = None
+                try:
+                    binary_hash = self.deci.binary_hash if self.deci else None
+                except Exception:
+                    binary_hash = None
+                server_registry.register_server({
+                    "id": self.server_id,
+                    "socket_path": self.socket_path,
+                    "backend": self.deci.name if self.deci else None,
+                    "binary_path": binary_path,
+                    "binary_hash": binary_hash,
+                })
+                self._registered = True
+            except Exception as exc:
+                _l.warning("Failed to register server: %s", exc)
+
         _l.info(f"DecompilerServer started successfully on unix://{self.socket_path}")
         _l.info("Connect with: DecompilerClient.discover('unix://{}')".format(self.socket_path))
     
@@ -510,12 +540,20 @@ class DecompilerServer:
         # Clean up socket file and temp directory
         if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
-        
+
         if self._temp_dir and os.path.exists(self._temp_dir):
             try:
                 os.rmdir(self._temp_dir)
             except:
                 pass
+
+        # Remove from registry
+        if self._registered:
+            try:
+                server_registry.unregister_server(self.server_id)
+            except Exception as exc:
+                _l.debug("Failed to unregister server %s: %s", self.server_id, exc)
+            self._registered = False
 
         # Shutdown the decompiler interface
         if self.deci:

@@ -46,6 +46,7 @@ ghidra = [
 
 [project.scripts]
 libbs = "libbs.__main__:main"
+decompiler = "libbs.cli:main"
 
 [tool.setuptools]
 include-package-data = true

@@ -19,6 +19,7 @@ from libbs.artifacts import (
 from libbs.api.decompiler_server import SocketProtocol
 from libbs.api.type_parser import CTypeParser
 from libbs.configuration import LibbsConfig
+from libbs.api import server_registry
 
 _l = logging.getLogger(__name__)
 
@@ -794,6 +795,39 @@ class DecompilerClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.shutdown()
     
+    @staticmethod
+    def discover_from_registry(
+        server_id: Optional[str] = None,
+        binary_path: Optional[str] = None,
+        binary_hash: Optional[str] = None,
+        backend: Optional[str] = None,
+        **kwargs,
+    ) -> 'DecompilerClient':
+        """
+        Find a running server via the shared registry and connect to it.
+
+        Filters narrow the pool in the order: server_id, binary_path, binary_hash, backend.
+        If no server matches, a ConnectionError is raised.
+        """
+        record = server_registry.find_server(
+            server_id=server_id,
+            binary_path=binary_path,
+            binary_hash=binary_hash,
+            backend=backend,
+        )
+        if not record:
+            filters = {
+                "server_id": server_id,
+                "binary_path": binary_path,
+                "binary_hash": binary_hash,
+                "backend": backend,
+            }
+            active = {k: v for k, v in filters.items() if v}
+            raise ConnectionError(
+                f"No matching DecompilerServer in registry. Filters: {active or 'none'}."
+            )
+        return DecompilerClient(socket_path=record["socket_path"], **kwargs)
+
     # Static methods for compatibility
     @staticmethod
     def discover(server_url: str = None, binary_hash: str = None, **kwargs) -> 'DecompilerClient':
