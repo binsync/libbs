@@ -33,6 +33,13 @@ import ida_auto
 _l = logging.getLogger(name=__name__)
 
 
+def _qt_shortcut_to_ida(shortcut: str) -> str:
+    """Convert a Qt-style shortcut like "Ctrl+Shift+D" to IDA's "Ctrl-Shift-D"."""
+    if not shortcut:
+        return ""
+    return shortcut.replace("+", "-")
+
+
 #
 #   Controller
 #
@@ -113,12 +120,13 @@ class IDAInterface(DecompilerInterface):
     def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
         return ida_ui.ask_choice(question, choices, title=title)
 
-    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
+    def gui_register_ctx_menu(self, name, action_string, callback_func, category=None, shortcut=None) -> bool:
+        ida_shortcut = _qt_shortcut_to_ida(shortcut) if shortcut else ""
         action = idaapi.action_desc_t(
             name,
             action_string,
             compat.GenericAction(name, callback_func, deci=self),
-            "",
+            ida_shortcut,
             action_string,
             199
         )

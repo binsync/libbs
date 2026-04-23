@@ -20,6 +20,8 @@ class GenericBSAngrManagementPlugin(BasePlugin):
         super().__init__(workspace)
         # (name, action_string, callback_func, category)
         self.context_menu_items = context_menu_items or []
+        # Keep strong refs to QShortcut objects so Qt doesn't GC them
+        self._qshortcuts: list = []
         if interface is None:
             from libbs.decompilers.angr.interface import AngrInterface
             self.interface = AngrInterface(
@@ -31,6 +33,34 @@ class GenericBSAngrManagementPlugin(BasePlugin):
 
     def teardown(self):
         pass
+
+    def register_shortcut(self, name: str, shortcut: str, callback_func, deci=None) -> bool:
+        """
+        Register a keyboard shortcut bound to ``callback_func`` on the angr-management
+        main window. The shortcut is an application-wide QShortcut so it fires from
+        any focused widget.
+        """
+        from PySide6.QtGui import QShortcut, QKeySequence
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+
+        parent = getattr(self.workspace, "main_window", None)
+        if parent is None:
+            app = QApplication.instance()
+            if app is not None:
+                for w in app.topLevelWidgets():
+                    if w.isWindow():
+                        parent = w
+                        break
+        if parent is None:
+            l.warning("No Qt main window available; cannot bind shortcut %s", shortcut)
+            return False
+
+        qsc = QShortcut(QKeySequence(shortcut), parent)
+        qsc.setContext(Qt.ApplicationShortcut)
+        qsc.activated.connect(lambda: callback_func(None, deci=deci))
+        self._qshortcuts.append(qsc)
+        return True
 
     #
     # Context Menus

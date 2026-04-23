@@ -207,7 +207,23 @@ def create_data_monitor(deci: "GhidraDecompilerInterface"):
     return data_monitor
 
 
-def create_context_action(name, action_string, callback_func, category=None, plugin_name="libbs_ghidra", tool=None):
+def _qt_shortcut_to_ghidra(shortcut: str) -> str:
+    """Convert a Qt-style shortcut like "Ctrl+Shift+D" to Ghidra's "ctrl shift D"."""
+    if not shortcut:
+        return ""
+    parts = shortcut.split("+")
+    out = []
+    for p in parts[:-1]:
+        out.append(p.strip().lower())
+    key = parts[-1].strip()
+    out.append(key.upper() if len(key) == 1 else key)
+    return " ".join(out)
+
+
+def create_context_action(
+    name, action_string, callback_func, category=None,
+    plugin_name="libbs_ghidra", tool=None, shortcut=None,
+):
     from .compat.imports import ProgramLocationActionContext, ActionBuilder
     def _invoke(ctx: ProgramLocationActionContext):
         threading.Thread(target=callback_func, daemon=True).start()
