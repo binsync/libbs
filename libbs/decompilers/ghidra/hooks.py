@@ -239,10 +239,4 @@ def create_context_action(
             .validContextWhen(lambda ctx: ctx is not None and ctx.getAddress() is not None)
             .onAction(_invoke))
 
-    if shortcut:
-        try:
-            b = b.keyBinding(_qt_shortcut_to_ghidra(shortcut))
-        except Exception:
-            pass
-
     return b.buildAndInstall(tool)
