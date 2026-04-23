@@ -237,6 +237,36 @@ class TestDecompilerCLI(unittest.TestCase):
         self.assertTrue(any("Welcome" in s["string"] for s in json.loads(fauxware_strings.stdout)))
 
 
+class TestSkillInstaller(unittest.TestCase):
+    """The bundled `decompiler` skill should ship with the package and install cleanly."""
+
+    def test_bundled_skill_present(self):
+        from libbs import skills
+
+        names = skills.available_skills()
+        self.assertIn("decompiler", names)
+        skill = skills.skill_path("decompiler") / "SKILL.md"
+        content = skill.read_text()
+        self.assertIn("name: decompiler", content)
+        self.assertIn("decompiler load", content)
+
+    def test_install_skill_via_cli(self):
+        with tempfile.TemporaryDirectory() as dest:
+            result = _run_cli("install-skill", "--dest", dest, "--json")
+            payload = json.loads(result.stdout)
+            self.assertEqual(len(payload["installed"]), 1)
+            installed_path = Path(payload["installed"][0]["path"])
+            self.assertTrue((installed_path / "SKILL.md").is_file())
+
+            # Re-install without --force should fail helpfully.
+            again = _run_cli("install-skill", "--dest", dest, "--json", check=False)
+            self.assertNotEqual(again.returncode, 0)
+
+            # --force overwrites.
+            forced = _run_cli("install-skill", "--dest", dest, "--json", "--force")
+            self.assertEqual(len(json.loads(forced.stdout)["installed"]), 1)
+
+
 @unittest.skipUnless(FAUXWARE_PATH.exists(), f"Missing test binary: {FAUXWARE_PATH}")
 class TestNewLibbsFeatures(unittest.TestCase):
     """Direct tests (not via CLI) for the new list_strings/get_callers/disassemble APIs."""

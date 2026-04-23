@@ -52,6 +52,9 @@ decompiler = "libbs.cli:main"
 include-package-data = true
 license-files = ["LICENSE"]
 
+[tool.setuptools.package-data]
+"libbs.skills" = ["**/SKILL.md", "**/*.md"]
+
 [tool.setuptools.packages]
 find = {namespaces = false}
 

@@ -7,22 +7,24 @@ invocations (including `load`s of other binaries) connect to the right server
 via the shared server registry (see libbs.api.server_registry).
 
 Subcommands implemented:
-- load         start a server on a binary
-- list         list running servers
-- stop         stop one or all servers
-- decompile    decompile a function by name or address
-- disassemble  disassemble a function by name or address
-- xref_to      list callers/references to a name or address
-- xref_from    list callees of a function (things it calls)
-- rename       rename a function or local variable
-- list_strings list strings in the binary, optionally filtered by regex
-- get_callers  list callers of a function
+- load          start a server on a binary
+- list          list running servers
+- stop          stop one or all servers
+- decompile     decompile a function by name or address
+- disassemble   disassemble a function by name or address
+- xref_to       list callers/references to a name or address
+- xref_from     list callees of a function (things it calls)
+- rename        rename a function or local variable
+- list_strings  list strings in the binary, optionally filtered by regex
+- get_callers   list callers of a function
+- install-skill install the bundled Agent Skill so LLMs learn the CLI
 """
 import argparse
 import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -31,6 +33,7 @@ from typing import Dict, List, Optional, Tuple
 
 from libbs.api import server_registry
 from libbs.decompilers import SUPPORTED_DECOMPILERS
+from libbs import skills
 
 _l = logging.getLogger("libbs.cli.decompiler")
 
@@ -498,6 +501,38 @@ def cmd_get_callers(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# install-skill
+# ---------------------------------------------------------------------------
+
+def _default_skill_dest() -> Path:
+    return Path(os.path.expanduser("~/.claude/skills"))
+
+
+def cmd_install_skill(args) -> int:
+    dest_root = Path(args.dest).expanduser().resolve() if args.dest else _default_skill_dest()
+    names = args.names or skills.available_skills()
+    if not names:
+        raise SystemExit("No bundled skills to install")
+
+    dest_root.mkdir(parents=True, exist_ok=True)
+    installed: List[Dict] = []
+    for name in names:
+        src = skills.skill_path(name)
+        dest = dest_root / name
+        if dest.exists() and not args.force:
+            raise SystemExit(
+                f"Skill already exists at {dest}. Pass --force to overwrite."
+            )
+        if dest.exists() and args.force:
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest)
+        installed.append({"name": name, "path": str(dest)})
+
+    _emit(args, {"installed": installed})
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # shared helpers
 # ---------------------------------------------------------------------------
 
@@ -615,6 +650,19 @@ def build_parser() -> argparse.ArgumentParser:
     _add_server_filter_args(p_gc)
     _add_output_args(p_gc)
     p_gc.set_defaults(func=cmd_get_callers)
+
+    # install-skill
+    p_sk = sub.add_parser(
+        "install-skill",
+        help="Install the bundled Agent Skill (SKILL.md) into ~/.claude/skills/.",
+    )
+    p_sk.add_argument("names", nargs="*",
+                      help="Specific skill names to install (default: all bundled).")
+    p_sk.add_argument("--dest", help="Install destination (default: ~/.claude/skills).")
+    p_sk.add_argument("--force", action="store_true",
+                      help="Overwrite an existing skill directory.")
+    _add_output_args(p_sk)
+    p_sk.set_defaults(func=cmd_install_skill)
 
     return parser
 
