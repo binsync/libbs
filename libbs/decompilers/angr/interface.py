@@ -172,6 +172,26 @@ class AngrInterface(DecompilerInterface):
         if func is None:
             return None
 
+        try:
+            base_addr = self.binary_base_addr
+        except Exception:
+            base_addr = 0
+        hex_re = re.compile(r"0x([0-9a-fA-F]+)")
+
+        def _rewrite_operands(op_str: str) -> str:
+            # Rewrite absolute addresses in operands to their lifted form so the
+            # output is consistent across decompilers (e.g. ghidra lifts addresses).
+            def _sub(match: "re.Match[str]") -> str:
+                try:
+                    raw = int(match.group(1), 16)
+                except ValueError:
+                    return match.group(0)
+                if base_addr and raw >= base_addr:
+                    return f"0x{raw - base_addr:x}"
+                return match.group(0)
+
+            return hex_re.sub(_sub, op_str)
+
         lines: List[str] = []
         try:
             blocks = sorted(func.blocks, key=lambda b: b.addr)
@@ -180,7 +200,9 @@ class AngrInterface(DecompilerInterface):
         for block in blocks:
             try:
                 for insn in block.capstone.insns:
-                    lines.append(f"0x{insn.address:x}:\t{insn.mnemonic}\t{insn.op_str}".rstrip())
+                    lifted = self.art_lifter.lift_addr(insn.address)
+                    op_str = _rewrite_operands(insn.op_str)
+                    lines.append(f"0x{lifted:x}:\t{insn.mnemonic}\t{op_str}".rstrip())
             except Exception:
                 continue
         return "\n".join(lines) if lines else None

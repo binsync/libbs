@@ -26,7 +26,10 @@ can be used in either the default mode, which assumes a GUI, or `headless` mode.
 start a new process using a specified decompiler.
 
 You can find various examples using LibBS in the [examples](./examples) folder. Examples that are plugins show off
-more of the complicated API that allows you to use an abstracted UI, artifacts, and more. 
+more of the complicated API that allows you to use an abstracted UI, artifacts, and more.
+
+If you want a simplified command line interface (especially well-suited for LLMs), see the
+[`decompiler` CLI guide](./docs/decompiler_cli.md).
 
 ### UI Mode (default)
 To use the same script everywhere, use the convenience function `DecompilerInterface.discover_interface()`, which will

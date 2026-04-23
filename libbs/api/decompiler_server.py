@@ -220,6 +220,14 @@ class SocketServerHandler:
             if self.deci:
                 self.deci.shutdown()
             return {"status": "shutdown"}
+
+        elif request_type == "shutdown_server":
+            # Tear the server down asynchronously so we can still reply.
+            if self.server is not None:
+                threading.Thread(
+                    target=self.server.stop, name="libbs-server-shutdown", daemon=True
+                ).start()
+            return {"status": "stopping"}
         
         else:
             raise ValueError(f"Unknown request type: {request_type}")

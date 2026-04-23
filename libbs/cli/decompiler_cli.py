@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -254,30 +255,81 @@ def cmd_list(args) -> int:
 
 
 def _stop_server_by_record(record: Dict) -> bool:
-    """Shut down a server via a client; returns True if a shutdown request was sent."""
+    """Shut down the server process backing `record`.
+
+    Asks the server to shut itself down gracefully, falling back to SIGTERM/SIGKILL
+    on the PID if the request fails. Returns True if we believe the process is
+    gone (or never existed) by the time we return.
+    """
     from libbs.api.decompiler_client import DecompilerClient
 
+    server_id = record.get("id")
+    pid = record.get("pid")
+    socket_path = record.get("socket_path")
+    graceful = False
     try:
-        client = DecompilerClient(socket_path=record["socket_path"])
+        client = DecompilerClient(socket_path=socket_path)
     except Exception as exc:
-        _l.warning("Could not connect to server %s: %s", record.get("id"), exc)
-        # Best-effort: drop stale registry entry so it's not stuck.
-        server_registry.unregister_server(record.get("id"))
+        _l.warning("Could not connect to server %s: %s", server_id, exc)
+        client = None
+    if client is not None:
+        try:
+            client._send_request({"type": "shutdown_server"})
+            graceful = True
+        except Exception as exc:
+            _l.debug("shutdown_server rejected by %s: %s", server_id, exc)
+        # Close the socket directly instead of calling client.shutdown(); the
+        # latter also fires `shutdown_deci`, which noisily fails once the server
+        # has stopped listening.
+        try:
+            if client._socket is not None:
+                client._socket.close()
+        except Exception:
+            pass
+        client._connected = False
+
+    if not _wait_for_process_exit(pid, timeout=3.0):
+        # Graceful request didn't land or server is stuck — escalate.
+        _signal_process(pid, signal.SIGTERM)
+        if not _wait_for_process_exit(pid, timeout=2.0):
+            _signal_process(pid, signal.SIGKILL)
+            _wait_for_process_exit(pid, timeout=1.0)
+
+    server_registry.unregister_server(server_id)
+    return graceful or not _process_alive(pid)
+
+
+def _process_alive(pid) -> bool:
+    if not pid:
         return False
     try:
-        try:
-            client._send_request({"type": "shutdown_deci"})
-        except Exception:
-            pass
-    finally:
-        try:
-            client.shutdown()
-        except Exception:
-            pass
-    # Remove from registry in case the server exits before cleaning up.
-    time.sleep(0.2)
-    server_registry.unregister_server(record.get("id"))
-    return True
+        import psutil
+
+        return psutil.pid_exists(int(pid))
+    except Exception:
+        return False
+
+
+def _signal_process(pid, sig) -> None:
+    if not pid:
+        return
+    try:
+        os.kill(int(pid), sig)
+    except ProcessLookupError:
+        return
+    except Exception as exc:
+        _l.debug("Signal %s to pid %s failed: %s", sig, pid, exc)
+
+
+def _wait_for_process_exit(pid, timeout: float) -> bool:
+    if not pid:
+        return True
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _process_alive(pid):
+            return True
+        time.sleep(0.05)
+    return not _process_alive(pid)
 
 
 def cmd_stop(args) -> int:
@@ -287,8 +339,7 @@ def cmd_stop(args) -> int:
     elif args.id:
         targets = [r for r in records if r.get("id") == args.id]
     elif args.binary:
-        bp = str(Path(args.binary).expanduser().resolve())
-        targets = [r for r in records if r.get("binary_path") == bp]
+        targets = server_registry.find_servers(binary_path=args.binary)
     else:
         raise SystemExit("decompiler stop needs --id, --binary, or --all")
 
@@ -480,10 +531,13 @@ def cmd_list_strings(args) -> int:
 
 def cmd_get_callers(args) -> int:
     with _with_client(args) as client:
-        addr, name = _parse_target(args.target)
-        target = addr if addr is not None else name
+        # Reuse the resolver so absolute addresses get normalized to the lifted
+        # form the server expects.
+        resolved = _resolve_function_addr(client, args.target)
+        if resolved is None:
+            raise SystemExit(f"Function not found: {args.target!r}")
         try:
-            callers = client.get_callers(target)
+            callers = client.get_callers(resolved)
         except ValueError as exc:
             raise SystemExit(str(exc))
         data = [_format_function(c) for c in callers]
