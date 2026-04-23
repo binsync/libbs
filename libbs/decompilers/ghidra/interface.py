@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import typing
@@ -302,6 +303,58 @@ class GhidraDecompilerInterface(DecompilerInterface):
 
         lifted_xrefs = [self.art_lifter.lift(x) for x in xrefs + new_xrefs]
         return lifted_xrefs
+
+    def list_strings(self, filter: Optional[str] = None) -> List[Tuple[int, str]]:
+        pattern = re.compile(filter) if filter else None
+        results: List[Tuple[int, str]] = []
+        try:
+            program = self.currentProgram
+            listing = program.getListing()
+            # Iterate all defined data; pull strings.
+            data_iter = listing.getDefinedData(True)
+            while data_iter.hasNext():
+                data = data_iter.next()
+                if not data.hasStringValue():
+                    continue
+                try:
+                    raw = data.getValue()
+                    text = str(raw) if raw is not None else ""
+                except Exception:
+                    continue
+                if not text:
+                    continue
+                addr = int(data.getAddress().getOffset())
+                lifted = self.art_lifter.lift_addr(addr)
+                if pattern is None or pattern.search(text):
+                    results.append((lifted, text))
+        except Exception as exc:
+            _l.warning("Ghidra list_strings failed: %s", exc)
+        results.sort(key=lambda item: item[0])
+        return results
+
+    def disassemble(self, addr: int, **kwargs) -> Optional[str]:
+        lowered = self.art_lifter.lower_addr(addr)
+        func = self._get_nearest_function(lowered)
+        if func is None:
+            return None
+
+        lines: List[str] = []
+        try:
+            listing = self.currentProgram.getListing()
+            body = func.getBody()
+            insn_iter = listing.getInstructions(body, True)
+            while insn_iter.hasNext():
+                insn = insn_iter.next()
+                try:
+                    insn_addr = int(insn.getAddress().getOffset())
+                    lifted = self.art_lifter.lift_addr(insn_addr)
+                    lines.append(f"0x{lifted:x}:\t{str(insn)}")
+                except Exception:
+                    continue
+        except Exception as exc:
+            _l.warning("Ghidra disassemble failed: %s", exc)
+            return None
+        return "\n".join(lines) if lines else None
 
     #
     # Extra API

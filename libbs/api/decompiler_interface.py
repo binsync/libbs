@@ -397,6 +397,72 @@ class DecompilerInterface:
 
         return []
 
+    def get_callers(self, target) -> List[Function]:
+        """
+        Returns a list of Functions that call/reference the provided target.
+
+        @param target: A Function, address (int), or symbol name (str).
+        @return: List of Function objects whose bodies reference `target`. Each result is a (light)
+                 Function; only its addr (and name when resolvable) are guaranteed to be populated.
+        """
+        func: Optional[Function] = None
+        if isinstance(target, Function):
+            func = target
+        elif isinstance(target, int):
+            func = self.fast_get_function(target)
+            if func is None:
+                func = Function(target, 0)
+        elif isinstance(target, str):
+            for addr, light_func in self.functions.items():
+                if light_func.name == target:
+                    func = self.fast_get_function(addr) or Function(addr, 0)
+                    break
+            if func is None:
+                raise ValueError(f"Unable to locate function named {target!r}")
+        else:
+            raise ValueError(f"Unsupported target type for get_callers: {type(target)}")
+
+        callers: List[Function] = []
+        seen = set()
+        for xref in self.xrefs_to(func):
+            if not isinstance(xref, Function):
+                continue
+            if xref.addr in seen:
+                continue
+            seen.add(xref.addr)
+            if not xref.name:
+                resolved = self.fast_get_function(xref.addr)
+                if resolved is not None:
+                    xref = resolved
+            callers.append(xref)
+
+        return callers
+
+    def list_strings(self, filter: Optional[str] = None) -> List[Tuple[int, str]]:
+        """
+        Returns a list of (addr, string) tuples for strings found in the binary.
+
+        Subclasses are expected to override this to provide decompiler-native string discovery
+        (which is typically much faster and more accurate). The base implementation returns an
+        empty list.
+
+        @param filter: Optional regex string; only strings that match will be returned.
+        @return: List of (address, string) tuples.
+        """
+        return []
+
+    def disassemble(self, addr: int, **kwargs) -> Optional[str]:
+        """
+        Returns the disassembly of a function as a single string.
+
+        Subclasses should override this to emit decompiler-native disassembly. The default
+        implementation returns None.
+
+        @param addr: Address of the function (or any address inside the function).
+        @return: The disassembly string, or None if unavailable.
+        """
+        return None
+
     def get_callgraph(self, only_names=False) -> nx.DiGraph:
         """
         Returns the callgraph of the binary. This is a dict of function addresses to a list of function addresses

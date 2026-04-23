@@ -1,8 +1,9 @@
 import logging
 import os
+import re
 from collections import defaultdict
 from functools import lru_cache
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from pathlib import Path
 
 import angr
@@ -114,7 +115,7 @@ class AngrInterface(DecompilerInterface):
             l.warning("only_code is not supported in angr.")
 
         function: Function = self.art_lifter.lower(artifact)
-        program_cfg = self.main_instance.kb.cfgs.get_most_accurate()
+        program_cfg = self.main_instance.project.kb.cfgs.get_most_accurate()
         if program_cfg is None:
             return []
 
@@ -123,14 +124,66 @@ class AngrInterface(DecompilerInterface):
             return []
 
         xrefs = []
+        seen_callers = set()
         for node in program_cfg.graph.predecessors(func_node):
             func_addr = node.function_address
-            if func_addr is None:
+            if func_addr is None or func_addr == function.addr:
                 continue
-
-            xrefs.append(Function(func_addr, 0))
+            if func_addr in seen_callers:
+                continue
+            seen_callers.add(func_addr)
+            xrefs.append(self.art_lifter.lift(Function(func_addr, 0)))
 
         return xrefs
+
+    def list_strings(self, filter: Optional[str] = None) -> List[Tuple[int, str]]:
+        pattern = re.compile(filter) if filter else None
+        try:
+            cfg = self.main_instance.project.kb.cfgs.get_most_accurate()
+        except Exception:
+            cfg = None
+        results: List[Tuple[int, str]] = []
+        seen = set()
+        if cfg is not None:
+            for addr, mem_data in cfg.memory_data.items():
+                if mem_data.sort != "string" or not mem_data.content:
+                    continue
+                try:
+                    text = mem_data.content.decode("utf-8", errors="replace")
+                except Exception:
+                    continue
+                lifted_addr = self.art_lifter.lift_addr(addr)
+                if lifted_addr in seen:
+                    continue
+                seen.add(lifted_addr)
+                if pattern is None or pattern.search(text):
+                    results.append((lifted_addr, text))
+        results.sort(key=lambda item: item[0])
+        return results
+
+    def disassemble(self, addr: int, **kwargs) -> Optional[str]:
+        lowered = self.art_lifter.lower_addr(addr)
+        func = self.main_instance.project.kb.functions.get(lowered, None)
+        if func is None:
+            for _addr, _func in self.main_instance.project.kb.functions.items():
+                if _addr <= lowered < (_addr + (_func.size or 0)):
+                    func = _func
+                    break
+        if func is None:
+            return None
+
+        lines: List[str] = []
+        try:
+            blocks = sorted(func.blocks, key=lambda b: b.addr)
+        except Exception:
+            blocks = list(func.blocks)
+        for block in blocks:
+            try:
+                for insn in block.capstone.insns:
+                    lines.append(f"0x{insn.address:x}:\t{insn.mnemonic}\t{insn.op_str}".rstrip())
+            except Exception:
+                continue
+        return "\n".join(lines) if lines else None
 
     def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
         if function.dec_obj is None:

@@ -532,6 +532,18 @@ class DecompilerClient:
     def xrefs_to(self, artifact: Artifact, decompile=False, only_code=False) -> List[Artifact]:
         """Get cross-references to an artifact"""
         return self._send_request({"type": "method_call", "method_name": "xrefs_to", "args": [artifact], "kwargs": {"decompile": decompile, "only_code": only_code}})
+
+    def get_callers(self, target) -> List[Function]:
+        """Get callers of a function (by target Function, address, or symbol name)"""
+        return self._send_request({"type": "method_call", "method_name": "get_callers", "args": [target]})
+
+    def list_strings(self, filter: Optional[str] = None) -> List:
+        """List strings in the binary with an optional regex filter"""
+        return self._send_request({"type": "method_call", "method_name": "list_strings", "kwargs": {"filter": filter}})
+
+    def disassemble(self, addr: int, **kwargs) -> Optional[str]:
+        """Disassemble a function"""
+        return self._send_request({"type": "method_call", "method_name": "disassemble", "args": [addr], "kwargs": kwargs})
     
     def get_callgraph(self, only_names=False):
         """Get the call graph"""
