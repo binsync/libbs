@@ -4,6 +4,7 @@ from collections import OrderedDict, defaultdict, ChainMap
 from typing import Optional
 
 import pycparser
+from pycparser import c_ast
 from pycparser.c_parser import ParseError
 
 # pycparser hack to parse type expressions
@@ -12,6 +13,31 @@ errorlog.setLevel(logging.ERROR)
 
 
 l = logging.getLogger(__name__)
+
+
+def _patch_pycparser():
+    """
+    Adds a `parse_type_with_name` method to pycparser.CParser that parses a bare
+    type expression (like "int *") rather than a full translation unit. pycparser
+    3.0 removed the ability to customize the start production via ply.yacc.
+    """
+    if hasattr(pycparser.CParser, "parse_type_with_name"):
+        return
+
+    def parse_type_with_name(self, text, filename="", scope_stack=None) -> c_ast.Typename:
+        self.clex._filename = filename
+        self.clex._lineno = 1
+        self._scope_stack = [{}] if scope_stack is None else scope_stack
+
+        self.clex.input(text, filename)
+        self._tokens = pycparser.c_parser._TokenStream(self.clex)
+
+        return self._parse_type_name()
+
+    pycparser.CParser.parse_type_with_name = parse_type_with_name
+
+
+_patch_pycparser()
 
 
 class CType:
@@ -183,8 +209,9 @@ class CTypeParser:
         parsable_type = type_str.replace(";", "").strip()
         type_name = None
         try:
-            node = self._type_parser_singleton.parse(text=parsable_type)
-            type_name = node.name
+            ast = self._type_parser_singleton.parse(text=parsable_type + ";")
+            if ast.ext:
+                type_name = ast.ext[0].name
         except ParseError:
             pass
 
@@ -226,7 +253,7 @@ class CTypeParser:
 
         failed_parse = False
         try:
-            node = self._type_parser_singleton.parse(text=defn)
+            node = self._type_parser_singleton.parse_type_with_name(text=defn)
         except ParseError:
             failed_parse = True
 
@@ -236,7 +263,7 @@ class CTypeParser:
         #
         if failed_parse:
             try:
-                node = self._type_parser_singleton.parse(text="struct " + defn)
+                node = self._type_parser_singleton.parse_type_with_name(text="struct " + defn)
             except Exception:
                 return (None, )
 
