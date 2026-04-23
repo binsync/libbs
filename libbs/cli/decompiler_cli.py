@@ -7,17 +7,18 @@ invocations (including `load`s of other binaries) connect to the right server
 via the shared server registry (see libbs.api.server_registry).
 
 Subcommands implemented:
-- load          start a server on a binary
-- list          list running servers
-- stop          stop one or all servers
-- decompile     decompile a function by name or address
-- disassemble   disassemble a function by name or address
-- xref_to       list callers/references to a name or address
-- xref_from     list callees of a function (things it calls)
-- rename        rename a function or local variable
-- list_strings  list strings in the binary, optionally filtered by regex
-- get_callers   list callers of a function
-- install-skill install the bundled Agent Skill so LLMs learn the CLI
+- load            start a server on a binary
+- list            list running servers
+- stop            stop one or all servers
+- list_functions  list functions in the binary, optionally filtered by regex
+- decompile       decompile a function by name or address
+- disassemble     disassemble a function by name or address
+- xref_to         data + code references to a target
+- xref_from       things a function calls (callees)
+- rename          rename a function or local variable
+- list_strings    list strings in the binary, optionally filtered by regex
+- get_callers     functions (call sites only) that call a target
+- install-skill   install the bundled Agent Skill so LLMs learn the CLI
 """
 import argparse
 import json
@@ -30,7 +31,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
+
+# Standardized exit codes — keep these consistent across subcommands so that
+# `&&` chaining and scripts have predictable behavior.
+EXIT_OK = 0
+EXIT_USER_ERROR = 1        # user asked for something that didn't happen
+EXIT_NOT_FOUND = 1         # missing function/name/binary
+EXIT_RUNTIME_ERROR = 1     # unhandled/unknown failure
 
 from libbs.api import server_registry
 from libbs.decompilers import SUPPORTED_DECOMPILERS
@@ -210,8 +218,13 @@ def cmd_load(args) -> int:
             f"Unsupported backend {backend!r}; pick one of: {sorted(SUPPORTED_DECOMPILERS)}"
         )
 
-    # If there's already a matching server for this exact binary+backend, prefer that.
+    # Existing server(s) for this binary+backend.
     existing = server_registry.find_servers(binary_path=str(binary_path), backend=backend)
+    if existing and args.replace:
+        # --replace: tear the old one(s) down first, then start fresh.
+        for record in existing:
+            _stop_server_by_record(record)
+        existing = []
     if existing and not args.force:
         record = existing[0]
         _emit(args, {
@@ -242,15 +255,20 @@ def cmd_load(args) -> int:
 
 def cmd_list(args) -> int:
     records = server_registry.list_servers()
+    registry_dir = str(server_registry._registry_dir())  # type: ignore[attr-defined]
+    if args.show_registry and not args.json:
+        print(registry_dir)
+        return 0
     if args.json:
-        print(json.dumps(records, indent=2, default=str))
+        print(json.dumps({"registry_dir": registry_dir, "servers": records}, indent=2, default=str))
         return 0
     if not records:
-        print("No running decompiler servers.")
+        print(f"No running decompiler servers.  (registry: {registry_dir})")
         return 0
     print(f"{'ID':<12} {'BACKEND':<8} {'PID':<8} BINARY")
     for r in records:
         print(f"{r.get('id',''):<12} {str(r.get('backend','')):<8} {str(r.get('pid','')):<8} {r.get('binary_path','')}")
+    print(f"\n(registry: {registry_dir})")
     return 0
 
 
@@ -358,18 +376,42 @@ def cmd_stop(args) -> int:
 # decompile / disassemble
 # ---------------------------------------------------------------------------
 
+def _known_function_addrs(client) -> set:
+    try:
+        return set(client.functions.keys())
+    except Exception:
+        return set()
+
+
 def cmd_decompile(args) -> int:
     with _with_client(args) as client:
         addr = _resolve_function_addr(client, args.target)
+        known = _known_function_addrs(client)
         if addr is None:
             raise SystemExit(f"Function not found: {args.target!r}")
+        if known and addr not in known:
+            raise SystemExit(
+                f"No function starts at 0x{addr:x}. "
+                f"Try `decompiler list_functions --filter '{args.target}'` or "
+                "pick a function-start address."
+            )
         dec = client.decompile(addr)
         if dec is None:
-            raise SystemExit(f"Failed to decompile function at 0x{addr:x}")
+            raise SystemExit(
+                f"Decompiler engine returned no result for 0x{addr:x}. "
+                "The address is a known function start, but decompilation "
+                "failed — this usually means the backend can't handle this "
+                "function (unreachable code, ARM/x86 mode mismatch, etc.)."
+            )
+        text = dec.text if hasattr(dec, "text") else str(dec)
+        if getattr(args, "raw", False):
+            # --raw: dump just the text body to stdout, regardless of --json.
+            print(text)
+            return 0
         out = {
             "addr": addr,
             "decompiler": dec.decompiler if hasattr(dec, "decompiler") else None,
-            "text": dec.text if hasattr(dec, "text") else str(dec),
+            "text": text,
         }
         _emit(args, out, text_field="text")
     return 0
@@ -378,12 +420,48 @@ def cmd_decompile(args) -> int:
 def cmd_disassemble(args) -> int:
     with _with_client(args) as client:
         addr = _resolve_function_addr(client, args.target)
+        known = _known_function_addrs(client)
         if addr is None:
             raise SystemExit(f"Function not found: {args.target!r}")
+        if known and addr not in known:
+            raise SystemExit(
+                f"No function starts at 0x{addr:x}. "
+                f"Try `decompiler list_functions --filter '{args.target}'` or "
+                "pick a function-start address."
+            )
         text = client.disassemble(addr)
         if text is None:
-            raise SystemExit(f"Failed to disassemble function at 0x{addr:x}")
+            raise SystemExit(
+                f"Disassembler returned no instructions for 0x{addr:x} "
+                "(likely a function too small to disassemble or a backend bug)."
+            )
+        if getattr(args, "raw", False):
+            print(text)
+            return 0
         _emit(args, {"addr": addr, "text": text}, text_field="text")
+    return 0
+
+
+def cmd_list_functions(args) -> int:
+    with _with_client(args) as client:
+        pattern = re.compile(args.filter) if args.filter else None
+        entries: List[Dict] = []
+        for addr, func in sorted(client.functions.items(), key=lambda kv: kv[0]):
+            name = getattr(func, "name", None) or ""
+            if pattern and not pattern.search(name):
+                continue
+            size = getattr(func, "size", 0) or 0
+            entries.append({"addr": addr, "size": int(size), "name": name})
+
+        if args.json:
+            _emit_list(args, entries)
+        else:
+            if not entries:
+                print("No functions matched.")
+                return 0
+            print(f"{'ADDR':<12} {'SIZE':<8} NAME")
+            for e in entries:
+                print(f"0x{e['addr']:<10x} {e['size']:<8} {e['name']}")
     return 0
 
 
@@ -391,21 +469,52 @@ def cmd_disassemble(args) -> int:
 # xrefs
 # ---------------------------------------------------------------------------
 
-def _format_function(func) -> Dict:
-    out = {
-        "addr": getattr(func, "addr", None),
-        "name": getattr(func, "name", None),
+def _format_xref(artifact) -> Dict:
+    """Render any artifact (Function, GlobalVariable, etc.) as a uniform dict.
+
+    Unlike `_format_function`, this keeps the artifact kind so callers can
+    tell code refs apart from data refs.
+    """
+    return {
+        "kind": type(artifact).__name__,
+        "addr": getattr(artifact, "addr", None),
+        "name": getattr(artifact, "name", None),
     }
-    return out
 
 
 def cmd_xref_to(args) -> int:
+    """All references — code and data — to the target.
+
+    Note: distinct from `get_callers`, which is call-sites only. `xref_to`
+    here asks the backend for *every* artifact that points at the target,
+    including globals, strings, and non-call code references.
+    """
+    from libbs.artifacts import Function
+
     with _with_client(args) as client:
         addr = _resolve_function_addr(client, args.target)
         if addr is None:
             raise SystemExit(f"Function not found: {args.target!r}")
-        callers = client.get_callers(addr)
-        data = [_format_function(c) for c in callers]
+        # Build a Function stub to hand to xrefs_to so backends that *do*
+        # surface non-function refs (Ghidra via `decompile=True`) can add them.
+        func_stub = Function(addr, 0)
+        try:
+            xrefs = client.xrefs_to(func_stub, decompile=bool(args.decompile))
+        except Exception as exc:
+            _l.debug("xrefs_to raised %s; falling back to get_callers", exc)
+            xrefs = client.get_callers(addr)
+
+        # Enrich Function entries with names from the light artifact cache,
+        # since some backends only return (addr, 0) stubs from xrefs_to.
+        light_funcs = dict(client.functions.items())
+        data: List[Dict] = []
+        for x in xrefs:
+            entry = _format_xref(x)
+            if entry["kind"] == "Function" and not entry.get("name"):
+                func = light_funcs.get(entry.get("addr"))
+                if func is not None:
+                    entry["name"] = getattr(func, "name", None)
+            data.append(entry)
         _emit_xrefs(args, addr, data, direction="to")
     return 0
 
@@ -432,7 +541,7 @@ def cmd_xref_from(args) -> int:
                     if callee_addr in seen:
                         continue
                     seen.add(callee_addr)
-                    callees.append(_format_function(callee))
+                    callees.append(_format_xref(callee))
         except Exception as exc:
             _l.debug("Callgraph-based xref_from failed (%s); falling back to disasm scan.", exc)
 
@@ -451,6 +560,7 @@ def cmd_xref_from(args) -> int:
                 seen.add(callee_addr)
                 func = functions_by_addr.get(callee_addr)
                 callees.append({
+                    "kind": "Function",
                     "addr": callee_addr,
                     "name": func.name if func else None,
                 })
@@ -462,7 +572,7 @@ def cmd_xref_from(args) -> int:
 def _emit_xrefs(args, addr: int, xrefs: List[Dict], *, direction: str) -> None:
     payload = {"addr": addr, "direction": direction, "xrefs": xrefs}
     if args.json:
-        print(json.dumps(payload, indent=2, default=str))
+        print(json.dumps(_annotate_addrs(payload), indent=2, default=str))
         return
     if not xrefs:
         print(f"No xrefs {direction} 0x{addr:x}")
@@ -470,7 +580,11 @@ def _emit_xrefs(args, addr: int, xrefs: List[Dict], *, direction: str) -> None:
     for x in xrefs:
         a = x.get("addr")
         n = x.get("name") or ""
-        print(f"0x{a:x}\t{n}" if a is not None else f"?\t{n}")
+        kind = x.get("kind") or ""
+        if a is not None:
+            print(f"0x{a:x}\t{kind}\t{n}" if kind else f"0x{a:x}\t{n}")
+        else:
+            print(f"?\t{kind}\t{n}" if kind else f"?\t{n}")
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +606,7 @@ def cmd_rename(args) -> int:
                 func.header.name = args.new_name
             ok = bool(client.set_artifact(func))
             _emit(args, {"kind": "func", "addr": addr, "new_name": args.new_name, "success": ok})
-            return 0 if ok else 2
+            return EXIT_OK if ok else EXIT_USER_ERROR
         elif kind == "var":
             if not args.function:
                 raise SystemExit("--function is required when renaming a variable")
@@ -507,7 +621,7 @@ def cmd_rename(args) -> int:
             _emit(args, {"kind": "var", "function_addr": func_addr,
                          "old_name": args.target, "new_name": args.new_name,
                          "success": ok})
-            return 0 if ok else 2
+            return EXIT_OK if ok else EXIT_USER_ERROR
         raise SystemExit(f"Unknown rename kind: {kind}")
 
 
@@ -516,20 +630,80 @@ def cmd_rename(args) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_list_strings(args) -> int:
+    """List strings. Two data sources:
+
+    1. The backend's native string detector (default). Fast but fidelity
+       varies — angr's detector is thin and will miss most of `.rodata`.
+    2. A raw-bytes scan of the binary file (`--rescan`). Equivalent to
+       `strings -n <min_length>` plus ELF section labeling. Always enabled
+       automatically if the native detector returns fewer than `_RESCAN_FLOOR`
+       entries; pass `--no-rescan` to disable.
+    """
+    _RESCAN_FLOOR = 32
+
     with _with_client(args) as client:
-        strings = client.list_strings(filter=args.filter)
+        filter_pat = re.compile(args.filter) if args.filter else None
+        native = client.list_strings(filter=args.filter) or []
+
+        results: List[Dict] = []
+        seen = set()
+        for addr, s in native:
+            if len(s) < args.min_length:
+                continue
+            seen.add((addr, s))
+            results.append({"addr": addr, "string": s, "source": "backend"})
+
+        should_rescan = args.rescan or (
+            not args.no_rescan and len(results) < _RESCAN_FLOOR
+        )
+        if should_rescan:
+            # Find the binary path via the registry record.
+            record = _select_server(
+                server_id=getattr(args, "id", None),
+                binary_path=getattr(args, "binary", None),
+                backend=getattr(args, "backend", None),
+            )
+            binary_path = record.get("binary_path")
+            if binary_path and os.path.exists(binary_path):
+                data = _read_binary_bytes(binary_path)
+                if data is not None:
+                    sections = _elf_sections_from_file(binary_path)
+                    for offset, text in _scan_ascii_strings(data, min_length=args.min_length):
+                        if filter_pat and not filter_pat.search(text):
+                            continue
+                        key = (offset, text)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        record_entry: Dict = {
+                            "addr": offset,
+                            "string": text,
+                            "source": "rescan",
+                        }
+                        sec = _section_for_offset(sections, offset)
+                        if sec:
+                            record_entry["section"] = sec
+                        results.append(record_entry)
+
+        # Sort by addr.
+        results.sort(key=lambda e: e.get("addr", 0))
+
         if args.json:
-            print(json.dumps(
-                [{"addr": a, "string": s} for a, s in strings],
-                indent=2, default=str,
-            ))
+            _emit_list(args, results)
         else:
-            for addr, s in strings:
-                print(f"0x{addr:x}\t{s}")
+            for entry in results:
+                sec = entry.get("section") or entry.get("source") or ""
+                sec_col = f"[{sec}]\t" if sec else ""
+                print(f"0x{entry['addr']:x}\t{sec_col}{entry['string']}")
     return 0
 
 
 def cmd_get_callers(args) -> int:
+    """Functions that contain a call to the target (call-sites only).
+
+    Distinct from `xref_to`, which returns every reference (code *or* data).
+    If you want the full reference set, use `xref_to` instead.
+    """
     with _with_client(args) as client:
         # Reuse the resolver so absolute addresses get normalized to the lifted
         # form the server expects.
@@ -540,9 +714,9 @@ def cmd_get_callers(args) -> int:
             callers = client.get_callers(resolved)
         except ValueError as exc:
             raise SystemExit(str(exc))
-        data = [_format_function(c) for c in callers]
+        data = [_format_xref(c) for c in callers]
         if args.json:
-            print(json.dumps({"target": args.target, "callers": data}, indent=2, default=str))
+            _emit(args, {"target": args.target, "target_addr": resolved, "callers": data})
         else:
             if not data:
                 print(f"No callers found for {args.target!r}")
@@ -582,7 +756,11 @@ def cmd_install_skill(args) -> int:
         shutil.copytree(src, dest)
         installed.append({"name": name, "path": str(dest)})
 
-    _emit(args, {"installed": installed})
+    if args.json:
+        print(json.dumps({"installed": installed}, indent=2, default=str))
+    else:
+        for entry in installed:
+            print(f"installed {entry['name']} → {entry['path']}")
     return 0
 
 
@@ -590,10 +768,36 @@ def cmd_install_skill(args) -> int:
 # shared helpers
 # ---------------------------------------------------------------------------
 
+def _annotate_addrs(payload):
+    """Recursively add `*_hex` siblings for every `*addr` integer field.
+
+    JSON historically emitted addresses as decimals; feedback was that this
+    is awkward when copying from one command to another. Instead of breaking
+    existing int fields, we add a sibling hex-string field so both forms
+    are available. A key named `addr` gets `addr_hex`, `target_addr` gets
+    `target_addr_hex`, `function_addr` gets `function_addr_hex`, etc.
+    """
+    if isinstance(payload, dict):
+        for key in list(payload.keys()):
+            value = payload[key]
+            if (
+                (key == "addr" or key.endswith("_addr"))
+                and isinstance(value, int)
+                and f"{key}_hex" not in payload
+            ):
+                payload[f"{key}_hex"] = f"0x{value:x}"
+        for v in payload.values():
+            _annotate_addrs(v)
+    elif isinstance(payload, list):
+        for item in payload:
+            _annotate_addrs(item)
+    return payload
+
+
 def _emit(args, payload: Dict, *, text_field: Optional[str] = None) -> None:
     """Emit a response either as JSON or as a human-readable block."""
     if args.json:
-        print(json.dumps(payload, indent=2, default=str))
+        print(json.dumps(_annotate_addrs(payload), indent=2, default=str))
         return
     if text_field and text_field in payload:
         print(payload[text_field])
@@ -601,6 +805,92 @@ def _emit(args, payload: Dict, *, text_field: Optional[str] = None) -> None:
     # Default: key: value lines
     for k, v in payload.items():
         print(f"{k}: {v}")
+
+
+def _emit_list(args, payload):
+    """Same as _emit but for a top-level list payload (JSON arrays)."""
+    if args.json:
+        print(json.dumps(_annotate_addrs(payload), indent=2, default=str))
+        return
+    # Fallback: print each item on its own line as "key: value" pairs if
+    # it's a dict; otherwise str(item).
+    for item in payload:
+        if isinstance(item, dict):
+            print(" ".join(f"{k}={v}" for k, v in item.items()))
+        else:
+            print(item)
+
+
+def _format_function(func) -> Dict:
+    return {
+        "addr": getattr(func, "addr", None),
+        "name": getattr(func, "name", None),
+    }
+
+
+def _read_binary_bytes(binary_path: str, max_bytes: int = 32 * 1024 * 1024) -> Optional[bytes]:
+    """Read up to `max_bytes` from `binary_path`. Returns None on failure."""
+    try:
+        with open(binary_path, "rb") as f:
+            return f.read(max_bytes)
+    except OSError as exc:
+        _l.debug("Could not read binary %s: %s", binary_path, exc)
+        return None
+
+
+def _scan_ascii_strings(data: bytes, min_length: int = 4) -> List[Tuple[int, str]]:
+    """strings(1)-equivalent scan over a raw byte buffer.
+
+    Returns `(offset_in_buffer, decoded_ascii)` tuples. The caller is
+    responsible for relocating `offset_in_buffer` into whatever address
+    space makes sense (e.g. file offset vs mapped vaddr).
+    """
+    results: List[Tuple[int, str]] = []
+    start = -1
+    for i, b in enumerate(data):
+        # Printable ASCII (space..tilde) plus tab as an allowed interior byte.
+        if 0x20 <= b < 0x7f or b == 0x09:
+            if start < 0:
+                start = i
+        else:
+            if start >= 0 and (i - start) >= min_length:
+                try:
+                    text = data[start:i].decode("ascii", errors="strict")
+                except UnicodeDecodeError:
+                    pass
+                else:
+                    results.append((start, text))
+            start = -1
+    if start >= 0 and (len(data) - start) >= min_length:
+        try:
+            text = data[start:].decode("ascii", errors="strict")
+        except UnicodeDecodeError:
+            pass
+        else:
+            results.append((start, text))
+    return results
+
+
+def _section_for_offset(elf_sections: Iterable, offset: int) -> Optional[str]:
+    """Return the name of the ELF section a file offset lives in, or None."""
+    for name, start, size in elf_sections:
+        if start <= offset < start + size:
+            return name
+    return None
+
+
+def _elf_sections_from_file(binary_path: str):
+    """Return [(name, file_offset, size), ...] for an ELF, or [] if not ELF."""
+    try:
+        from elftools.elf.elffile import ELFFile  # type: ignore
+    except ImportError:
+        return []
+    try:
+        with open(binary_path, "rb") as f:
+            elf = ELFFile(f)
+            return [(sec.name, sec["sh_offset"], sec["sh_size"]) for sec in elf.iter_sections()]
+    except Exception:
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -637,13 +927,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_load.add_argument("--id", dest="id", help="Explicit server ID (otherwise auto-generated).")
     p_load.add_argument("--force", action="store_true",
                         help="Start a new server even if one already exists for this binary.")
+    p_load.add_argument("--replace", action="store_true",
+                        help="Stop the existing server for this binary+backend (if any) before starting.")
     _add_output_args(p_load)
     p_load.set_defaults(func=cmd_load)
 
     # list
     p_list = sub.add_parser("list", help="List running decompiler servers.")
+    p_list.add_argument("--show-registry", action="store_true",
+                        help="Print just the registry directory path and exit.")
     _add_output_args(p_list)
     p_list.set_defaults(func=cmd_list)
+
+    # list_functions
+    p_lf = sub.add_parser("list_functions", help="List functions in the binary.")
+    p_lf.add_argument("--filter", dest="filter", help="Regex to filter function names.")
+    _add_server_filter_args(p_lf)
+    _add_output_args(p_lf)
+    p_lf.set_defaults(func=cmd_list_functions)
 
     # stop
     p_stop = sub.add_parser("stop", help="Stop a running server.")
@@ -656,6 +957,8 @@ def build_parser() -> argparse.ArgumentParser:
     # decompile
     p_dec = sub.add_parser("decompile", help="Decompile a function by name or address.")
     p_dec.add_argument("target", help="Function name or address (hex/decimal).")
+    p_dec.add_argument("--raw", action="store_true",
+                       help="Print the decompilation text directly (no JSON or header wrapping).")
     _add_server_filter_args(p_dec)
     _add_output_args(p_dec)
     p_dec.set_defaults(func=cmd_decompile)
@@ -663,13 +966,23 @@ def build_parser() -> argparse.ArgumentParser:
     # disassemble
     p_dis = sub.add_parser("disassemble", help="Disassemble a function by name or address.")
     p_dis.add_argument("target", help="Function name or address (hex/decimal).")
+    p_dis.add_argument("--raw", action="store_true",
+                       help="Print the disassembly text directly (no JSON or header wrapping).")
     _add_server_filter_args(p_dis)
     _add_output_args(p_dis)
     p_dis.set_defaults(func=cmd_disassemble)
 
     # xref_to
-    p_xto = sub.add_parser("xref_to", help="Functions/code that call or reference a target.")
+    p_xto = sub.add_parser(
+        "xref_to",
+        help=(
+            "Every reference (code AND data) to a target. "
+            "For call-sites only, see `get_callers`."
+        ),
+    )
     p_xto.add_argument("target", help="Function name or address (hex/decimal).")
+    p_xto.add_argument("--decompile", action="store_true",
+                       help="Ask the backend to decompile first (picks up more refs on Ghidra).")
     _add_server_filter_args(p_xto)
     _add_output_args(p_xto)
     p_xto.set_defaults(func=cmd_xref_to)
@@ -692,14 +1005,33 @@ def build_parser() -> argparse.ArgumentParser:
     p_ren.set_defaults(func=cmd_rename)
 
     # list_strings
-    p_ls = sub.add_parser("list_strings", help="List strings in the binary.")
+    p_ls = sub.add_parser(
+        "list_strings",
+        help=(
+            "List strings in the binary. Backend detectors vary in fidelity "
+            "(angr < ghidra < ida); --rescan does a raw strings(1)-like scan "
+            "of the file as a fallback."
+        ),
+    )
     p_ls.add_argument("--filter", dest="filter", help="Regex to filter strings.")
+    p_ls.add_argument("--min-length", dest="min_length", type=int, default=4,
+                      help="Minimum string length to keep (default: 4).")
+    p_ls.add_argument("--rescan", action="store_true",
+                      help="Force a raw-bytes scan of the binary file on top of the backend result.")
+    p_ls.add_argument("--no-rescan", action="store_true",
+                      help="Never fall back to the raw scan, even if the backend returns few results.")
     _add_server_filter_args(p_ls)
     _add_output_args(p_ls)
     p_ls.set_defaults(func=cmd_list_strings)
 
     # get_callers
-    p_gc = sub.add_parser("get_callers", help="List callers of a function (Function|addr|name).")
+    p_gc = sub.add_parser(
+        "get_callers",
+        help=(
+            "Functions that call a target (call-sites only). "
+            "For every reference (code AND data), see `xref_to`."
+        ),
+    )
     p_gc.add_argument("target", help="Function name or address (hex/decimal).")
     _add_server_filter_args(p_gc)
     _add_output_args(p_gc)
@@ -726,13 +1058,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     _configure_logging(getattr(args, "verbose", False))
     try:
-        return args.func(args) or 0
+        return args.func(args) or EXIT_OK
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001
         _l.exception("Unhandled error: %s", exc)
         print(f"Error: {exc}", file=sys.stderr)
-        return 1
+        return EXIT_RUNTIME_ERROR
 
 
 if __name__ == "__main__":  # pragma: no cover

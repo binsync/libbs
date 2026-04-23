@@ -21,6 +21,7 @@ and can be installed with `decompiler install-skill`.
   - [`load`](#load)
   - [`list`](#list)
   - [`stop`](#stop)
+  - [`list_functions`](#list_functions)
   - [`decompile`](#decompile)
   - [`disassemble`](#disassemble)
   - [`xref_to`](#xref_to)
@@ -30,7 +31,8 @@ and can be installed with `decompiler install-skill`.
   - [`get_callers`](#get_callers)
   - [`install-skill`](#install-skill)
 - [Server selection (`--id`, `--binary`, `--backend`)](#server-selection)
-- [JSON output (`--json`)](#json-output)
+- [JSON output (`--json`, `--raw`)](#json-output)
+- [Exit codes](#exit-codes)
 - [Running multiple binaries at once](#running-multiple-binaries-at-once)
 - [Address formats](#address-formats)
 - [Library-level API](#library-level-api)
@@ -72,12 +74,13 @@ decompiler load ./fauxware --backend angr
 # id: 3308b81cf8 …
 
 # 2. Poke around.
+decompiler list_functions                    # enumerate every function first
 decompiler decompile main                    # by name
 decompiler disassemble 0x40071d              # by absolute address
-decompiler xref_to authenticate              # callers of a function
+decompiler xref_to authenticate              # every code+data reference
+decompiler get_callers authenticate          # call-sites only (subset of xref_to)
 decompiler xref_from main                    # what main calls
 decompiler list_strings --filter 'pass|key'  # regex-filtered strings
-decompiler get_callers 0x71d                 # lifted address works too
 
 # 3. Mutate the database.
 decompiler rename func sub_400662 trampoline
@@ -107,6 +110,7 @@ Each running server writes a small JSON descriptor (`id`, `socket_path`,
 `binary_path`, `binary_hash`, `backend`, `pid`, `started_at`) into a shared
 registry directory. The CLI reads the registry to figure out which server to
 talk to. Stale records (server exited, socket missing) are pruned on read.
+Run `decompiler list --show-registry` to print just the path.
 
 Every subcommand except `load`, `list`, and `install-skill` accepts
 `--id`, `--binary`, and `--backend` to pick which server to target when you
@@ -124,14 +128,17 @@ it.
 ```bash
 decompiler load <binary> [--backend {angr,ghidra,binja,ida}]
                          [--id SERVER_ID]
-                         [--force]
+                         [--force | --replace]
                          [--json]
 ```
 
 - **`--backend`** (default: `angr`) — which decompiler to use.
 - **`--id`** — explicit server ID; otherwise one is auto-generated.
-- **`--force`** — start a fresh server even if an existing one matches this
-  `(binary, backend)`.
+- **`--force`** — start an additional server even if one already matches
+  this `(binary, backend)`. Keeps the old server alive.
+- **`--replace`** — stop any existing server for this `(binary, backend)`
+  first, then start a fresh one. Use this when you want to re-analyze from
+  scratch.
 
 Outputs `id`, `socket_path`, `binary_path`, `backend`, and `status` (either
 `started` or `already_loaded`).
@@ -141,7 +148,7 @@ Outputs `id`, `socket_path`, `binary_path`, `backend`, and `status` (either
 Show all running decompiler servers.
 
 ```bash
-decompiler list [--json]
+decompiler list [--show-registry] [--json]
 ```
 
 Text output:
@@ -150,7 +157,13 @@ Text output:
 ID           BACKEND  PID      BINARY
 3308b81cf8   angr     57613    /…/fauxware
 9d77ab8fd4   angr     57786    /…/posix_syscall
+
+(registry: /Users/me/Library/Application Support/libbs/servers)
 ```
+
+- **`--show-registry`** — print the registry directory and exit (useful for
+  scripting manual cleanup).
+- **`--json`** emits `{"registry_dir": "...", "servers": [...]}`.
 
 ### `stop`
 
@@ -162,35 +175,79 @@ decompiler stop [--id SERVER_ID] [--binary PATH] [--all] [--json]
 
 You must pass one of `--id`, `--binary`, or `--all`.
 
+### `list_functions`
+
+Enumerate every function in the loaded binary. This is usually the first
+thing you want on a new (possibly stripped) binary.
+
+```bash
+decompiler list_functions [--filter REGEX] [--id ID] [--binary PATH] [--backend BACKEND] [--json]
+```
+
+Text output:
+
+```
+ADDR         SIZE     NAME
+0x540        6        __libc_start_main
+0x71d        184      main
+0x664        184      authenticate
+...
+```
+
+JSON output is a list of `{"addr": int, "size": int, "name": str, "addr_hex": str}`.
+
 ### `decompile`
 
 Decompile a function to pseudocode.
 
 ```bash
-decompiler decompile <target> [--id ID] [--binary PATH] [--backend BACKEND] [--json]
+decompiler decompile <target> [--raw] [--id ID] [--binary PATH] [--backend BACKEND] [--json]
 ```
 
 `<target>` is a function name or address (hex/decimal, lifted or absolute —
 see [Address formats](#address-formats)).
 
-Text output is the decompilation. JSON output includes `addr`, `decompiler`,
-and `text`.
+- **`--raw`** — print the decompilation text directly, skipping all
+  wrapping. Useful at a terminal when `--json`'s escaped `\n`s are
+  unreadable.
+
+Default text output is the decompilation. JSON output includes `addr`,
+`addr_hex`, `decompiler`, and `text`.
+
+Error messages distinguish three failure modes:
+
+- **target not found** — function name/address doesn't resolve.
+- **not a function start** — address resolves, but isn't a function
+  boundary. Exit 1.
+- **decompiler engine failed** — address is a known function start, but
+  the backend gave up. Exit 1.
 
 ### `disassemble`
 
 Disassemble a function to text assembly.
 
 ```bash
-decompiler disassemble <target> [--id ID] [--binary PATH] [--backend BACKEND] [--json]
+decompiler disassemble <target> [--raw] [--id ID] [--binary PATH] [--backend BACKEND] [--json]
 ```
+
+Same error semantics and `--raw` flag as `decompile`.
 
 ### `xref_to`
 
-Functions that reference/call `target`.
+**Every reference** to `target` — code AND data.
 
 ```bash
-decompiler xref_to <target> [--id ID] [--binary PATH] [--backend BACKEND] [--json]
+decompiler xref_to <target> [--decompile] [--id ID] [--binary PATH] [--backend BACKEND] [--json]
 ```
+
+Each row has a `kind` field (`Function`, `GlobalVariable`, …) so you can
+tell code refs from data refs.
+
+- **`--decompile`** — ask the backend to decompile first. On Ghidra this
+  surfaces additional references (e.g. globals pulled in through the
+  HighFunction's global symbol map).
+
+When you want only call-sites, reach for `get_callers` instead.
 
 ### `xref_from`
 
@@ -200,9 +257,9 @@ Functions that `target` calls (its callees).
 decompiler xref_from <target> [--id ID] [--binary PATH] [--backend BACKEND] [--json]
 ```
 
-Implementation note: this prefers the backend's call-graph. If the call-graph
-is unavailable it falls back to scanning the function's disassembly for
-`call 0x…` instructions.
+Implementation note: this prefers the backend's call-graph. If the
+call-graph is unavailable it falls back to scanning the function's
+disassembly for `call 0x…` instructions.
 
 ### `rename`
 
@@ -216,34 +273,49 @@ decompiler rename func <old_name_or_addr> <new_name> [--id ID] [--json]
 decompiler rename var <old_var_name> <new_var_name> --function <func_name_or_addr> [--id ID] [--json]
 ```
 
-The CLI exits non-zero if the rename didn't actually change anything (the
+The CLI exits `1` if the rename didn't actually change anything (the
 response's `success` field is authoritative).
 
 ### `list_strings`
 
-List strings in the binary, optionally filtered by regex.
+List strings in the binary, combining the backend's native detector with a
+raw `strings(1)`-style scan of the file.
 
 ```bash
-decompiler list_strings [--filter REGEX] [--id ID] [--binary PATH] [--backend BACKEND] [--json]
+decompiler list_strings [--filter REGEX]
+                        [--min-length N]
+                        [--rescan] [--no-rescan]
+                        [--id ID] [--binary PATH] [--backend BACKEND] [--json]
 ```
 
-Text output is `0x<addr>\t<string>` per line. JSON output is a list of
-`{"addr": int, "string": str}`.
+- **`--filter REGEX`** — only return strings matching the regex.
+- **`--min-length N`** — drop strings shorter than N characters (default 4).
+- **`--rescan`** — always run the raw-bytes scan in addition to the
+  backend detector.
+- **`--no-rescan`** — never run the raw-bytes scan.
+- Default: the CLI auto-rescan when the backend returns fewer than 32
+  strings (angr in particular misses most of `.rodata`).
+
+Text output is `0x<addr>\t[<section or source>]\t<string>` per line. JSON
+output is a list of `{"addr", "addr_hex", "string", "source", "section"?}`
+where `source` is `"backend"` or `"rescan"` and `section` (when present)
+is the ELF section the raw-scanned byte lives in.
 
 ### `get_callers`
 
-List callers of a function (by address or symbol name). Equivalent to
-`xref_to`, but accepts a `Function`, `int` (address), or `str` (name) and is
-exposed as a first-class core API.
+Functions that contain a call to `target` — a strict subset of `xref_to`.
 
 ```bash
 decompiler get_callers <target> [--id ID] [--binary PATH] [--backend BACKEND] [--json]
 ```
 
+Unlike `xref_to`, this never returns globals or other data refs. Rows are
+always of kind `Function`.
+
 ### `install-skill`
 
-Copy the bundled Agent Skill into `~/.claude/skills/` so Claude Code (or any
-agent that picks up skills from that path) learns how to drive the CLI.
+Copy the bundled Agent Skill into `~/.claude/skills/` so Claude Code (or
+any agent that picks up skills from that path) learns how to drive the CLI.
 
 ```bash
 decompiler install-skill [names ...] [--dest DIR] [--force] [--json]
@@ -251,6 +323,8 @@ decompiler install-skill [names ...] [--dest DIR] [--force] [--json]
 
 With no `names`, every bundled skill is installed. Use `--dest` to copy the
 skill somewhere else, and `--force` to overwrite an existing directory.
+`--json` emits a well-formed JSON payload suitable for piping through
+`jq`.
 
 ---
 
@@ -279,18 +353,42 @@ Multiple servers match. Specify --id to disambiguate:
 
 Pass `--json` on any subcommand to get a structured payload suitable for
 downstream parsing. This is the recommended mode for scripts and LLM
-callers:
+callers. Every JSON payload that mentions an address provides both
+`addr` (integer, lifted) and `addr_hex` (hex string, also lifted), so you
+can copy either form without re-formatting:
 
 ```bash
-decompiler decompile main --json
-# {"addr": 1821, "decompiler": "angr", "text": "void main(...){...}"}
-
-decompiler list_strings --filter 'flag' --json
-# [{"addr": 4197168, "string": "flag{...}"}]
+decompiler list_functions --filter '^main$' --json
+# [{"addr": 1821, "size": 184, "name": "main", "addr_hex": "0x71d"}]
 
 decompiler xref_to authenticate --json
-# {"addr": 1636, "direction": "to", "xrefs": [{"addr": 1821, "name": "main"}, ...]}
+# {"addr": 1636, "direction": "to",
+#  "xrefs": [{"kind": "Function", "addr": 1821, "name": "main", "addr_hex": "0x71d"}, ...],
+#  "addr_hex": "0x664"}
 ```
+
+For decompile/disassemble output, JSON wraps the text in a `text` field
+with escaped newlines. At a terminal this is awkward; pass `--raw`
+instead:
+
+```bash
+decompiler decompile main --raw         # prints the pseudocode directly
+decompiler disassemble 0x71d --raw      # prints assembly directly
+```
+
+---
+
+## Exit codes
+
+Every CLI command uses these exit codes:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. |
+| `1` | User-visible error — target not found, rename didn't apply, decompile failed, etc. All failure modes unify to `1` so that shell `&&` chaining works cleanly. |
+
+Argparse-level errors (unknown subcommand, missing required argument) exit
+with Python's standard argparse code `2`.
 
 ---
 
@@ -304,6 +402,8 @@ decompiler list
 # ID           BACKEND  PID      BINARY
 # abc1234...   angr     4213     .../my-binary
 # def5678...   angr     4217     .../my-binary-2
+#
+# (registry: /…/libbs/servers)
 
 # Target by ID …
 decompiler decompile main --id abc1234
@@ -311,7 +411,13 @@ decompiler decompile main --id abc1234
 # … or by binary path.
 decompiler decompile main --binary ./my-binary-2
 
-# Tear them both down.
+# Restart a server cleanly (stop existing, spawn fresh):
+decompiler load ./my-binary --replace
+
+# Run an additional server alongside the existing one:
+decompiler load ./my-binary --force
+
+# Tear them all down.
 decompiler stop --all
 ```
 
@@ -339,7 +445,7 @@ accepts whatever is natural for the user:
 
 The CLI converts on the fly. The returned `addr` fields in JSON output are
 **always lifted**, which matches what the server's artifact dictionaries
-use.
+use. `addr_hex` is the same value as a hex string for convenience.
 
 ---
 
@@ -392,10 +498,20 @@ Check backend prerequisites:
 - IDA/Binary Ninja: their Python bindings must be importable.
 - angr: should just work.
 
-**Rename reports `success: False`**
-The old name was not found in the function (e.g. it was already renamed, or
-you targeted the wrong function). The exit code will be non-zero so it's
-easy to detect from a script.
+**`No function starts at 0x…`**
+The address is valid in the binary but doesn't correspond to the first
+byte of any known function. Use `decompiler list_functions` to find a
+valid start. (Prior to v2 this was reported with the same error as
+"decompiler engine failed"; they're now distinct.)
+
+**Rename reports `success: False` (exit 1)**
+The old name was not found in the function (e.g. it was already renamed,
+or you targeted the wrong function).
+
+**`list_strings` looks thin**
+angr's string detector is minimal. The CLI auto-falls-back to a raw-bytes
+scan — if you don't see `source: "rescan"` entries, the threshold (32
+backend entries) wasn't crossed. Pass `--rescan` to force it.
 
 **Server-side logs**
 Spawned servers have their stdout/stderr sent to `/dev/null`. If you're

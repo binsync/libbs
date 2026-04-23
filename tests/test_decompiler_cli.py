@@ -109,9 +109,16 @@ class TestDecompilerCLI(unittest.TestCase):
         server_id = loaded["id"]
 
         list_result = _run_cli("list", "--json")
-        servers = json.loads(list_result.stdout)
-        ids = {s["id"] for s in servers}
+        payload = json.loads(list_result.stdout)
+        # Feedback P3.13: list --json should expose the registry path.
+        self.assertIn("registry_dir", payload)
+        self.assertTrue(payload["registry_dir"])
+        ids = {s["id"] for s in payload["servers"]}
         self.assertIn(server_id, ids)
+
+    def test_list_show_registry(self):
+        result = _run_cli("list", "--show-registry")
+        self.assertTrue(result.stdout.strip())
 
     def test_load_idempotent(self):
         first = self._load_fauxware()
@@ -136,24 +143,86 @@ class TestDecompilerCLI(unittest.TestCase):
         ok = _run_cli("decompile", "main", "--id", first["id"])
         self.assertIn("main", ok.stdout)
 
+    def test_load_replace_stops_old_server(self):
+        """`load --replace` should tear the existing server down, not leave two."""
+        first = self._load_fauxware()
+        replaced_result = _run_cli(
+            "load", str(FAUXWARE_PATH), "--backend", "angr", "--replace", "--json"
+        )
+        replaced = json.loads(replaced_result.stdout)
+        self.assertEqual(replaced["status"], "started")
+        self.assertNotEqual(replaced["id"], first["id"])
+
+        # Only one server should remain.
+        listing = _run_cli("list", "--json")
+        servers = json.loads(listing.stdout)["servers"]
+        fauxware_servers = [s for s in servers if s["binary_path"] == str(FAUXWARE_PATH)]
+        self.assertEqual(len(fauxware_servers), 1)
+        self.assertEqual(fauxware_servers[0]["id"], replaced["id"])
+
     def test_decompile(self):
         self._load_fauxware()
         result = _run_cli("decompile", "main", "--json")
         payload = json.loads(result.stdout)
         self.assertIn("text", payload)
         self.assertIn("main", payload["text"])
+        # Feedback P1.4: JSON should include addr_hex alongside addr.
+        self.assertIn("addr_hex", payload)
+        self.assertTrue(payload["addr_hex"].startswith("0x"))
 
         # By address (lifted)
         addr_dec = _run_cli("decompile", "0x71d", "--json")
         self.assertIn("text", json.loads(addr_dec.stdout))
+
+    def test_decompile_raw(self):
+        """Feedback P1.7: --raw should print text directly, not JSON-wrapped."""
+        self._load_fauxware()
+        raw = _run_cli("decompile", "main", "--raw")
+        # Raw output: no literal '\\n' escape or JSON quoting.
+        self.assertNotIn('\\n', raw.stdout)
+        self.assertNotIn('{"addr"', raw.stdout)
+        self.assertIn("main", raw.stdout)
+
+    def test_decompile_not_a_function_start(self):
+        """Feedback P1.6: clear error distinguishing 'not a start' from engine failure."""
+        self._load_fauxware()
+        # 0x71e is inside main (main starts at 0x71d).
+        result = _run_cli("decompile", "0x71e", check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("No function starts at", result.stdout + result.stderr)
 
     def test_disassemble(self):
         self._load_fauxware()
         result = _run_cli("disassemble", "main", "--json")
         payload = json.loads(result.stdout)
         self.assertIn("text", payload)
+        self.assertIn("addr_hex", payload)
         # sanity: some assembly
         self.assertTrue(any(op in payload["text"] for op in ("push", "mov", "call")))
+
+    def test_disassemble_raw(self):
+        self._load_fauxware()
+        raw = _run_cli("disassemble", "main", "--raw")
+        self.assertNotIn('\\n', raw.stdout)
+        self.assertNotIn('{"addr"', raw.stdout)
+
+    def test_list_functions(self):
+        """Feedback P0.1: `list_functions` subcommand."""
+        self._load_fauxware()
+        result = _run_cli("list_functions", "--filter", "main", "--json")
+        entries = json.loads(result.stdout)
+        names = {e["name"] for e in entries}
+        self.assertIn("main", names)
+        # Each entry must carry addr, addr_hex, size, name.
+        for e in entries:
+            self.assertIn("addr", e)
+            self.assertIn("addr_hex", e)
+            self.assertIn("size", e)
+            self.assertIn("name", e)
+        # Text output is tabular.
+        text = _run_cli("list_functions", "--filter", "main").stdout
+        self.assertIn("ADDR", text)
+        self.assertIn("main", text)
 
     def test_xref_to(self):
         self._load_fauxware()
@@ -161,6 +230,12 @@ class TestDecompilerCLI(unittest.TestCase):
         payload = json.loads(result.stdout)
         names = {x.get("name") for x in payload["xrefs"]}
         self.assertIn("main", names)
+        # Feedback P1.3: rows should be kind-tagged.
+        kinds = {x.get("kind") for x in payload["xrefs"]}
+        self.assertIn("Function", kinds)
+        # addr_hex present for each xref
+        for x in payload["xrefs"]:
+            self.assertIn("addr_hex", x)
 
     def test_xref_from(self):
         self._load_fauxware()
@@ -178,6 +253,23 @@ class TestDecompilerCLI(unittest.TestCase):
         result = _run_cli("rename", "func", "authenticate", "my_auth", "--json")
         payload = json.loads(result.stdout)
         self.assertTrue(payload["success"])
+
+    def test_rename_func_missing_exits_1(self):
+        """Feedback P1.5: non-existent rename should exit 1, not 2."""
+        self._load_fauxware()
+        result = _run_cli(
+            "rename", "func", "nonexistent_fn_xyz", "whatever", check=False
+        )
+        self.assertEqual(result.returncode, 1)
+
+    def test_rename_var_missing_exits_1(self):
+        """Feedback P1.5: var rename with missing old name should exit 1, not 2."""
+        self._load_fauxware()
+        result = _run_cli(
+            "rename", "var", "no_such_var_xyz", "whatever",
+            "--function", "main", check=False,
+        )
+        self.assertEqual(result.returncode, 1)
 
     def test_rename_var(self):
         self._load_fauxware()
@@ -205,7 +297,32 @@ class TestDecompilerCLI(unittest.TestCase):
         self._load_fauxware()
         result = _run_cli("list_strings", "--filter", "Welcome", "--json")
         payload = json.loads(result.stdout)
-        self.assertTrue(any("Welcome" in s["string"] for s in payload))
+        # Each entry has addr, addr_hex, string, source.
+        hit = next((s for s in payload if "Welcome" in s["string"]), None)
+        self.assertIsNotNone(hit)
+        self.assertIn("addr_hex", hit)
+        self.assertIn("source", hit)
+
+    def test_list_strings_rescan_picks_up_more(self):
+        """Feedback P0/P1.2: fallback scan should surface more entries than the thin angr detector."""
+        self._load_fauxware()
+        backend_only = _run_cli("list_strings", "--no-rescan", "--json")
+        with_rescan = _run_cli("list_strings", "--rescan", "--json")
+        self.assertGreater(len(json.loads(with_rescan.stdout)),
+                           len(json.loads(backend_only.stdout)))
+        # rescan entries should include section info for ELF binaries.
+        rescan_entries = [s for s in json.loads(with_rescan.stdout)
+                          if s.get("source") == "rescan"]
+        self.assertTrue(rescan_entries)
+        self.assertTrue(any("section" in e for e in rescan_entries))
+
+    def test_list_strings_min_length(self):
+        self._load_fauxware()
+        result = _run_cli("list_strings", "--min-length", "20", "--json")
+        entries = json.loads(result.stdout)
+        # Every entry must meet the threshold.
+        for e in entries:
+            self.assertGreaterEqual(len(e["string"]), 20)
 
     def test_get_callers(self):
         self._load_fauxware()
@@ -213,6 +330,10 @@ class TestDecompilerCLI(unittest.TestCase):
         payload = json.loads(by_name.stdout)
         names = {c.get("name") for c in payload["callers"]}
         self.assertIn("main", names)
+        # Every *_addr field should have a hex sibling (target_addr -> target_addr_hex, etc.)
+        self.assertIn("target_addr_hex", payload)
+        for c in payload["callers"]:
+            self.assertIn("addr_hex", c)
 
     def test_stop(self):
         loaded = self._load_fauxware()
@@ -220,7 +341,8 @@ class TestDecompilerCLI(unittest.TestCase):
         payload = json.loads(stop.stdout)
         self.assertTrue(payload["stopped"][0]["stopped"])
         listing = _run_cli("list", "--json")
-        ids = {s["id"] for s in json.loads(listing.stdout)}
+        servers = json.loads(listing.stdout)["servers"]
+        ids = {s["id"] for s in servers}
         self.assertNotIn(loaded["id"], ids)
 
     @unittest.skipUnless(POSIX_SYSCALL_PATH.exists(), f"Missing: {POSIX_SYSCALL_PATH}")
@@ -253,6 +375,7 @@ class TestSkillInstaller(unittest.TestCase):
     def test_install_skill_via_cli(self):
         with tempfile.TemporaryDirectory() as dest:
             result = _run_cli("install-skill", "--dest", dest, "--json")
+            # Feedback P3.12: --json must emit parseable JSON (not Python repr).
             payload = json.loads(result.stdout)
             self.assertEqual(len(payload["installed"]), 1)
             installed_path = Path(payload["installed"][0]["path"])
@@ -265,6 +388,14 @@ class TestSkillInstaller(unittest.TestCase):
             # --force overwrites.
             forced = _run_cli("install-skill", "--dest", dest, "--json", "--force")
             self.assertEqual(len(json.loads(forced.stdout)["installed"]), 1)
+
+    def test_install_skill_text_output_is_parsable(self):
+        """Text output should be readable (not single-quoted Python repr)."""
+        with tempfile.TemporaryDirectory() as dest:
+            result = _run_cli("install-skill", "--dest", dest)
+            # No Python-style single quotes around the payload.
+            self.assertNotIn("[{'name'", result.stdout)
+            self.assertIn("decompiler", result.stdout)
 
 
 @unittest.skipUnless(FAUXWARE_PATH.exists(), f"Missing test binary: {FAUXWARE_PATH}")
