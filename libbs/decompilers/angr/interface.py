@@ -575,7 +575,7 @@ class AngrInterface(DecompilerInterface):
         if not func.normalized:
             func.normalize()
 
-        return self.main_instance.project.analyses.Decompiler(func, cfg=self._cfg, flavor='pseudocode')
+        return self.main_instance.project.analyses.Decompiler(func, cfg=self._cfg, flavor='pseudocode', preset="full")
 
     def _angr_management_decompile(self, func):
         # recover direct pseudocode

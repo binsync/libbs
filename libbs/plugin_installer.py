@@ -257,22 +257,3 @@ class LibBSPluginInstaller(PluginInstaller):
     def display_prologue(self):
         print(textwrap.dedent("""
         Now installing LibBS plugins for all supported decompilers..."""))
-
-    def install_ghidra(self, path=None, interactive=True):
-        ghidra_path = super().install_ghidra(path=path, interactive=interactive)
-        if ghidra_path is None:
-            return None
-
-        src_ghidra_libbs_pkg = self._libbs_plugins_path.joinpath("ghidra_libbs")
-        src_vendored = src_ghidra_libbs_pkg.joinpath("libbs_vendored")
-        src_script = src_ghidra_libbs_pkg.joinpath("ghidra_libbs.py")
-        src_script_shutdown = src_ghidra_libbs_pkg.joinpath("ghidra_libbs_shutdown.py")
-
-        dst_ghidra_libbs_pkg = ghidra_path.joinpath("libbs_vendored")
-        dst_ghidra_script = ghidra_path.joinpath("ghidra_libbs.py")
-        dst_script_shutdown = ghidra_path.joinpath("ghidra_libbs_shutdown.py")
-
-        self.link_or_copy(src_vendored, dst_ghidra_libbs_pkg, is_dir=True)
-        self.link_or_copy(src_script, dst_ghidra_script)
-        self.link_or_copy(src_script_shutdown, dst_script_shutdown)
-        return ghidra_path

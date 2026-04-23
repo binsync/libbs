@@ -6,10 +6,8 @@ name: Core Tests
 on:
   push:
     branches: [ main ]
-    paths: ['libbs/artifacts/**', 'examples/**']
   pull_request:
     branches: [ main ]
-    paths: ['libbs/artifacts/**', 'examples/**']
 
 jobs:
   build:
@@ -33,4 +31,4 @@ jobs:
 
       - name: Pytest
         run: |
-          pytest ./tests/test_artifacts.py ./tests/test_cli.py
+          pytest ./tests/test_artifacts.py ./tests/test_cli.py -v

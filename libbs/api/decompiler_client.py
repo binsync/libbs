@@ -368,14 +368,26 @@ class DecompilerClient:
         
         _l.info(f"DecompilerClient connected to {socket_path}")
     
+    def _create_and_connect_socket(self) -> socket.socket:
+        """Create and connect a socket handling both AF_UNIX and AF_INET fallbacks."""
+        if hasattr(socket, "AF_UNIX"):
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout)
+            sock.connect(self.socket_path)
+        else:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout)
+            with open(self.socket_path, 'r') as f:
+                port = int(f.read().strip())
+            sock.connect(('127.0.0.1', port))
+        return sock
+
     def _connect(self):
         """Establish connection to the server"""
         try:
-            _l.debug(f"Attempting to connect to AF_UNIX socket at {self.socket_path}")
+            _l.debug(f"Attempting to connect to server at {self.socket_path}")
             
-            self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            self._socket.settimeout(self.timeout)
-            self._socket.connect(self.socket_path)
+            self._socket = self._create_and_connect_socket()
             
             _l.debug("Socket connection established")
             
@@ -492,9 +504,9 @@ class DecompilerClient:
         """Show a type in the GUI"""
         return self._send_request({"type": "method_call", "method_name": "gui_show_type", "args": [type_name]})
     
-    def gui_ask_for_string(self, question: str, title: str = "Plugin Question") -> str:
+    def gui_ask_for_string(self, question: str, title: str = "Plugin Question", default: str = "") -> str:
         """Ask for a string input"""
-        return self._send_request({"type": "method_call", "method_name": "gui_ask_for_string", "args": [question, title]})
+        return self._send_request({"type": "method_call", "method_name": "gui_ask_for_string", "args": [question, title, default]})
     
     def gui_ask_for_choice(self, question: str, choices: list, title: str = "Plugin Question") -> str:
         """Ask for a choice from a list"""
@@ -589,9 +601,7 @@ class DecompilerClient:
 
         # Create a separate socket connection for receiving events
         try:
-            self._event_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            self._event_socket.settimeout(self.timeout)
-            self._event_socket.connect(self.socket_path)
+            self._event_socket = self._create_and_connect_socket()
 
             # Send subscription request to server
             SocketProtocol.send_message(self._event_socket, {"type": "subscribe_events"})

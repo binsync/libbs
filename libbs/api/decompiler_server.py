@@ -419,18 +419,23 @@ class DecompilerServer:
         
         _l.info(f"Starting DecompilerServer on {self.socket_path}")
         
-        # Create AF_UNIX socket
-        self._server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-
-        # Set timeout so accept() doesn't block forever
-        self._server_socket.settimeout(1.0)
-
-        # Remove socket file if it exists
-        if os.path.exists(self.socket_path):
-            os.unlink(self.socket_path)
-
-        # Bind and listen
-        self._server_socket.bind(self.socket_path)
+        # Create socket (AF_UNIX if available, else AF_INET)
+        if hasattr(socket, "AF_UNIX"):
+            self._server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self._server_socket.settimeout(1.0)
+            if os.path.exists(self.socket_path):
+                os.unlink(self.socket_path)
+            self._server_socket.bind(self.socket_path)
+        else:
+            self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._server_socket.settimeout(1.0)
+            self._server_socket.bind(('127.0.0.1', 0))
+            port = self._server_socket.getsockname()[1]
+            try:
+                with open(self.socket_path, 'w') as f:
+                    f.write(str(port))
+            except Exception as e:
+                _l.error(f"Failed to write port to {self.socket_path}: {e}")
         self._server_socket.listen(5)
         
         # Set running flag before starting thread

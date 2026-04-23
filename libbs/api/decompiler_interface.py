@@ -195,13 +195,13 @@ class DecompilerInterface:
     def gui_register_ctx_menu(self, name, action_string, callback_func, category=None) -> bool:
         raise NotImplementedError
 
-    def gui_ask_for_string(self, question, title="Plugin Question") -> str:
+    def gui_ask_for_string(self, question, title="Plugin Question", default="") -> str:
         """
         Opens a GUI dialog box that asks the user for a string. If not overriden by the decompiler interface,
         this will default to a Qt dialog box that is based on the decompilers Qt version.
         """
         from libbs.ui.utils import gui_ask_for_string
-        return gui_ask_for_string(question, title=title)
+        return gui_ask_for_string(question, title=title, default=default)
 
     def gui_ask_for_choice(self, question: str, choices: list, title="Plugin Question") -> str:
         """
@@ -813,6 +813,17 @@ class DecompilerInterface:
 
         return lifted_struct
 
+    def decompilation_changed(self, decompilation: Decompilation, **kwargs) -> Decompilation:
+        lifted_dcmp = self.art_lifter.lift(decompilation)
+        for callback_func in self.artifact_change_callbacks[Decompilation]:
+            args = (lifted_dcmp,)
+            if self._thread_artifact_callbacks:
+                threading.Thread(target=callback_func, args=args, kwargs=kwargs, daemon=True).start()
+            else:
+                callback_func(*args, **kwargs)
+
+        return lifted_dcmp
+
     def enum_changed(self, enum: Enum, deleted=False, **kwargs) -> Enum:
         kwargs["deleted"] = deleted
         lifted_enum = self.art_lifter.lift(enum)
@@ -1016,8 +1027,16 @@ class DecompilerInterface:
                 return IDA_DECOMPILER
         except Exception:
             pass
+
         try:
+            # for IDA 9 Beta
             import ida
+            available.add(IDA_DECOMPILER)
+        except ImportError:
+            pass
+        try:
+            # for IDA 9+
+            import idapro
             available.add(IDA_DECOMPILER)
         except Exception:
             pass
