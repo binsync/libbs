@@ -75,6 +75,11 @@ def _run_cli(*args, check=True, timeout=600, env_overrides=None) -> subprocess.C
     return subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=timeout, env=env)
 
 
+def _format_hex(value: int) -> str:
+    """Tiny helper: render an int as ``0x...`` for CLI args."""
+    return f"0x{value:x}"
+
+
 # Shared registry directory for this module's tests
 _REGISTRY_DIR = tempfile.mkdtemp(prefix="libbs_cli_registry_")
 
@@ -287,6 +292,63 @@ class _CLIBackendTestBase(unittest.TestCase):
         self.assertIn("main", names)
         for c in payload["callers"]:
             self.assertIn("addr_hex", c)
+
+    def test_read_memory(self):
+        """read_memory should return the bytes at a known location.
+
+        Fauxware's ``Welcome to the admin console, trusted user!`` string
+        lives at lifted address ``0x8e0`` and the ELF header lives at the
+        binary's base. Both are stable across every backend we support, so
+        this is a clean cross-decompiler smoke test.
+        """
+        import base64
+
+        self._load_fauxware()
+
+        # 1. ELF magic at the binary's base. Lifted address 0x0.
+        result = _run_cli("read_memory", "0x0", "0x4", "--json")
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["size"], 4)
+        decoded = base64.b64decode(payload["bytes_b64"])
+        self.assertEqual(decoded, b"\x7fELF",
+                         f"{self.backend} read_memory(0x0, 4) returned {decoded!r}")
+        self.assertEqual(payload["hex"], "7f454c46")
+
+        # 2. The "Welcome" string. Walk list_strings to find it so this
+        #    isn't tied to a specific backend's address representation.
+        strings = json.loads(_run_cli("list_strings", "--filter", "Welcome",
+                                      "--json").stdout)
+        self.assertTrue(strings, f"{self.backend}: 'Welcome' string not surfaced")
+        welcome_addr = strings[0]["addr"]
+
+        result = _run_cli("read_memory", _format_hex(welcome_addr), "7", "--json")
+        payload = json.loads(result.stdout)
+        self.assertEqual(base64.b64decode(payload["bytes_b64"]), b"Welcome",
+                         f"{self.backend} read_memory at Welcome addr returned wrong bytes")
+
+    def test_read_memory_hexdump_default(self):
+        """Default text output is a hexdump of the bytes."""
+        self._load_fauxware()
+        result = _run_cli("read_memory", "0x0", "16")
+        # Hexdump of the ELF header starts with the magic + class + data.
+        self.assertIn("7f 45 4c 46", result.stdout)
+        # ASCII column should also be present.
+        self.assertIn("|.ELF", result.stdout)
+
+    def test_read_memory_hex_format(self):
+        self._load_fauxware()
+        result = _run_cli("read_memory", "0x0", "4", "--format", "hex")
+        self.assertEqual(result.stdout.strip(), "7f454c46")
+
+    def test_read_memory_invalid_address(self):
+        """An address far outside any segment should error cleanly."""
+        self._load_fauxware()
+        result = _run_cli("read_memory", "0xdeadbeef00", "16", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        # Either the backend rejects it, or it raises before responding.
+        # We just assert the CLI didn't print bytes.
+        combined = result.stdout + result.stderr
+        self.assertNotIn("|.ELF", combined)
 
     #: Subclasses set this to True if their backend actually persists files
     #: (Ghidra project, IDA database, etc). For in-memory backends like angr
@@ -706,6 +768,26 @@ class TestNewLibbsFeatures(unittest.TestCase):
         ref_names = {getattr(r, "name", None) for r in refs}
         self.assertIn("authenticate", ref_names,
                       f"expected 'authenticate' in xrefs_to_addr(SOSNEAKY): {ref_names}")
+
+    def test_read_memory(self):
+        """read_memory should return the ELF magic at the binary's base."""
+        # ELF magic at lifted addr 0
+        elf = self.deci.read_memory(0, 4)
+        self.assertEqual(elf, b"\x7fELF")
+
+        # Welcome string — find via list_strings, then read its bytes.
+        strings = self.deci.list_strings(filter=r"Welcome")
+        self.assertTrue(strings, "Welcome string not found")
+        welcome_addr = strings[0][0]
+        bytes_ = self.deci.read_memory(welcome_addr, 7)
+        self.assertEqual(bytes_, b"Welcome")
+
+        # Out-of-range read should return None.
+        self.assertIsNone(self.deci.read_memory(0xdeadbeef00, 16))
+
+        # Zero/negative size short-circuit.
+        self.assertEqual(self.deci.read_memory(0, 0), b"")
+        self.assertEqual(self.deci.read_memory(0, -5), b"")
 
 
 if __name__ == "__main__":

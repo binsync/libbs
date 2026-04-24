@@ -516,6 +516,32 @@ class GhidraDecompilerInterface(DecompilerInterface):
             return None
         return "\n".join(lines) if lines else None
 
+    def read_memory(self, addr: int, size: int) -> Optional[bytes]:
+        if size <= 0:
+            return b""
+        lowered = self.art_lifter.lower_addr(addr)
+        try:
+            import jpype
+            memory = self.currentProgram.getMemory()
+            gaddr = self._to_gaddr(lowered)
+            byte_array = jpype.JArray(jpype.JByte)(size)
+            # Memory.getBytes returns the count of bytes copied; on partial
+            # reads it raises MemoryAccessException, which we treat as the
+            # caller asked for memory we can't reach.
+            try:
+                read = int(memory.getBytes(gaddr, byte_array))
+            except Exception as exc:
+                _l.debug("Ghidra read_memory at 0x%x size=%d failed: %s", lowered, size, exc)
+                return None
+            if read <= 0:
+                return b""
+            # JByte values arrive as signed Python ints; mask back to unsigned
+            # so the resulting bytes match what the binary stores on disk.
+            return bytes(int(b) & 0xFF for b in byte_array[:read])
+        except Exception as exc:
+            _l.warning("Ghidra read_memory failed: %s", exc)
+            return None
+
     #
     # Extra API
     #

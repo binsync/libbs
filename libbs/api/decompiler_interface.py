@@ -513,6 +513,21 @@ class DecompilerInterface:
         """
         return None
 
+    def read_memory(self, addr: int, size: int) -> Optional[bytes]:
+        """Read ``size`` bytes from the loaded program at ``addr``.
+
+        Returns the raw bytes the backend has for the requested span. ``None``
+        means "I couldn't satisfy the read at all" — out-of-range, uninitialized,
+        or the backend can't reach that memory. A short read (fewer bytes than
+        requested) is still valid and returned as-is; callers should check
+        ``len(result)`` if they need an exact count.
+
+        @param addr: Lifted address to start reading from.
+        @param size: Number of bytes to read. Must be > 0.
+        @return: Bytes read, or ``None`` if the backend can't read this region.
+        """
+        raise NotImplementedError
+
     def get_callgraph(self, only_names=False) -> nx.DiGraph:
         """
         Returns the callgraph of the binary. This is a dict of function addresses to a list of function addresses

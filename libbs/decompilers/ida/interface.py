@@ -258,6 +258,12 @@ class IDAInterface(DecompilerInterface):
         lowered = self.art_lifter.lower_addr(addr)
         return compat.disassemble_function(lowered)
 
+    def read_memory(self, addr: int, size: int) -> Optional[bytes]:
+        if size <= 0:
+            return b""
+        lowered = self.art_lifter.lower_addr(addr)
+        return compat.read_memory(lowered, size)
+
     def _collect_xrefs_to(self, lowered_addr: int, only_code: bool,
                           _max_chase: int = 2) -> List[Artifact]:
         """Collect function-level xrefs to ``lowered_addr``.

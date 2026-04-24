@@ -1753,6 +1753,21 @@ def list_strings():
 
 
 @execute_write
+def read_memory(addr, size):
+    """Read ``size`` bytes from the IDB at ``addr``.
+
+    Uses ``ida_bytes.get_bytes`` which honors loaded segments and patched
+    bytes. Returns ``None`` when IDA can't satisfy the read at all.
+    """
+    if size <= 0:
+        return b""
+    data = ida_bytes.get_bytes(addr, size)
+    if data is None:
+        return None
+    return bytes(data)
+
+
+@execute_write
 def disassemble_function(addr):
     """Return a single-string disassembly for the function containing ``addr``."""
     func = ida_funcs.get_func(addr)

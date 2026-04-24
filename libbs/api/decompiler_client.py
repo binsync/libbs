@@ -558,6 +558,10 @@ class DecompilerClient:
     def disassemble(self, addr: int, **kwargs) -> Optional[str]:
         """Disassemble a function"""
         return self._send_request({"type": "method_call", "method_name": "disassemble", "args": [addr], "kwargs": kwargs})
+
+    def read_memory(self, addr: int, size: int) -> Optional[bytes]:
+        """Read raw bytes from the loaded program."""
+        return self._send_request({"type": "method_call", "method_name": "read_memory", "args": [addr, size]})
     
     def get_callgraph(self, only_names=False):
         """Get the call graph"""

@@ -123,6 +123,7 @@ same binary.
 | `rename var <old> <new> --function <f>` | Rename a local variable inside a function. | same |
 | `list_strings` | Strings the decompiler found (may be incomplete — see below). | `--filter`, `--min-length N`, same |
 | `get_callers <target>` | Call-sites only — subset of `xref_to`. | same |
+| `read_memory <addr> <size>` | Read raw bytes from the binary at `<addr>`. Default output is a hexdump. | `--format {hexdump,hex,raw}`, same + `--json` (base64-encoded bytes) |
 | `install-skill` | Install this file for Claude Code or Codex. | `--agent`, `--dest`, `--force`, `--json` |
 
 ### `xref_to` vs `get_callers`

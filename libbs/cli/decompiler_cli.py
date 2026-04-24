@@ -18,6 +18,7 @@ Subcommands implemented:
 - rename          rename a function or local variable
 - list_strings    list strings in the binary, optionally filtered by regex
 - get_callers     functions (call sites only) that call a target
+- read_memory     read raw bytes from the binary at an address
 - install-skill   install the bundled Agent Skill so LLMs learn the CLI
 """
 import argparse
@@ -787,6 +788,84 @@ def cmd_get_callers(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# read_memory
+# ---------------------------------------------------------------------------
+
+def cmd_read_memory(args) -> int:
+    """Read ``size`` bytes from the binary starting at ``addr``.
+
+    Address accepts hex (``0x...``) or decimal. Output defaults to a hex+ascii
+    dump; use ``--format hex`` for a single hex blob, ``--format raw`` to write
+    raw bytes to stdout, or ``--json`` for a JSON envelope with the bytes
+    base64-encoded.
+    """
+    import base64
+
+    addr_value, name = _parse_target(args.addr)
+    if addr_value is None:
+        raise SystemExit(
+            f"Invalid address {args.addr!r}; expected hex (0x..) or decimal."
+        )
+    if args.size <= 0:
+        raise SystemExit(f"--size must be > 0 (got {args.size})")
+
+    with _with_client(args) as client:
+        data = client.read_memory(addr_value, args.size)
+        if data is None:
+            raise SystemExit(
+                f"Backend could not read 0x{args.size:x} bytes at "
+                f"{_format_addr_hex(addr_value)}. The address may be "
+                "uninitialized, unmapped, or outside any loaded segment."
+            )
+        # Some backends return short reads when the request straddles the
+        # end of a mapped region; surface that in the JSON output and warn
+        # in text mode so the caller knows.
+        actual_size = len(data)
+
+        if args.format == "raw" and not args.json:
+            sys.stdout.buffer.write(data)
+            return 0
+
+        if args.json:
+            payload = {
+                "addr": addr_value,
+                "size": actual_size,
+                "requested_size": args.size,
+                "bytes_b64": base64.b64encode(data).decode("ascii"),
+                "hex": data.hex(),
+            }
+            print(json.dumps(_annotate_addrs(payload), indent=2, default=str))
+            return 0
+
+        if args.format == "hex":
+            print(data.hex())
+            return 0
+
+        # Default: hexdump-style output.
+        for line in _hexdump(data, base_addr=addr_value):
+            print(line)
+        if actual_size < args.size:
+            print(
+                f"# short read: got {actual_size} of {args.size} requested bytes",
+                file=sys.stderr,
+            )
+    return 0
+
+
+def _hexdump(data: bytes, *, base_addr: int = 0, width: int = 16) -> List[str]:
+    """Return a list of hexdump lines like ``addr: hh hh ... |ascii|``."""
+    lines: List[str] = []
+    for offset in range(0, len(data), width):
+        chunk = data[offset:offset + width]
+        hex_part = " ".join(f"{b:02x}" for b in chunk)
+        # Pad short final lines so the ASCII column stays aligned.
+        hex_part = hex_part.ljust(width * 3 - 1)
+        ascii_part = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+        lines.append(f"{_format_addr_hex(base_addr + offset)}: {hex_part}  |{ascii_part}|")
+    return lines
+
+
+# ---------------------------------------------------------------------------
 # install-skill
 # ---------------------------------------------------------------------------
 
@@ -1099,6 +1178,25 @@ def build_parser() -> argparse.ArgumentParser:
     _add_server_filter_args(p_gc)
     _add_output_args(p_gc)
     p_gc.set_defaults(func=cmd_get_callers)
+
+    # read_memory
+    p_rm = sub.add_parser(
+        "read_memory",
+        help=(
+            "Read raw bytes from the binary at an address. "
+            "Default output is a hexdump; pass --format hex for a single hex "
+            "string, --format raw for binary stdout, or --json for a JSON "
+            "envelope with base64-encoded bytes."
+        ),
+    )
+    p_rm.add_argument("addr", help="Address to start reading from (hex 0x.. or decimal).")
+    p_rm.add_argument("size", type=lambda x: int(x, 0),
+                      help="Number of bytes to read (decimal or 0x-prefixed hex).")
+    p_rm.add_argument("--format", choices=("hexdump", "hex", "raw"), default="hexdump",
+                      help="Text-mode output format. Ignored when --json is set.")
+    _add_server_filter_args(p_rm)
+    _add_output_args(p_rm)
+    p_rm.set_defaults(func=cmd_read_memory)
 
     # install-skill
     p_sk = sub.add_parser(

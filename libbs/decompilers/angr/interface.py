@@ -233,6 +233,18 @@ class AngrInterface(DecompilerInterface):
         results.sort(key=lambda item: item[0])
         return results
 
+    def read_memory(self, addr: int, size: int) -> Optional[bytes]:
+        if size <= 0:
+            return b""
+        lowered = self.art_lifter.lower_addr(addr)
+        loader_memory = self.main_instance.project.loader.memory
+        try:
+            data = loader_memory.load(lowered, size)
+        except (KeyError, ValueError):
+            # cle's Clemory raises when the address isn't backed by a segment.
+            return None
+        return bytes(data)
+
     def disassemble(self, addr: int, **kwargs) -> Optional[str]:
         lowered = self.art_lifter.lower_addr(addr)
         func = self.main_instance.project.kb.functions.get(lowered, None)
