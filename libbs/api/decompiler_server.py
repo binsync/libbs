@@ -4,6 +4,7 @@
 
 import logging
 import pickle
+import queue
 import socket
 import struct
 import threading
@@ -14,8 +15,26 @@ from typing import Optional, Dict, Any, List
 
 from libbs.api.decompiler_interface import DecompilerInterface
 from libbs.api import server_registry
+from libbs.artifacts.formatting import ArtifactFormat
 
 _l = logging.getLogger(__name__)
+
+# JSON, not TOML: the `toml` package's encoder mangles raw `\x` escapes,
+# which show up in decompilation text for C char literals like `'\x01'`.
+_WIRE_FMT = ArtifactFormat.JSON
+
+# Sentinel used to poke the main-thread dispatcher awake on shutdown.
+_MAIN_THREAD_SHUTDOWN = object()
+
+
+class _MainThreadError:
+    """Wrap exceptions that occurred on the main thread so the waiting client
+    thread can re-raise them after receiving the result."""
+
+    __slots__ = ("exc",)
+
+    def __init__(self, exc: BaseException):
+        self.exc = exc
 
 
 class SocketProtocol:
@@ -83,6 +102,18 @@ class SocketServerHandler:
         self._light_caches = {}
         self._cache_lock = threading.Lock()
         self._cache_ttl = 10.0
+
+    def _dispatch(self, func, *args, **kwargs):
+        """Call ``func`` either directly or via the server's main-thread queue.
+
+        Backends like IDA reject cross-thread API access, so the server
+        declares ``_requires_main_thread`` and we route everything through
+        its dispatcher. For thread-safe backends (ghidra headless, angr,
+        binja) we short-circuit to a direct call.
+        """
+        if self.server is None or not self.server.requires_main_thread:
+            return func(*args, **kwargs)
+        return self.server.run_on_main_thread(func, *args, **kwargs)
     
     def handle_client(self, client_socket: socket.socket, addr: str):
         """Handle a client connection"""
@@ -142,33 +173,43 @@ class SocketServerHandler:
                 return {"status": "error", "message": "Server not available"}
 
         elif request_type == "server_info":
+            # Return the metadata cached by the server at init time. Reading
+            # ``deci.binary_hash`` or ``deci.binary_path`` here would re-enter
+            # the backend from a worker thread — which IDA/idalib rejects
+            # with "Function can be called from the main thread only".
+            if self.server is not None and self.server._cached_server_info is not None:
+                return dict(self.server._cached_server_info)
             return {
                 "name": "LibBS DecompilerServer (AF_UNIX)",
                 "version": "3.0.0",
                 "decompiler": self.deci.name if self.deci else "unknown",
                 "protocol": "unix_socket",
-                "binary_hash": self.deci.binary_hash if self.deci else None,
-                "binary_path": str(self.deci.binary_path) if (self.deci and self.deci.binary_path) else None,
+                "binary_hash": None,
+                "binary_path": None,
                 "server_id": self.server.server_id if self.server else None,
             }
-        
+
         elif request_type == "get_light_artifacts":
             collection_name = request.get("collection_name")
             return self._get_light_artifacts(collection_name)
-        
+
         elif request_type == "get_full_artifact":
             collection_name = request.get("collection_name")
             key = request.get("key")
-            collection = getattr(self.deci, collection_name)
-            artifact = collection[key]
-            
+
+            def _fetch_full_artifact():
+                collection = getattr(self.deci, collection_name)
+                return collection[key]
+
+            artifact = self._dispatch(_fetch_full_artifact)
+
             # Serialize the full artifact safely
             if hasattr(artifact, 'dumps') and hasattr(artifact, '__class__'):
                 try:
                     return {
                         'type': artifact.__class__.__name__,
                         'module': artifact.__class__.__module__,
-                        'data': artifact.dumps(),
+                        'data': artifact.dumps(fmt=_WIRE_FMT),
                         'is_artifact': True
                     }
                 except Exception as e:
@@ -177,12 +218,12 @@ class SocketServerHandler:
                     return artifact
             else:
                 return artifact
-        
+
         elif request_type == "method_call":
             method_name = request.get("method_name")
             args = request.get("args", [])
             kwargs = request.get("kwargs", {})
-            
+
             # Handle dotted method names like "art_lifter.lift"
             if "." in method_name:
                 obj = self.deci
@@ -192,7 +233,7 @@ class SocketServerHandler:
             else:
                 # Get the method from the decompiler interface
                 method = getattr(self.deci, method_name)
-            result = method(*args, **kwargs)
+            result = self._dispatch(method, *args, **kwargs)
             
             # Check if result is an artifact and serialize it properly
             if hasattr(result, 'dumps') and hasattr(result, '__class__'):
@@ -201,7 +242,7 @@ class SocketServerHandler:
                     return {
                         'type': result.__class__.__name__,
                         'module': result.__class__.__module__,
-                        'data': result.dumps(),
+                        'data': result.dumps(fmt=_WIRE_FMT),
                         'is_artifact': True
                     }
                 except Exception as e:
@@ -214,11 +255,15 @@ class SocketServerHandler:
         
         elif request_type == "property_get":
             property_name = request.get("property_name")
-            return getattr(self.deci, property_name)
+            return self._dispatch(lambda: getattr(self.deci, property_name))
         
         elif request_type == "shutdown_deci":
-            if self.deci:
-                self.deci.shutdown()
+            if self.deci and self.server is not None and not self.server._deci_shutdown_done:
+                # Route through the main-thread dispatcher for IDA — calling
+                # idapro.close_database() from a worker thread raises
+                # "Function can be called from the main thread only".
+                self._dispatch(self.deci.shutdown)
+                self.server._deci_shutdown_done = True
             return {"status": "shutdown"}
 
         elif request_type == "shutdown_server":
@@ -236,18 +281,18 @@ class SocketServerHandler:
         """Get light artifacts for a collection, computing and caching on first request"""
         with self._cache_lock:
             cache_entry = self._light_caches.get(collection_name)
-            
+
             # Check if we have a valid cache entry
             if cache_entry and time.time() - cache_entry["timestamp"] < self._cache_ttl:
                 return cache_entry["items"]
-            
+
             # Cache miss or stale - compute light artifacts on-demand
             _l.debug(f"Computing light artifacts for {collection_name} on-demand")
             try:
                 collection = getattr(self.deci, collection_name)
                 if hasattr(collection, '_lifted_art_lister'):
                     start_time = time.time()
-                    light_items = collection._lifted_art_lister()
+                    light_items = self._dispatch(collection._lifted_art_lister)
                     end_time = time.time()
                     
                     # Convert artifacts to serializable format using their own serialization
@@ -255,7 +300,7 @@ class SocketServerHandler:
                     for addr, artifact in light_items.items():
                         try:
                             # Use the artifact's built-in serialization which handles complex objects
-                            serialized = artifact.dumps()
+                            serialized = artifact.dumps(fmt=_WIRE_FMT)
                             # Store as a tuple of (type_name, serialized_data) for reconstruction
                             serializable_items[addr] = {
                                 'type': artifact.__class__.__name__,
@@ -325,10 +370,20 @@ class DecompilerServer:
         self._clients = []
         self._client_threads = []
 
+        # Main-thread dispatch: some backends (notably IDA/idalib) reject
+        # cross-thread API access. For those we route backend calls through
+        # a queue so they run on the thread that set the backend up.
+        self._main_thread_queue: "queue.Queue" = queue.Queue()
+        self._main_thread_ident: Optional[int] = None
+
         # Event subscription tracking
         self._event_subscribers = []  # List of sockets subscribed to events
         self._event_subscribers_lock = threading.Lock()
-        
+
+        # Track whether deci.shutdown() already ran, so teardown is idempotent
+        # across the worker-initiated stop() and the main-thread __exit__.
+        self._deci_shutdown_done = False
+
         # Initialize the decompiler interface
         if decompiler_interface is not None:
             self.deci = decompiler_interface
@@ -344,7 +399,13 @@ class DecompilerServer:
             self.deci = DecompilerInterface.discover(**interface_kwargs)
             if self.deci is None:
                 raise RuntimeError("Failed to discover decompiler interface")
-        
+
+        # Cache static metadata on the *main* thread so that the connection
+        # handshake (`server_info`) never touches the backend from a worker
+        # thread — IDA/idalib raises "Function can be called from the main
+        # thread only" the moment such access happens.
+        self._cached_server_info = self._build_static_server_info()
+
         # Create socket handler
         self.handler = SocketServerHandler(self.deci, server=self)
 
@@ -361,6 +422,38 @@ class DecompilerServer:
 
         _l.info(f"DecompilerServer initialized with {self.deci.name} interface (id={self.server_id})")
         _l.info(f"Socket path: {self.socket_path}")
+
+    def _build_static_server_info(self) -> Dict[str, Any]:
+        """Collect immutable server metadata on whatever thread calls us.
+
+        This runs from ``__init__`` — i.e. the thread that constructed the
+        deci (the main thread in the CLI path). Capturing the values here
+        means ``server_info`` replies can be served from any worker thread
+        without re-entering backends like IDA that reject cross-thread API
+        calls.
+        """
+        binary_path = None
+        binary_hash = None
+        if self.deci:
+            try:
+                raw_path = self.deci.binary_path
+                binary_path = str(raw_path) if raw_path else None
+            except Exception as exc:
+                _l.debug("Failed to cache binary_path: %s", exc)
+            try:
+                binary_hash = self.deci.binary_hash
+            except Exception as exc:
+                _l.debug("Failed to cache binary_hash: %s", exc)
+
+        return {
+            "name": "LibBS DecompilerServer (AF_UNIX)",
+            "version": "3.0.0",
+            "decompiler": self.deci.name if self.deci else "unknown",
+            "protocol": "unix_socket",
+            "binary_hash": binary_hash,
+            "binary_path": binary_path,
+            "server_id": self.server_id,
+        }
 
     def _register_artifact_callbacks(self):
         """Register callbacks to broadcast artifact changes to subscribed clients"""
@@ -401,7 +494,7 @@ class DecompilerServer:
                 serialized_artifact = {
                     'type': artifact.__class__.__name__,
                     'module': artifact.__class__.__module__,
-                    'data': artifact.dumps(),
+                    'data': artifact.dumps(fmt=_WIRE_FMT),
                     'is_artifact': True
                 }
 
@@ -525,7 +618,13 @@ class DecompilerServer:
         
         _l.info("Stopping DecompilerServer...")
         self._running = False
-        
+
+        # Wake the main-thread dispatcher so it can exit `wait_for_shutdown`.
+        try:
+            self._main_thread_queue.put_nowait(_MAIN_THREAD_SHUTDOWN)
+        except Exception:
+            pass
+
         # Close all client connections
         for client in self._clients:
             try:
@@ -563,35 +662,121 @@ class DecompilerServer:
                 _l.debug("Failed to unregister server %s: %s", self.server_id, exc)
             self._registered = False
 
-        # Shutdown the decompiler interface
-        if self.deci:
-            try:
-                self.deci.shutdown()
-            except Exception as e:
-                _l.warning(f"Error shutting down decompiler: {e}")
+        # Shutdown the decompiler interface. For backends that need the main
+        # thread (IDA/idalib), defer to the main thread which will run the
+        # shutdown after leaving the dispatch loop — doing it from a worker
+        # thread here raises "Function can be called from the main thread
+        # only". wait_for_shutdown() / __exit__ pick it up via
+        # _shutdown_deci_if_needed().
+        if self.deci and not self._deci_shutdown_done:
+            on_main = (
+                self._main_thread_ident is None
+                or threading.get_ident() == self._main_thread_ident
+            )
+            if on_main or not self.requires_main_thread:
+                try:
+                    self.deci.shutdown()
+                    self._deci_shutdown_done = True
+                except Exception as e:
+                    _l.warning(f"Error shutting down decompiler: {e}")
 
         _l.info("DecompilerServer stopped")
     
     def is_running(self) -> bool:
         """Check if the server is currently running"""
         return self._running
-    
+
+    @property
+    def requires_main_thread(self) -> bool:
+        """Whether backend API calls must be routed to the main thread.
+
+        Set by the decompiler interface; IDA's idalib is the canonical case.
+        """
+        if not self.deci:
+            return False
+        return bool(getattr(self.deci, "requires_main_thread_dispatch", False))
+
+    def run_on_main_thread(self, func, *args, **kwargs):
+        """Run ``func(*args, **kwargs)`` on the server's main thread.
+
+        If the calling thread *is* the main thread, execute inline — this
+        avoids a deadlock when the main thread is itself invoking a method
+        (e.g. during ``__enter__`` / ``start``).
+        """
+        if self._main_thread_ident is not None and threading.get_ident() == self._main_thread_ident:
+            return func(*args, **kwargs)
+
+        result_q: "queue.Queue" = queue.Queue(maxsize=1)
+        self._main_thread_queue.put((func, args, kwargs, result_q))
+        result = result_q.get()
+        if isinstance(result, _MainThreadError):
+            raise result.exc
+        return result
+
+    def _main_thread_dispatch_loop(self):
+        """Drain backend work from the main-thread queue until shutdown.
+
+        Only used for backends that require main-thread dispatch (IDA).
+        Runs on the thread that called ``wait_for_shutdown`` — i.e. the
+        thread that originally created the ``deci``.
+        """
+        self._main_thread_ident = threading.get_ident()
+        while self._running:
+            try:
+                item = self._main_thread_queue.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            if item is _MAIN_THREAD_SHUTDOWN:
+                break
+            func, args, kwargs, result_q = item
+            try:
+                result = func(*args, **kwargs)
+            except BaseException as exc:  # relay every failure, including Java exceptions
+                result = _MainThreadError(exc)
+            result_q.put(result)
+
     def wait_for_shutdown(self):
         """Wait for the server to be shut down (blocking)"""
+        if self.requires_main_thread:
+            # Become the main-thread dispatcher. This blocks until stop().
+            try:
+                self._main_thread_dispatch_loop()
+            except KeyboardInterrupt:
+                _l.info("Received interrupt signal, stopping server...")
+                self.stop()
+            # Now that we're back on the main thread with the dispatch loop
+            # drained, finish any backend teardown stop() had to defer.
+            self._shutdown_deci_if_needed()
+            return
+
         if self._server_thread and self._server_thread.is_alive():
             try:
                 self._server_thread.join()
             except KeyboardInterrupt:
                 _l.info("Received interrupt signal, stopping server...")
                 self.stop()
-    
+
+    def _shutdown_deci_if_needed(self):
+        """Run deci.shutdown() once, from the caller's thread.
+
+        Callers must ensure they are on the thread that owns the backend
+        (typically the main thread). Idempotent.
+        """
+        if not self.deci or self._deci_shutdown_done:
+            return
+        try:
+            self.deci.shutdown()
+        except Exception as e:
+            _l.warning(f"Error shutting down decompiler: {e}")
+        finally:
+            self._deci_shutdown_done = True
+
     def __enter__(self):
         """Context manager entry"""
         self.start()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit"""
         self.stop()
-        if self.deci:
-            self.deci.shutdown()
+        self._shutdown_deci_if_needed()

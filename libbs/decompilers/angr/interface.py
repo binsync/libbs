@@ -48,7 +48,11 @@ class AngrInterface(DecompilerInterface):
     def _init_headless_components(self, *args, **kwargs):
         super()._init_headless_components(*args, **kwargs)
         self.project = angr.Project(str(self._binary_path), auto_load_libs=False)
-        self._cfg = self.project.analyses.CFG(show_progressbar=False, normalize=True, data_references=True)
+        # cross_references=True populates kb.xrefs so xrefs_to_addr (e.g.
+        # "who references this string constant?") works.
+        self._cfg = self.project.analyses.CFG(
+            show_progressbar=False, normalize=True, data_references=True, cross_references=True,
+        )
         self.project.analyses.CompleteCallingConventions(cfg=self._cfg, recover_variables=True, analyze_callsites=True)
 
     def _init_gui_components(self, *args, **kwargs):
@@ -135,6 +139,74 @@ class AngrInterface(DecompilerInterface):
             xrefs.append(self.art_lifter.lift(Function(func_addr, 0)))
 
         return xrefs
+
+    def xrefs_from(self, func_addr: int) -> List[Function]:
+        """angr callees: use the kb.callgraph successor set.
+
+        ``kb.callgraph`` is a NetworkX digraph populated during CFG analysis;
+        its successors of a function address are the direct callees, which is
+        what we want. Unlike ``Function.transition_graph``, these are
+        deduplicated per target and come with kb function lookups.
+        """
+        lowered = self.art_lifter.lower_addr(func_addr)
+        project = self.main_instance.project
+        callgraph = getattr(project.kb, "callgraph", None)
+        if callgraph is None or lowered not in callgraph:
+            return []
+
+        kb_functions = project.kb.functions
+        callees: List[Function] = []
+        seen = set()
+        for succ_addr in callgraph.successors(lowered):
+            if succ_addr in seen:
+                continue
+            seen.add(succ_addr)
+            func_obj = kb_functions.get(succ_addr, None)
+            name = getattr(func_obj, "name", None) if func_obj is not None else None
+            header = FunctionHeader(name=name, addr=succ_addr) if name else None
+            callees.append(self.art_lifter.lift(Function(succ_addr, 0, header=header)))
+        return callees
+
+    def xrefs_to_addr(self, addr: int, only_code: bool = False) -> List[Artifact]:
+        """angr data-xref lookup: look up kb.xrefs references to ``addr``.
+
+        Falls back to the default (empty) if the xref manager isn't populated.
+        """
+        lowered = self.art_lifter.lower_addr(addr)
+        project = self.main_instance.project
+        xref_manager = getattr(project.kb, "xrefs", None)
+        if xref_manager is None:
+            return []
+
+        try:
+            xref_set = xref_manager.get_xrefs_by_dst(lowered)
+        except Exception:
+            return []
+        if not xref_set:
+            return []
+
+        program_cfg = project.kb.cfgs.get_most_accurate()
+        if program_cfg is None:
+            return []
+
+        results: List[Artifact] = []
+        seen = set()
+        for xref in xref_set:
+            node = program_cfg.get_any_node(xref.ins_addr, anyaddr=True)
+            if node is None or node.function_address is None:
+                continue
+            func_addr = node.function_address
+            if func_addr in seen:
+                continue
+            seen.add(func_addr)
+            name = None
+            try:
+                name = project.kb.functions[func_addr].name
+            except Exception:
+                pass
+            header = FunctionHeader(name=name, addr=func_addr) if name else None
+            results.append(self.art_lifter.lift(Function(func_addr, 0, header=header)))
+        return results
 
     def list_strings(self, filter: Optional[str] = None) -> List[Tuple[int, str]]:
         pattern = re.compile(filter) if filter else None

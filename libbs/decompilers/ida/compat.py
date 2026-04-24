@@ -1719,6 +1719,57 @@ def xrefs_to(addr):
 
 
 @execute_write
+def xrefs_from(addr):
+    """Return the list of code refs originating at ``addr``.
+
+    Filters to code-flow xrefs of kind Near/Far call, so the results line
+    up with ``Function.getCalledFunctions()`` on Ghidra and angr's
+    ``kb.callgraph.successors`` — i.e. only direct callees.
+    """
+    out = []
+    for xref in idautils.XrefsFrom(addr):
+        if xref.iscode and xref.type in (idaapi.fl_CN, idaapi.fl_CF):
+            out.append(int(xref.to))
+    return out
+
+
+@execute_write
+def list_strings():
+    """Return ``(ea, text)`` tuples for every string IDA found.
+
+    Mirrors the Strings window / ``idautils.Strings()``; the caller filters
+    on text.
+    """
+    results = []
+    for s in idautils.Strings():
+        try:
+            text = str(s)
+        except Exception:
+            continue
+        if not text:
+            continue
+        results.append((int(s.ea), text))
+    return results
+
+
+@execute_write
+def disassemble_function(addr):
+    """Return a single-string disassembly for the function containing ``addr``."""
+    func = ida_funcs.get_func(addr)
+    if func is None:
+        return None
+    lines = []
+    start, end = func.start_ea, func.end_ea
+    ea = start
+    while ea < end and ea != idaapi.BADADDR:
+        line = idc.generate_disasm_line(ea, 0)
+        if line is not None:
+            lines.append(f"{ea:016x}  {line}")
+        ea = idc.next_head(ea, end)
+    return "\n".join(lines) if lines else None
+
+
+@execute_write
 def wait_for_idc_initialization():
     idc.auto_wait()
 

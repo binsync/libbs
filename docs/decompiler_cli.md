@@ -129,6 +129,7 @@ it.
 decompiler load <binary> [--backend {angr,ghidra,binja,ida}]
                          [--id SERVER_ID]
                          [--force | --replace]
+                         [--project-dir PATH]
                          [--json]
 ```
 
@@ -139,9 +140,16 @@ decompiler load <binary> [--backend {angr,ghidra,binja,ida}]
 - **`--replace`** — stop any existing server for this `(binary, backend)`
   first, then start a fresh one. Use this when you want to re-analyze from
   scratch.
+- **`--project-dir PATH`** — where to keep the backend's
+  project/database files (Ghidra project, IDA `.id*`/`.til`, etc.).
+  Default: a per-binary directory under the user cache
+  (`<platformdirs cache>/libbs/projects/<binary>-<hash>/`), so analysis
+  artifacts don't pollute the binary's directory. Pass `--project-dir ""`
+  to disable the cache dir and let the backend drop files alongside the
+  binary (legacy behavior).
 
-Outputs `id`, `socket_path`, `binary_path`, `backend`, and `status` (either
-`started` or `already_loaded`).
+Outputs `id`, `socket_path`, `binary_path`, `backend`, `project_dir`, and
+`status` (either `started` or `already_loaded`).
 
 ### `list`
 
@@ -240,8 +248,20 @@ Same error semantics and `--raw` flag as `decompile`.
 decompiler xref_to <target> [--decompile] [--id ID] [--binary PATH] [--backend BACKEND] [--json]
 ```
 
+`<target>` can be:
+
+- a **function name or address** — resolves to function xrefs (who calls
+  this function),
+- a **raw address** that isn't a function start — resolves via the
+  backend's address-level reference table (useful for globals, jump
+  table entries, etc.),
+- a **string literal** — looked up via `list_strings` first, then queried
+  as a raw-address xref. Great for "who reads this constant?".
+
 Each row has a `kind` field (`Function`, `GlobalVariable`, …) so you can
-tell code refs from data refs.
+tell code refs from data refs. The JSON payload also carries
+`target_kind` (`function`, `address`, or `string`) so callers can tell
+which resolution path fired.
 
 - **`--decompile`** — ask the backend to decompile first. On Ghidra this
   surfaces additional references (e.g. globals pulled in through the
@@ -278,28 +298,36 @@ response's `success` field is authoritative).
 
 ### `list_strings`
 
-List strings in the binary, combining the backend's native detector with a
-raw `strings(1)`-style scan of the file.
+List strings the decompiler's own string detector has identified in the
+binary.
 
 ```bash
 decompiler list_strings [--filter REGEX]
                         [--min-length N]
-                        [--rescan] [--no-rescan]
                         [--id ID] [--binary PATH] [--backend BACKEND] [--json]
 ```
 
 - **`--filter REGEX`** — only return strings matching the regex.
 - **`--min-length N`** — drop strings shorter than N characters (default 4).
-- **`--rescan`** — always run the raw-bytes scan in addition to the
-  backend detector.
-- **`--no-rescan`** — never run the raw-bytes scan.
-- Default: the CLI auto-rescan when the backend returns fewer than 32
-  strings (angr in particular misses most of `.rodata`).
 
-Text output is `0x<addr>\t[<section or source>]\t<string>` per line. JSON
-output is a list of `{"addr", "addr_hex", "string", "source", "section"?}`
-where `source` is `"backend"` or `"rescan"` and `section` (when present)
-is the ELF section the raw-scanned byte lives in.
+Text output is `0x<addr>\t<string>` per line. JSON output is a list of
+`{"addr", "addr_hex", "string"}` entries.
+
+**Fidelity caveat.** This command only returns what the decompiler
+itself surfaced — it does not second-guess the backend or supplement with
+a file-level scan. Backend string detection quality varies
+(`angr < ghidra < ida`); angr in particular misses most of `.rodata`.
+If the output looks thin, cross-check with an external tool before
+concluding a string isn't in the binary:
+
+```bash
+strings -a -n 4 ./target       # classic strings(1)
+rabin2 -z ./target             # radare2, structured output
+readelf -p .rodata ./target    # ELF-specific, per section
+```
+
+Once you've located a string that way you can feed its address back into
+the CLI via `decompiler xref_to 0x...` or `decompiler decompile 0x...`.
 
 ### `get_callers`
 
@@ -314,17 +342,23 @@ always of kind `Function`.
 
 ### `install-skill`
 
-Copy the bundled Agent Skill into `~/.claude/skills/` so Claude Code (or
-any agent that picks up skills from that path) learns how to drive the CLI.
+Copy the bundled Agent Skill into a supported agent skill directory so Claude
+Code or Codex learns how to drive the CLI.
 
 ```bash
-decompiler install-skill [names ...] [--dest DIR] [--force] [--json]
+decompiler install-skill [names ...] [--agent claude|codex|all] [--dest DIR] [--force] [--json]
 ```
 
-With no `names`, every bundled skill is installed. Use `--dest` to copy the
-skill somewhere else, and `--force` to overwrite an existing directory.
-`--json` emits a well-formed JSON payload suitable for piping through
-`jq`.
+With no `names`, every bundled skill is installed. By default the installer
+uses Codex when `CODEX_*` environment variables are present, otherwise Claude.
+Use `--agent codex`, `--agent claude`, repeated `--agent` flags, or
+`--agent all` to choose explicitly. Claude installs under `~/.claude/skills`;
+Codex installs under `$CODEX_HOME/skills` when `CODEX_HOME` is set, otherwise
+`~/.codex/skills`.
+
+Use `--dest` to copy the skill somewhere else, and `--force` to overwrite an
+existing directory. `--json` emits a well-formed JSON payload suitable for
+piping through `jq`.
 
 ---
 
@@ -509,9 +543,16 @@ The old name was not found in the function (e.g. it was already renamed,
 or you targeted the wrong function).
 
 **`list_strings` looks thin**
-angr's string detector is minimal. The CLI auto-falls-back to a raw-bytes
-scan — if you don't see `source: "rescan"` entries, the threshold (32
-backend entries) wasn't crossed. Pass `--rescan` to force it.
+This is expected on angr (and can happen on Ghidra for stripped binaries) —
+`list_strings` returns only what the decompiler itself identified. Use an
+external scanner to see every ASCII constant in the file, then feed the
+address back into `xref_to` / `decompile`:
+
+```bash
+strings -a -n 4 ./target
+rabin2 -z ./target
+readelf -p .rodata ./target
+```
 
 **Server-side logs**
 Spawned servers have their stdout/stderr sent to `/dev/null`. If you're

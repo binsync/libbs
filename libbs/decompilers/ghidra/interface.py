@@ -273,8 +273,88 @@ class GhidraDecompilerInterface(DecompilerInterface):
         lowered_addr = self.art_lifter.lower_addr(function.addr) if do_lower else function.addr
         return self._ghidra_decompile(self._get_nearest_function(lowered_addr))
 
+    def xrefs_from(self, func_addr: int) -> List[Function]:
+        """Ghidra callees: use Function.getCalledFunctions for an O(1) hit per caller."""
+        from .compat.imports import ConsoleTaskMonitor
+
+        lowered = self.art_lifter.lower_addr(func_addr)
+        gfunc = self._get_nearest_function(lowered)
+        if gfunc is None:
+            return []
+        callees: List[Function] = []
+        seen = set()
+        try:
+            for called_gfunc in gfunc.getCalledFunctions(ConsoleTaskMonitor()):
+                entry_addr = int(called_gfunc.getEntryPoint().getOffset())
+                if entry_addr in seen:
+                    continue
+                seen.add(entry_addr)
+                func = Function(
+                    addr=entry_addr,
+                    size=int(called_gfunc.getBody().getNumAddresses()),
+                    header=FunctionHeader(name=str(called_gfunc.getName()), addr=entry_addr),
+                )
+                callees.append(self.art_lifter.lift(func))
+        except Exception as exc:
+            _l.warning("Ghidra xrefs_from(0x%x) failed: %s", func_addr, exc)
+        return callees
+
+    def xrefs_to_addr(self, addr: int, only_code: bool = False) -> List[Artifact]:
+        """Ghidra data-xref lookup: walk ReferenceManager refs to ``addr``.
+
+        Backends' stock ``xrefs_to(Function)`` only fires on function entry
+        points, so it misses data refs to string constants, globals, etc.
+        This uses Ghidra's ReferenceManager directly and resolves each
+        referencing instruction back to its containing function.
+        """
+        lowered = self.art_lifter.lower_addr(addr)
+        return self._ghidra_refs_to_address(lowered, only_code=only_code)
+
+    def _ghidra_refs_to_address(self, lowered_addr: int, only_code: bool = False) -> List[Artifact]:
+        refs: List[Artifact] = []
+        seen_funcs = set()
+        try:
+            gaddr = self._to_gaddr(lowered_addr)
+            reference_manager = self.currentProgram.getReferenceManager()
+            function_manager = self.currentProgram.getFunctionManager()
+            ref_iter = reference_manager.getReferencesTo(gaddr)
+            while ref_iter.hasNext():
+                ref = ref_iter.next()
+                from_addr_g = ref.getFromAddress()
+                if only_code:
+                    ref_type = ref.getReferenceType()
+                    try:
+                        is_data = ref_type.isData()
+                    except Exception:
+                        is_data = False
+                    if is_data:
+                        continue
+                gfunc = function_manager.getFunctionContaining(from_addr_g)
+                if gfunc is None:
+                    continue
+                entry_addr = int(gfunc.getEntryPoint().getOffset())
+                if entry_addr in seen_funcs:
+                    continue
+                seen_funcs.add(entry_addr)
+                func = Function(
+                    addr=entry_addr,
+                    size=int(gfunc.getBody().getNumAddresses()),
+                    header=FunctionHeader(name=str(gfunc.getName()), addr=entry_addr),
+                )
+                refs.append(self.art_lifter.lift(func))
+        except Exception as exc:
+            _l.warning("Ghidra reference lookup at 0x%x failed: %s", lowered_addr, exc)
+        return refs
+
     def xrefs_to(self, artifact: Artifact, decompile=False, only_code=False) -> List[Artifact]:
-        xrefs = super().xrefs_to(artifact)
+        if not isinstance(artifact, Function):
+            raise ValueError("Only functions are supported for xrefs_to")
+
+        # Base function-level xref: who references the entry point.
+        # Without this, get_callgraph() + xref_from are empty on Ghidra
+        # because the base class returns `[]`.
+        lowered = self.art_lifter.lower(artifact)
+        xrefs = self._ghidra_refs_to_address(lowered.addr, only_code=only_code)
         if not decompile:
             return xrefs
 
@@ -299,18 +379,47 @@ class GhidraDecompilerInterface(DecompilerInterface):
                 type_=str(global_sym.getDataType().getPathName()) if global_sym.getDataType() else None,
                 size=int(global_sym.getSize()),
             )
-            new_xrefs.append(gvar)
+            new_xrefs.append(self.art_lifter.lift(gvar))
 
-        lifted_xrefs = [self.art_lifter.lift(x) for x in xrefs + new_xrefs]
-        return lifted_xrefs
+        # xrefs are already lifted by _ghidra_refs_to_address; only new_xrefs need lifting.
+        return xrefs + new_xrefs
 
     def list_strings(self, filter: Optional[str] = None) -> List[Tuple[int, str]]:
         pattern = re.compile(filter) if filter else None
-        results: List[Tuple[int, str]] = []
+        found: Dict[int, str] = {}
         try:
             program = self.currentProgram
             listing = program.getListing()
-            # Iterate all defined data; pull strings.
+            memory = program.getMemory()
+            base_addr = self.binary_base_addr
+
+            def _record(gaddr, text: str) -> None:
+                if not text:
+                    return
+                block = memory.getBlock(gaddr) if memory is not None else None
+                if block is None:
+                    return
+                try:
+                    if not block.isLoaded():
+                        return
+                except Exception:
+                    pass
+                if gaddr.isNonLoadedMemoryAddress():
+                    return
+                addr = int(gaddr.getOffset())
+                # Java signed longs can surface negative values for synthetic
+                # addresses (ELF section name tables, overlays, etc.).
+                if addr < base_addr:
+                    return
+                if pattern is not None and not pattern.search(text):
+                    return
+                # First writer wins — defined-data results carry the
+                # decompiler's own typing / encoding, so we prefer them
+                # over raw StringSearcher hits at the same address.
+                found.setdefault(addr, text)
+
+            # Pass 1: strings the decompiler has already committed to a
+            # defined data type (char[], TerminatedCString, unicode).
             data_iter = listing.getDefinedData(True)
             while data_iter.hasNext():
                 data = data_iter.next()
@@ -321,16 +430,67 @@ class GhidraDecompilerInterface(DecompilerInterface):
                     text = str(raw) if raw is not None else ""
                 except Exception:
                     continue
-                if not text:
-                    continue
-                addr = int(data.getAddress().getOffset())
-                lifted = self.art_lifter.lift_addr(addr)
-                if pattern is None or pattern.search(text):
-                    results.append((lifted, text))
+                _record(data.getAddress(), text)
+
+            # Pass 2: ask Ghidra's own StringSearcher to scan initialized
+            # memory for ASCII runs. Ghidra's auto-analyzer misses sequences
+            # that it instead typed as `byte[N]` (e.g. a base64 alphabet
+            # stored as `uchar[64]`). This uses Ghidra's native detector —
+            # no parallel byte scanning.
+            self._scan_strings_via_searcher(program, memory, _record)
         except Exception as exc:
             _l.warning("Ghidra list_strings failed: %s", exc)
+
+        results: List[Tuple[int, str]] = [
+            (self.art_lifter.lift_addr(addr), text)
+            for addr, text in found.items()
+        ]
         results.sort(key=lambda item: item[0])
         return results
+
+    def _scan_strings_via_searcher(self, program, memory, record) -> None:
+        """Run Ghidra's StringSearcher over loaded memory.
+
+        The searcher is the same component Ghidra's "Search > For Strings"
+        command uses. This catches ASCII runs that Ghidra auto-typed as
+        ``byte[N]`` / ``uchar[N]`` instead of promoting to a string (e.g. a
+        base64 alphabet stored as ``uchar[64]``).
+        """
+        try:
+            from ghidra.program.util.string import StringSearcher, FoundStringCallback
+            from ghidra.util.task import TaskMonitor
+            from jpype import JImplements, JOverride
+        except Exception as exc:
+            _l.warning("StringSearcher unavailable, skipping supplemental scan: %s", exc)
+            return
+
+        @JImplements(FoundStringCallback)
+        class _Collector:
+            def __init__(self, mem, on_string):
+                self._mem = mem
+                self._on_string = on_string
+
+            @JOverride
+            def stringFound(self, found_string):
+                try:
+                    text = found_string.getString(self._mem)
+                except Exception:
+                    return
+                if text is None:
+                    return
+                self._on_string(found_string.getAddress(), str(text))
+
+        try:
+            # ctor args: program, minStringSize, alignment, allCharSizes,
+            # requireNullTermination. allCharSizes=False keeps us on ASCII;
+            # the UTF variants would otherwise inflate results with noise.
+            searcher = StringSearcher(program, 4, 1, False, False)
+            scan_set = memory.getLoadedAndInitializedAddressSet()
+            # TaskMonitor.DUMMY is non-null but does nothing — passing None
+            # here crashes with NullPointerException inside AbstractStringSearcher.
+            searcher.search(scan_set, _Collector(memory, record), True, TaskMonitor.DUMMY)
+        except Exception as exc:
+            _l.warning("StringSearcher pass failed: %s", exc)
 
     def disassemble(self, addr: int, **kwargs) -> Optional[str]:
         lowered = self.art_lifter.lower_addr(addr)

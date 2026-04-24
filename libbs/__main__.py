@@ -11,7 +11,10 @@ def install():
     LibBSPluginInstaller().install()
 
 
-def start_server(socket_path=None, decompiler=None, binary_path=None, headless=False, server_id=None):
+def start_server(
+    socket_path=None, decompiler=None, binary_path=None, headless=False,
+    server_id=None, project_dir=None,
+):
     """Start the DecompilerServer (AF_UNIX socket-based)"""
     try:
         from libbs.api.decompiler_server import DecompilerServer
@@ -28,6 +31,8 @@ def start_server(socket_path=None, decompiler=None, binary_path=None, headless=F
             interface_kwargs['binary_path'] = binary_path
         if headless:
             interface_kwargs['headless'] = headless
+        if project_dir:
+            interface_kwargs['project_dir'] = project_dir
 
         # Create and start server
         if socket_path:
@@ -151,6 +156,14 @@ def main():
         Explicit server ID to use; if omitted, a unique one is generated.
         """
     )
+    parser.add_argument(
+        "--project-dir", help="""
+        Directory where the backend should store its project/database files
+        (Ghidra project, IDA .id*, etc.). If omitted, backend defaults apply
+        (Ghidra creates a project next to the binary; IDA writes .id* next
+        to the binary).
+        """
+    )
     args = parser.parse_args()
 
     if args.single_decompiler_install:
@@ -167,6 +180,7 @@ def main():
             binary_path=args.binary_path,
             headless=args.headless,
             server_id=args.server_id,
+            project_dir=args.project_dir,
         )
     else:
         parser.print_help()

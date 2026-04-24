@@ -2,7 +2,7 @@
 
 Each subdirectory holds a SKILL.md (and any optional resources) that an LLM can
 load to learn how to drive libbs via the `decompiler` CLI. Use
-`decompiler install-skill` to copy a skill into the user's `~/.claude/skills/`.
+`decompiler install-skill` to copy a skill into Claude Code or Codex.
 """
 from pathlib import Path
 

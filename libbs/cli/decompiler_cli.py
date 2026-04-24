@@ -31,7 +31,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Standardized exit codes — keep these consistent across subcommands so that
 # `&&` chaining and scripts have predictable behavior.
@@ -163,7 +163,12 @@ def _with_client(args):
 # load
 # ---------------------------------------------------------------------------
 
-def _spawn_server(binary_path: Path, backend: str, server_id: str) -> subprocess.Popen:
+def _spawn_server(
+    binary_path: Path,
+    backend: str,
+    server_id: str,
+    project_dir: Optional[Path] = None,
+) -> subprocess.Popen:
     """Start a detached headless server process for the given binary."""
     cmd = [
         sys.executable, "-m", "libbs",
@@ -173,6 +178,8 @@ def _spawn_server(binary_path: Path, backend: str, server_id: str) -> subprocess
         "--binary-path", str(binary_path),
         "--server-id", server_id,
     ]
+    if project_dir is not None:
+        cmd.extend(["--project-dir", str(project_dir)])
     env = os.environ.copy()
     # Inherit env so things like GHIDRA_INSTALL_DIR flow through.
 
@@ -237,7 +244,18 @@ def cmd_load(args) -> int:
         return 0
 
     server_id = args.id or server_registry.new_server_id()
-    _spawn_server(binary_path, backend, server_id)
+    # Default project/database location: a per-binary folder under the user
+    # cache dir so analysis artifacts don't pollute the binary's directory.
+    # Pass --project-dir "" to disable and let the backend drop files beside
+    # the binary (legacy behavior).
+    project_dir: Optional[Path]
+    if args.project_dir == "":
+        project_dir = None
+    elif args.project_dir is not None:
+        project_dir = Path(args.project_dir).expanduser().resolve()
+    else:
+        project_dir = _default_project_dir(binary_path, backend)
+    _spawn_server(binary_path, backend, server_id, project_dir=project_dir)
     record = _wait_for_server(server_id)
     _emit(args, {
         "status": "started",
@@ -245,8 +263,24 @@ def cmd_load(args) -> int:
         "binary_path": record.get("binary_path"),
         "backend": record.get("backend"),
         "socket_path": record.get("socket_path"),
+        "project_dir": str(project_dir) if project_dir is not None else None,
     })
     return 0
+
+
+def _default_project_dir(binary_path: Path, backend: str) -> Path:
+    """Return a stable per-binary cache dir under the user cache root.
+
+    Keyed by binary name + short hash of the absolute path, so two binaries
+    with the same basename don't collide. The directory is created lazily
+    by the backend (Ghidra creates `<dir>/<binary>_ghidra/`; IDA writes its
+    `.id*` files directly into `<dir>`).
+    """
+    from platformdirs import user_cache_dir
+    import hashlib
+
+    path_hash = hashlib.sha1(str(binary_path).encode()).hexdigest()[:8]
+    return Path(user_cache_dir("libbs")) / "projects" / f"{binary_path.name}-{path_hash}"
 
 
 # ---------------------------------------------------------------------------
@@ -296,15 +330,7 @@ def _stop_server_by_record(record: Dict) -> bool:
             graceful = True
         except Exception as exc:
             _l.debug("shutdown_server rejected by %s: %s", server_id, exc)
-        # Close the socket directly instead of calling client.shutdown(); the
-        # latter also fires `shutdown_deci`, which noisily fails once the server
-        # has stopped listening.
-        try:
-            if client._socket is not None:
-                client._socket.close()
-        except Exception:
-            pass
-        client._connected = False
+        client.shutdown()
 
     if not _wait_for_process_exit(pid, timeout=3.0):
         # Graceful request didn't land or server is stuck — escalate.
@@ -488,21 +514,59 @@ def cmd_xref_to(args) -> int:
     Note: distinct from `get_callers`, which is call-sites only. `xref_to`
     here asks the backend for *every* artifact that points at the target,
     including globals, strings, and non-call code references.
+
+    Resolution order for ``target``:
+    1. Function name or address that matches a known function — use the
+       function-level xref path (entry-point references).
+    2. A raw numeric address or a string literal surfaced by `list_strings`
+       — use the raw-address xref path (data refs to strings, globals, etc.).
     """
     from libbs.artifacts import Function
 
     with _with_client(args) as client:
-        addr = _resolve_function_addr(client, args.target)
-        if addr is None:
+        parsed_addr, parsed_name = _parse_target(args.target)
+        func_addr = _resolve_function_addr(client, args.target)
+        known = _known_function_addrs(client)
+        is_function_target = func_addr is not None and (not known or func_addr in known)
+
+        resolved_addr: Optional[int] = None
+        target_kind: str  # "function" | "address" | "string"
+
+        if is_function_target:
+            resolved_addr = func_addr
+            target_kind = "function"
+        elif parsed_addr is not None:
+            # Raw address that isn't a function start — try data xrefs.
+            resolved_addr = parsed_addr
+            target_kind = "address"
+        elif parsed_name is not None:
+            # Treat as a string literal: find that string and xref its address.
+            match = _find_string_addr(client, parsed_name)
+            if match is None:
+                raise SystemExit(
+                    f"Not found: {args.target!r} is not a function, address, "
+                    "or known string. Try `decompiler list_strings --filter "
+                    f"'{parsed_name}'` to search."
+                )
+            resolved_addr = match
+            target_kind = "string"
+        else:
             raise SystemExit(f"Function not found: {args.target!r}")
-        # Build a Function stub to hand to xrefs_to so backends that *do*
-        # surface non-function refs (Ghidra via `decompile=True`) can add them.
-        func_stub = Function(addr, 0)
-        try:
-            xrefs = client.xrefs_to(func_stub, decompile=bool(args.decompile))
-        except Exception as exc:
-            _l.debug("xrefs_to raised %s; falling back to get_callers", exc)
-            xrefs = client.get_callers(addr)
+
+        xrefs: List = []
+        if target_kind == "function":
+            func_stub = Function(resolved_addr, 0)
+            try:
+                xrefs = client.xrefs_to(func_stub, decompile=bool(args.decompile))
+            except Exception as exc:
+                _l.debug("xrefs_to raised %s; falling back to get_callers", exc)
+                xrefs = client.get_callers(resolved_addr)
+        else:
+            try:
+                xrefs = client.xrefs_to_addr(resolved_addr)
+            except Exception as exc:
+                _l.debug("xrefs_to_addr raised %s; returning empty", exc)
+                xrefs = []
 
         # Enrich Function entries with names from the light artifact cache,
         # since some backends only return (addr, 0) stubs from xrefs_to.
@@ -515,15 +579,32 @@ def cmd_xref_to(args) -> int:
                 if func is not None:
                     entry["name"] = getattr(func, "name", None)
             data.append(entry)
-        _emit_xrefs(args, addr, data, direction="to")
+        _emit_xrefs(args, resolved_addr, data, direction="to", target_kind=target_kind)
     return 0
+
+
+def _find_string_addr(client, value: str) -> Optional[int]:
+    """Look up the address of a string literal (exact match, then substring)."""
+    try:
+        strings = client.list_strings() or []
+    except Exception:
+        return None
+    exact = [addr for addr, text in strings if text == value]
+    if exact:
+        return exact[0]
+    contains = [addr for addr, text in strings if value in text]
+    if contains:
+        return contains[0]
+    return None
 
 
 def cmd_xref_from(args) -> int:
     """Return the callees of a function (what the function calls).
 
-    Implementation: decompile the function then scan the callgraph for edges leaving
-    this function. Falls back to parsing `call` instructions in disassembly.
+    Implementation:
+    1. Use the backend's native per-function callee query (`xrefs_from`).
+    2. Fall back to parsing `call 0x…` from disassembly when the backend
+       returns nothing.
     """
     with _with_client(args) as client:
         addr = _resolve_function_addr(client, args.target)
@@ -533,17 +614,14 @@ def cmd_xref_from(args) -> int:
         callees: List[Dict] = []
         seen = set()
         try:
-            cg = client.get_callgraph(only_names=False)
-            for caller, callee in cg.out_edges(nbunch=None):  # type: ignore[attr-defined]
-                caller_addr = getattr(caller, "addr", None)
-                if caller_addr == addr:
-                    callee_addr = getattr(callee, "addr", None)
-                    if callee_addr in seen:
-                        continue
-                    seen.add(callee_addr)
-                    callees.append(_format_xref(callee))
+            for callee in client.xrefs_from(addr):
+                callee_addr = getattr(callee, "addr", None)
+                if callee_addr in seen:
+                    continue
+                seen.add(callee_addr)
+                callees.append(_format_xref(callee))
         except Exception as exc:
-            _l.debug("Callgraph-based xref_from failed (%s); falling back to disasm scan.", exc)
+            _l.debug("xrefs_from failed (%s); falling back to disasm scan.", exc)
 
         if not callees:
             # Fallback: parse `call 0x...` from disassembly.
@@ -565,26 +643,46 @@ def cmd_xref_from(args) -> int:
                     "name": func.name if func else None,
                 })
 
+        # Enrich entries that came back without a name but whose addr is known
+        # from the light artifact cache.
+        if callees:
+            light_funcs = dict(client.functions.items())
+            for entry in callees:
+                if entry.get("kind") == "Function" and not entry.get("name"):
+                    func = light_funcs.get(entry.get("addr"))
+                    if func is not None:
+                        entry["name"] = getattr(func, "name", None)
+
         _emit_xrefs(args, addr, callees, direction="from")
     return 0
 
 
-def _emit_xrefs(args, addr: int, xrefs: List[Dict], *, direction: str) -> None:
-    payload = {"addr": addr, "direction": direction, "xrefs": xrefs}
+def _emit_xrefs(
+    args,
+    addr: int,
+    xrefs: List[Dict],
+    *,
+    direction: str,
+    target_kind: Optional[str] = None,
+) -> None:
+    payload: Dict = {"addr": addr, "direction": direction, "xrefs": xrefs}
+    if target_kind is not None:
+        payload["target_kind"] = target_kind
     if args.json:
         print(json.dumps(_annotate_addrs(payload), indent=2, default=str))
         return
     if not xrefs:
-        print(f"No xrefs {direction} 0x{addr:x}")
+        print(f"No xrefs {direction} {_format_addr_hex(addr)}")
         return
     for x in xrefs:
         a = x.get("addr")
         n = x.get("name") or ""
         kind = x.get("kind") or ""
-        if a is not None:
-            print(f"0x{a:x}\t{kind}\t{n}" if kind else f"0x{a:x}\t{n}")
+        a_str = _format_addr_hex(a) if isinstance(a, int) else "?"
+        if kind:
+            print(f"{a_str}\t{kind}\t{n}")
         else:
-            print(f"?\t{kind}\t{n}" if kind else f"?\t{n}")
+            print(f"{a_str}\t{n}")
 
 
 # ---------------------------------------------------------------------------
@@ -630,60 +728,22 @@ def cmd_rename(args) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_list_strings(args) -> int:
-    """List strings. Two data sources:
+    """List strings the decompiler has identified in the binary.
 
-    1. The backend's native string detector (default). Fast but fidelity
-       varies — angr's detector is thin and will miss most of `.rodata`.
-    2. A raw-bytes scan of the binary file (`--rescan`). Equivalent to
-       `strings -n <min_length>` plus ELF section labeling. Always enabled
-       automatically if the native detector returns fewer than `_RESCAN_FLOOR`
-       entries; pass `--no-rescan` to disable.
+    This surfaces exactly what the backend's own string detector produced —
+    nothing more, nothing less. Decompilers miss things (angr in particular
+    is thin on `.rodata`), so if this looks sparse, reach for an external
+    tool (`strings(1)`, `rabin2 -z`, `readelf -p .rodata`) to get the
+    complete picture.
     """
-    _RESCAN_FLOOR = 32
-
     with _with_client(args) as client:
-        filter_pat = re.compile(args.filter) if args.filter else None
         native = client.list_strings(filter=args.filter) or []
 
         results: List[Dict] = []
-        seen = set()
         for addr, s in native:
             if len(s) < args.min_length:
                 continue
-            seen.add((addr, s))
-            results.append({"addr": addr, "string": s, "source": "backend"})
-
-        should_rescan = args.rescan or (
-            not args.no_rescan and len(results) < _RESCAN_FLOOR
-        )
-        if should_rescan:
-            # Find the binary path via the registry record.
-            record = _select_server(
-                server_id=getattr(args, "id", None),
-                binary_path=getattr(args, "binary", None),
-                backend=getattr(args, "backend", None),
-            )
-            binary_path = record.get("binary_path")
-            if binary_path and os.path.exists(binary_path):
-                data = _read_binary_bytes(binary_path)
-                if data is not None:
-                    sections = _elf_sections_from_file(binary_path)
-                    for offset, text in _scan_ascii_strings(data, min_length=args.min_length):
-                        if filter_pat and not filter_pat.search(text):
-                            continue
-                        key = (offset, text)
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        record_entry: Dict = {
-                            "addr": offset,
-                            "string": text,
-                            "source": "rescan",
-                        }
-                        sec = _section_for_offset(sections, offset)
-                        if sec:
-                            record_entry["section"] = sec
-                        results.append(record_entry)
+            results.append({"addr": addr, "string": s})
 
         # Sort by addr.
         results.sort(key=lambda e: e.get("addr", 0))
@@ -692,9 +752,7 @@ def cmd_list_strings(args) -> int:
             _emit_list(args, results)
         else:
             for entry in results:
-                sec = entry.get("section") or entry.get("source") or ""
-                sec_col = f"[{sec}]\t" if sec else ""
-                print(f"0x{entry['addr']:x}\t{sec_col}{entry['string']}")
+                print(f"{_format_addr_hex(entry['addr'])}\t{entry['string']}")
     return 0
 
 
@@ -732,35 +790,86 @@ def cmd_get_callers(args) -> int:
 # install-skill
 # ---------------------------------------------------------------------------
 
-def _default_skill_dest() -> Path:
-    return Path(os.path.expanduser("~/.claude/skills"))
+_SKILL_AGENT_CHOICES = ("claude", "codex", "all")
+
+
+def _codex_skill_dest() -> Path:
+    codex_home = os.environ.get("CODEX_HOME")
+    if codex_home:
+        return Path(codex_home).expanduser() / "skills"
+    return Path(os.path.expanduser("~/.codex/skills"))
+
+
+def _skill_dest_for_agent(agent: str) -> Path:
+    if agent == "claude":
+        return Path(os.path.expanduser("~/.claude/skills"))
+    if agent == "codex":
+        return _codex_skill_dest()
+    raise ValueError(f"Unknown skill agent: {agent!r}")
+
+
+def _default_skill_agents() -> List[str]:
+    # Codex sets CODEX_* env vars in its execution environment. Prefer its
+    # skill directory there, while preserving Claude as the normal shell default.
+    if any(key.startswith("CODEX_") for key in os.environ):
+        return ["codex"]
+    return ["claude"]
+
+
+def _selected_skill_agents(raw_agents: Optional[List[str]]) -> List[str]:
+    agents = raw_agents or _default_skill_agents()
+    if "all" in agents:
+        agents = ["claude", "codex"]
+
+    selected: List[str] = []
+    for agent in agents:
+        if agent not in ("claude", "codex"):
+            raise SystemExit(
+                f"Unsupported skill agent {agent!r}; pick one of: claude, codex, all"
+            )
+        if agent not in selected:
+            selected.append(agent)
+    return selected
+
+
+def _skill_destinations(args) -> List[Tuple[str, Path]]:
+    if args.dest:
+        if args.agent:
+            raise SystemExit("--dest cannot be combined with --agent")
+        return [("custom", Path(args.dest).expanduser().resolve())]
+
+    return [
+        (agent, _skill_dest_for_agent(agent).expanduser().resolve())
+        for agent in _selected_skill_agents(args.agent)
+    ]
 
 
 def cmd_install_skill(args) -> int:
-    dest_root = Path(args.dest).expanduser().resolve() if args.dest else _default_skill_dest()
     names = args.names or skills.available_skills()
     if not names:
         raise SystemExit("No bundled skills to install")
 
-    dest_root.mkdir(parents=True, exist_ok=True)
     installed: List[Dict] = []
-    for name in names:
-        src = skills.skill_path(name)
-        dest = dest_root / name
-        if dest.exists() and not args.force:
-            raise SystemExit(
-                f"Skill already exists at {dest}. Pass --force to overwrite."
-            )
-        if dest.exists() and args.force:
-            shutil.rmtree(dest)
-        shutil.copytree(src, dest)
-        installed.append({"name": name, "path": str(dest)})
+    for agent, dest_root in _skill_destinations(args):
+        dest_root.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            src = skills.skill_path(name)
+            dest = dest_root / name
+            if dest.exists() and not args.force:
+                raise SystemExit(
+                    f"Skill already exists at {dest}. Pass --force to overwrite."
+                )
+            if dest.exists() and args.force:
+                shutil.rmtree(dest)
+            shutil.copytree(src, dest)
+            installed.append({"name": name, "agent": agent, "path": str(dest)})
 
     if args.json:
         print(json.dumps({"installed": installed}, indent=2, default=str))
     else:
         for entry in installed:
-            print(f"installed {entry['name']} → {entry['path']}")
+            agent = "" if entry["agent"] == "custom" else f" ({entry['agent']})"
+            print(f"installed {entry['name']}{agent} -> {entry['path']}")
     return 0
 
 
@@ -785,13 +894,26 @@ def _annotate_addrs(payload):
                 and isinstance(value, int)
                 and f"{key}_hex" not in payload
             ):
-                payload[f"{key}_hex"] = f"0x{value:x}"
+                payload[f"{key}_hex"] = _format_addr_hex(value)
         for v in payload.values():
             _annotate_addrs(v)
     elif isinstance(payload, list):
         for item in payload:
             _annotate_addrs(item)
     return payload
+
+
+def _format_addr_hex(value: int) -> str:
+    """Format an address as `0x<hex>`, normalizing negatives to unsigned 64-bit.
+
+    Some backends (Ghidra in particular) can surface java-signed long values
+    for synthetic addresses. Emitting `0x-100000` in JSON is useless — render
+    those as their unsigned-64 equivalent so downstream consumers always see
+    a well-formed hex address.
+    """
+    if value < 0:
+        value &= (1 << 64) - 1
+    return f"0x{value:x}"
 
 
 def _emit(args, payload: Dict, *, text_field: Optional[str] = None) -> None:
@@ -826,71 +948,6 @@ def _format_function(func) -> Dict:
         "addr": getattr(func, "addr", None),
         "name": getattr(func, "name", None),
     }
-
-
-def _read_binary_bytes(binary_path: str, max_bytes: int = 32 * 1024 * 1024) -> Optional[bytes]:
-    """Read up to `max_bytes` from `binary_path`. Returns None on failure."""
-    try:
-        with open(binary_path, "rb") as f:
-            return f.read(max_bytes)
-    except OSError as exc:
-        _l.debug("Could not read binary %s: %s", binary_path, exc)
-        return None
-
-
-def _scan_ascii_strings(data: bytes, min_length: int = 4) -> List[Tuple[int, str]]:
-    """strings(1)-equivalent scan over a raw byte buffer.
-
-    Returns `(offset_in_buffer, decoded_ascii)` tuples. The caller is
-    responsible for relocating `offset_in_buffer` into whatever address
-    space makes sense (e.g. file offset vs mapped vaddr).
-    """
-    results: List[Tuple[int, str]] = []
-    start = -1
-    for i, b in enumerate(data):
-        # Printable ASCII (space..tilde) plus tab as an allowed interior byte.
-        if 0x20 <= b < 0x7f or b == 0x09:
-            if start < 0:
-                start = i
-        else:
-            if start >= 0 and (i - start) >= min_length:
-                try:
-                    text = data[start:i].decode("ascii", errors="strict")
-                except UnicodeDecodeError:
-                    pass
-                else:
-                    results.append((start, text))
-            start = -1
-    if start >= 0 and (len(data) - start) >= min_length:
-        try:
-            text = data[start:].decode("ascii", errors="strict")
-        except UnicodeDecodeError:
-            pass
-        else:
-            results.append((start, text))
-    return results
-
-
-def _section_for_offset(elf_sections: Iterable, offset: int) -> Optional[str]:
-    """Return the name of the ELF section a file offset lives in, or None."""
-    for name, start, size in elf_sections:
-        if start <= offset < start + size:
-            return name
-    return None
-
-
-def _elf_sections_from_file(binary_path: str):
-    """Return [(name, file_offset, size), ...] for an ELF, or [] if not ELF."""
-    try:
-        from elftools.elf.elffile import ELFFile  # type: ignore
-    except ImportError:
-        return []
-    try:
-        with open(binary_path, "rb") as f:
-            elf = ELFFile(f)
-            return [(sec.name, sec["sh_offset"], sec["sh_size"]) for sec in elf.iter_sections()]
-    except Exception:
-        return []
 
 
 # ---------------------------------------------------------------------------
@@ -929,6 +986,15 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Start a new server even if one already exists for this binary.")
     p_load.add_argument("--replace", action="store_true",
                         help="Stop the existing server for this binary+backend (if any) before starting.")
+    p_load.add_argument(
+        "--project-dir",
+        dest="project_dir",
+        help=(
+            "Where the backend should store its project/database files "
+            "(Ghidra project, IDA .id*, etc.). Default: a per-binary folder "
+            "under the user cache dir. Pass '' to drop files next to the binary."
+        ),
+    )
     _add_output_args(p_load)
     p_load.set_defaults(func=cmd_load)
 
@@ -1008,18 +1074,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_ls = sub.add_parser(
         "list_strings",
         help=(
-            "List strings in the binary. Backend detectors vary in fidelity "
-            "(angr < ghidra < ida); --rescan does a raw strings(1)-like scan "
-            "of the file as a fallback."
+            "List strings the decompiler identified in the binary. "
+            "Fidelity varies by backend (angr < ghidra < ida) and may be "
+            "incomplete — use external tools (strings(1), rabin2 -z, "
+            "readelf -p) for an exhaustive scan."
         ),
     )
     p_ls.add_argument("--filter", dest="filter", help="Regex to filter strings.")
     p_ls.add_argument("--min-length", dest="min_length", type=int, default=4,
                       help="Minimum string length to keep (default: 4).")
-    p_ls.add_argument("--rescan", action="store_true",
-                      help="Force a raw-bytes scan of the binary file on top of the backend result.")
-    p_ls.add_argument("--no-rescan", action="store_true",
-                      help="Never fall back to the raw scan, even if the backend returns few results.")
     _add_server_filter_args(p_ls)
     _add_output_args(p_ls)
     p_ls.set_defaults(func=cmd_list_strings)
@@ -1040,11 +1103,24 @@ def build_parser() -> argparse.ArgumentParser:
     # install-skill
     p_sk = sub.add_parser(
         "install-skill",
-        help="Install the bundled Agent Skill (SKILL.md) into ~/.claude/skills/.",
+        help="Install the bundled Agent Skill (SKILL.md) for Claude Code or Codex.",
     )
     p_sk.add_argument("names", nargs="*",
                       help="Specific skill names to install (default: all bundled).")
-    p_sk.add_argument("--dest", help="Install destination (default: ~/.claude/skills).")
+    p_sk.add_argument(
+        "--agent",
+        action="append",
+        choices=_SKILL_AGENT_CHOICES,
+        help=(
+            "Agent skill directory to install into. Repeat for multiple agents, "
+            "or use 'all'. Default: codex when CODEX_* env vars are present, "
+            "otherwise claude."
+        ),
+    )
+    p_sk.add_argument(
+        "--dest",
+        help="Install destination override. Cannot be combined with --agent.",
+    )
     p_sk.add_argument("--force", action="store_true",
                       help="Overwrite an existing skill directory.")
     _add_output_args(p_sk)

@@ -36,28 +36,38 @@ to verify the pipeline end-to-end.
 
 ## First moves on a new binary
 
+**Always start with `list_functions` and `list_strings`** — the same binary
+can have the entry named `main` (angr), `FUN_00101c5c` (Ghidra), or
+`sub_101c5c` (IDA). Don't assume `main` exists.
+
 ```bash
-decompiler load ./target                      # start a server (angr by default)
-decompiler list_functions                     # enumerate every function
+decompiler load ./target                       # start a server (angr by default)
+decompiler list_functions                      # enumerate every function — pick a real entry
 decompiler list_functions --filter 'main|auth' # or narrow by regex
-decompiler list_strings --filter 'flag|pass' # find useful string constants
+decompiler list_strings --filter 'flag|pass'   # find interesting string constants
 ```
 
-For stripped binaries `decompile main` often fails — use `list_functions`
-first to discover the real entry (`sub_XXXX`, `entry`, etc.) and start from
-there.
+Typical first-hour workflow on a stripped binary:
+
+1. `decompiler load ./bin --backend ghidra` (or `angr` if no Ghidra install)
+2. `decompiler list_functions` → note non-stub function names + sizes
+3. `decompiler list_strings` → look for error messages, user prompts,
+   format strings — they often point at the interesting code
+4. `decompiler xref_to "Welcome"` → jump from a string to its users
+5. `decompiler decompile <addr>` on whichever function came out of steps 3–4
 
 ## Core workflow
 
 ```bash
 decompiler load ./fauxware                    # start a server
-decompiler list_functions                     # enumerate functions
-decompiler decompile main                     # by name
+decompiler list_functions                     # enumerate functions (do this first)
+decompiler list_strings --filter 'pass|key'   # strings the decompiler identified
+decompiler xref_to SOSNEAKY                   # who references this string?
+decompiler decompile authenticate             # by name (from list_functions)
 decompiler disassemble 0x40071d               # by absolute address
 decompiler xref_to authenticate               # every code+data reference
 decompiler get_callers authenticate           # call-sites only (subset of xref_to)
 decompiler xref_from main                     # what does main call?
-decompiler list_strings --filter 'pass|key'   # backend detector + raw fallback
 decompiler rename func sub_400662 trampoline  # rename a function
 decompiler rename var v2 auth_result --function main  # rename a local
 decompiler stop --all
@@ -101,7 +111,7 @@ same binary.
 
 | Subcommand | Purpose | Key flags |
 |---|---|---|
-| `load <bin>` | Start a server on the binary. Idempotent: returns existing unless `--force`/`--replace`. | `--backend`, `--id`, `--force`, `--replace`, `--json` |
+| `load <bin>` | Start a server on the binary. Idempotent: returns existing unless `--force`/`--replace`. | `--backend`, `--id`, `--force`, `--replace`, `--project-dir`, `--json` |
 | `list` | Show all running servers and the registry path. | `--show-registry`, `--json` |
 | `stop` | Shut down one or all servers. | `--id`, `--binary`, `--all`, `--json` |
 | `list_functions` | Enumerate every function (ADDR, SIZE, NAME). | `--filter REGEX`, `--json` |
@@ -111,29 +121,42 @@ same binary.
 | `xref_from <target>` | Functions that `target` calls. | same |
 | `rename func <target> <new>` | Rename a function. | same + `--json` |
 | `rename var <old> <new> --function <f>` | Rename a local variable inside a function. | same |
-| `list_strings` | Strings (backend + raw rescan fallback). | `--filter`, `--min-length N`, `--rescan`, `--no-rescan`, same |
+| `list_strings` | Strings the decompiler found (may be incomplete — see below). | `--filter`, `--min-length N`, same |
 | `get_callers <target>` | Call-sites only — subset of `xref_to`. | same |
-| `install-skill` | Install this file into `~/.claude/skills/`. | `--dest`, `--force`, `--json` |
+| `install-skill` | Install this file for Claude Code or Codex. | `--agent`, `--dest`, `--force`, `--json` |
 
 ### `xref_to` vs `get_callers`
 
 - `xref_to` asks the backend for **every reference** — code *and* data. On
   Ghidra with `--decompile` this includes global variables and string
   references. Rows include a `kind` field (`Function`, `GlobalVariable`,
-  ...).
+  ...). `xref_to` also accepts **strings and raw addresses**: if the
+  target isn't a function, it's looked up in `list_strings` first, then
+  queried as a raw-address xref — so you can go straight from
+  `list_strings --filter "admin"` to `xref_to admin` to find who reads
+  that constant.
 - `get_callers` is the narrower call-sites-only view: only functions that
   contain a `call` to the target. When you want "who calls this?" reach
   for `get_callers`; when you want "who touches this in any way?" reach
   for `xref_to`.
 
-### `list_strings` fidelity
+### `list_strings` may be incomplete
 
-String detection quality varies by backend: `angr < ghidra < ida`. The CLI
-hides this: if the backend returns few results (threshold: 32), we auto-run
-a raw `strings(1)`-like scan of the binary file and label those entries
-with their ELF section (`.rodata`, `.dynstr`, `.text`, etc.). Use
-`--rescan` to force the scan, or `--no-rescan` to skip it and see only the
-backend result. `--min-length` defaults to 4.
+`list_strings` returns exactly what the backend's own string detector
+surfaced — the CLI does not second-guess the decompiler. Fidelity varies
+(`angr < ghidra < ida`); angr in particular misses most of `.rodata`. If
+the output looks thin, check the binary file directly with an external
+scanner:
+
+```bash
+strings -a -n 4 ./target          # classic strings(1)
+rabin2 -z ./target                # radare2: ASCII data-section scan
+readelf -p .rodata ./target       # ELF-specific, per section
+```
+
+Use those to confirm a specific constant exists, then come back and
+`decompile` / `xref_to` its address inside the CLI. `--min-length`
+defaults to 4.
 
 ## Machine-readable output
 
@@ -147,9 +170,7 @@ decompiler list_functions --filter '^main$' --json
 # [{"addr": 1821, "size": 184, "name": "main", "addr_hex": "0x71d"}]
 
 decompiler list_strings --filter 'flag' --json
-# [{"addr": 4197168, "string": "flag{...}", "source": "backend", "addr_hex": "0x4008e0"},
-#  {"addr": 4197232, "string": "flag_check_ok", "source": "rescan",
-#   "section": ".rodata", "addr_hex": "0x400900"}]
+# [{"addr": 4197168, "string": "flag{...}", "addr_hex": "0x4008e0"}]
 
 decompiler decompile main --json
 # {"addr": 1821, "decompiler": "angr", "text": "void main(...){...}", "addr_hex": "0x71d"}
@@ -166,8 +187,11 @@ decompiler decompile main --raw
   on any failure (including "rename didn't find the old name"). Use
   `&&` safely.
 - **Stripped binaries**: use `list_functions` before `decompile` to find
-  the real entry. `main` may not exist; look for `sub_XXXX` with plausible
-  sizes and xrefs.
+  the real entry. `main` may not exist; look for non-default names
+  (`sub_XXXX`, `FUN_...`, `entry`, etc.) with plausible sizes and xrefs.
+- **Backend main-naming varies**: angr promotes the entry to `main`,
+  Ghidra leaves `FUN_00101c5c`, IDA emits `sub_101c5c`. Always resolve via
+  `list_functions` or a known entry address, not by assuming `main`.
 - **Invalid addresses** fail with a clear message distinguishing "no
   function starts here" from "decompiler engine failed". The CLI does not
   auto-round-trip invalid addresses.
@@ -179,6 +203,10 @@ decompiler decompile main --raw
 - **Registry path**: `decompiler list --show-registry` prints just the
   directory so you can clean up manually if you ever need to (e.g. after
   a `kill -9`).
+- **Project/database files**: by default they live in
+  `<user-cache>/libbs/projects/<binary>-<hash>/`, not next to the binary.
+  Pass `--project-dir <path>` to `load` to override, or `--project-dir ""`
+  to restore the legacy "write next to the binary" behavior.
 
 ## Library-level API (for Python scripts)
 

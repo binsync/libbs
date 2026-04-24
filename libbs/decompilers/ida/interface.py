@@ -45,13 +45,21 @@ def _qt_shortcut_to_ida(shortcut: str) -> str:
 #
 
 class IDAInterface(DecompilerInterface):
-    def __init__(self, **kwargs):
+    # idalib (IDA's headless mode) enforces main-thread-only API access and
+    # raises ``RuntimeError: Function can be called from the main thread only``
+    # when called from a worker thread. The DecompilerServer checks this flag
+    # and routes backend calls through its main-thread dispatcher.
+    requires_main_thread_dispatch = True
+
+    def __init__(self, project_dir=None, **kwargs):
         self._ctx_menu_names = []
         self._ui_hooks = []
         self._artifact_watcher_hooks = []
         self._gui_active_context = None
         self._deleted_artifacts = defaultdict(set)
         self.cached_ord_to_type_names = {}
+        # Optional cache directory where the .id* database files should live.
+        self._project_dir = project_dir
 
         super().__init__(
             name="ida", qt_version=get_ida_gui_version(), artifact_lifter=IDAArtifactLifter(self),
@@ -72,9 +80,35 @@ class IDAInterface(DecompilerInterface):
         This also means that this feature is only supported in IDA versions >= 9.0
         """
         super()._init_headless_components(*args, **kwargs)
-        failure = idapro.open_database(str(self.binary_path), True)
+        binary_path = str(self.binary_path)
+        extra_args = self._ida_open_args()
+        failure = idapro.open_database(binary_path, True, extra_args)
         if failure:
-            raise RuntimeError(f"Failed to open database {self.binary_path}")
+            raise RuntimeError(f"Failed to open database {binary_path}")
+
+    def _ida_open_args(self) -> Optional[str]:
+        """Build the extra args string passed to ``idapro.open_database``.
+
+        When ``project_dir`` is configured we redirect IDA's database sidecar
+        files (``.id0/.id1/.id2/.nam/.til``) into that directory using IDA's
+        own ``-o<name>`` command-line flag. The sidecars go into a nested
+        ``ida/`` subdirectory so they don't collide with anything else the
+        user / other backends leave in the top-level project_dir (Ghidra's
+        ``<binary>_ghidra/`` project, stale symlinks, etc.).
+        """
+        from pathlib import Path as _Path
+
+        if not self._project_dir:
+            return None
+
+        project_dir = _Path(self._project_dir).expanduser().resolve()
+        ida_dir = project_dir / "ida"
+        ida_dir.mkdir(parents=True, exist_ok=True)
+        binary_name = _Path(str(self.binary_path)).name
+        # IDA's -o takes the database base path (no extension); it picks
+        # .idb / .i64 / .id* itself.
+        db_base = ida_dir / binary_name
+        return f"-o{db_base}"
 
     def _deinit_headless_components(self):
         """
@@ -175,22 +209,92 @@ class IDAInterface(DecompilerInterface):
             return []
 
         function: Function = self.art_lifter.lower(artifact)
-        ida_xrefs = compat.xrefs_to(function.addr)
-        if not ida_xrefs:
+        return self._collect_xrefs_to(function.addr, only_code=only_code)
+
+    def xrefs_to_addr(self, addr: int, only_code: bool = False) -> List[Artifact]:
+        lowered = self.art_lifter.lower_addr(addr)
+        return self._collect_xrefs_to(lowered, only_code=only_code)
+
+    def xrefs_from(self, func_addr: int) -> List[Function]:
+        """Direct callees of ``func_addr`` — just the call targets, no data."""
+        lowered = self.art_lifter.lower_addr(func_addr)
+        func = compat.fast_get_function(lowered, get_rtype=False)
+        if func is None:
             return []
+        callees: List[Function] = []
+        seen = set()
+        # Walk every instruction in the function body; cheap because fauxware-
+        # sized binaries are typical, and this is the same approach the
+        # ``idautils.CodeRefsFrom`` helpers use under the hood.
+        import ida_funcs as _ida_funcs  # local to keep interface.py clean
+        ida_func = _ida_funcs.get_func(lowered)
+        if ida_func is None:
+            return []
+        ea = ida_func.start_ea
+        while ea < ida_func.end_ea and ea != idaapi.BADADDR:
+            for callee_ea in compat.xrefs_from(ea):
+                callee_func_addr = compat.ida_func_addr(callee_ea) or callee_ea
+                if callee_func_addr in seen:
+                    continue
+                seen.add(callee_func_addr)
+                lifted = self.art_lifter.lift_addr(callee_func_addr)
+                fast_func = self.fast_get_function(lifted) or Function(lifted, 0)
+                callees.append(fast_func)
+            ea = idc.next_head(ea, ida_func.end_ea)
+        return callees
 
-        xrefs = []
-        for ida_xref in ida_xrefs:
-            from_func_addr = compat.ida_func_addr(ida_xref.frm)
-            if only_code and not ida_xref.iscode:
+    def list_strings(self, filter: Optional[str] = None) -> List[tuple]:
+        import re as _re
+        pattern = _re.compile(filter) if filter else None
+        out = []
+        for ea, text in compat.list_strings():
+            if pattern is not None and not pattern.search(text):
                 continue
+            out.append((self.art_lifter.lift_addr(ea), text))
+        out.sort(key=lambda item: item[0])
+        return out
 
-            if from_func_addr is None:
+    def disassemble(self, addr: int, **kwargs) -> Optional[str]:
+        lowered = self.art_lifter.lower_addr(addr)
+        return compat.disassemble_function(lowered)
+
+    def _collect_xrefs_to(self, lowered_addr: int, only_code: bool,
+                          _max_chase: int = 2) -> List[Artifact]:
+        """Collect function-level xrefs to ``lowered_addr``.
+
+        PIE binaries route string / global references through indirection
+        tables (GOT / _RDATA pointer arrays), so a direct
+        ``idautils.XrefsTo(str_addr)`` only lands on the pointer — not on
+        the code that dereferences it. We BFS up to ``_max_chase`` levels
+        of data indirection so ``xrefs_to SOSNEAKY`` can still name the
+        caller.
+        """
+        visited_targets: set = set()
+        seen_funcs: set = set()
+        xrefs: List[Artifact] = []
+
+        frontier = [(lowered_addr, 0)]
+        while frontier:
+            target, depth = frontier.pop(0)
+            if target in visited_targets:
                 continue
+            visited_targets.add(target)
 
-            fast_func = self.fast_get_function(self.art_lifter.lift_addr(from_func_addr))
-            xrefs.append(fast_func)
-
+            for ida_xref in compat.xrefs_to(target):
+                if only_code and not ida_xref.iscode:
+                    continue
+                from_ea = int(ida_xref.frm)
+                from_func_addr = compat.ida_func_addr(from_ea)
+                if from_func_addr is not None:
+                    if from_func_addr in seen_funcs:
+                        continue
+                    seen_funcs.add(from_func_addr)
+                    lifted = self.art_lifter.lift_addr(from_func_addr)
+                    fast_func = self.fast_get_function(lifted) or Function(lifted, 0)
+                    xrefs.append(fast_func)
+                elif depth < _max_chase and not only_code:
+                    # data-to-data indirection: chase one hop further.
+                    frontier.append((from_ea, depth + 1))
         return xrefs
 
     def get_decompilation_object(self, function: Function, do_lower=True, **kwargs) -> Optional[object]:
