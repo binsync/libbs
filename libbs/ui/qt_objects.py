@@ -49,6 +49,7 @@ if ui_version == "PySide6":
         QToolTip,
         QStackedLayout,
         QDateTimeEdit,
+        QSplitter,
     )
     from PySide6.QtGui import (
         QFontDatabase,
@@ -118,6 +119,7 @@ else:
         QToolTip,
         QStackedLayout,
         QDateTimeEdit,
+        QSplitter,
     )
     from PyQt5.QtGui import (
         QFontDatabase,
