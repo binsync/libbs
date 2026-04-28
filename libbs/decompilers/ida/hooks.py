@@ -539,6 +539,25 @@ class HexraysHooks(ida_hexrays.Hexrays_Hooks):
         self._send_decompilation_event(vu.cfunc)
         return 0
 
+    def curpos(self, vu):
+        # Hex-Rays cursor moved within pseudocode. View_Hooks.view_curpos doesn't
+        # fire reliably for pseudocode caret motion (esp. arrow-key navigation),
+        # so mirror it through to the same context-update path the disassembly
+        # view uses, so "users on current function" updates promptly.
+        if not (self.interface.force_click_recording or self.interface.artifact_watchers_started):
+            return 0
+        widget = vu.ct if hasattr(vu, "ct") else None
+        if widget is None:
+            return 0
+        ctx = compat.view_to_bs_context(widget, action=Context.ACT_VIEW_OPEN)
+        if ctx is None:
+            return 0
+        ctx = self.interface.art_lifter.lift(ctx)
+        ctx.last_change = datetime.datetime.now(tz=datetime.timezone.utc)
+        self.interface._gui_active_context = ctx
+        self.interface.gui_context_changed(ctx)
+        return 0
+
     #
     # helpers
     #
@@ -634,6 +653,12 @@ if IDA_IS_INTERACTIVE:
             self._handle_view_event(view, action_type=Context.ACT_MOUSE_CLICK)
 
         def view_activated(self, view: "TWidget *"):
+            self._handle_view_event(view, action_type=Context.ACT_VIEW_OPEN)
+
+        def view_curpos(self, view: "TWidget *"):
+            # fires when the cursor (current position) moves within the view —
+            # includes keyboard navigation (G/jump, arrow keys, double-clicking
+            # in the Functions list, etc.), which view_click/view_activated miss.
             self._handle_view_event(view, action_type=Context.ACT_VIEW_OPEN)
 
         def view_mouse_moved(self, view: "TWidget *", event: "view_mouse_event_t"):

@@ -12,6 +12,7 @@ if ui_version == "PySide6":
         QComboBox,
         QDialog,
         QFileDialog,
+        QFormLayout,
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
@@ -49,6 +50,7 @@ if ui_version == "PySide6":
         QToolTip,
         QStackedLayout,
         QDateTimeEdit,
+        QSplitter,
     )
     from PySide6.QtGui import (
         QFontDatabase,
@@ -80,6 +82,7 @@ else:
         QComboBox,
         QDialog,
         QFileDialog,
+        QFormLayout,
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
@@ -118,6 +121,7 @@ else:
         QToolTip,
         QStackedLayout,
         QDateTimeEdit,
+        QSplitter,
     )
     from PyQt5.QtGui import (
         QFontDatabase,
