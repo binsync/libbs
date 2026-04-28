@@ -1736,18 +1736,17 @@ def has_older_hexrays_version():
 @execute_write
 def get_decompiler_version() -> typing.Optional[Version]:
     wait_for_idc_initialization()
-    try:
-        _vers = ida_hexrays.get_hexrays_version()
-    except Exception as e:
-        _l.critical("Failed to get decompiler version: %s", e)
+
+    # init_hexrays_plugin() must succeed before any other ida_hexrays.* call —
+    # otherwise IDA emits "Hex-Rays Decompiler got called from Python without
+    # being loaded" warnings (e.g. during early plugin load before Hex-Rays
+    # finishes wiring up). Returns False if the decompiler is genuinely
+    # unavailable (headless without license, etc.); the caller should treat
+    # None as "decompiler unavailable, skip version-gated behavior".
+    if not ida_hexrays.init_hexrays_plugin():
         return None
 
-    try:
-        vers = Version(_vers)
-    except TypeError:
-        return None
-
-    return vers
+    return Version(ida_hexrays.get_hexrays_version())
 
 
 #

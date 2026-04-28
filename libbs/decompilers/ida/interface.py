@@ -246,7 +246,7 @@ class IDAInterface(DecompilerInterface):
         super().start_artifact_watchers()
         # TODO: this is a hack for backwards compatibility and should be removed in IDA 9
         idb_hook = IDBHooks(self)
-        if self.dec_version < Version("8.4"):
+        if self.decompiler_available and self.dec_version < Version("8.4"):
             idb_hook.local_types_changed = lambda: 0
         else:
             # this code in this block must exist in 9.0, so don't delete it!
@@ -355,7 +355,7 @@ class IDAInterface(DecompilerInterface):
     # structs
     def _set_struct(self, struct: Struct, header=True, members=True, **kwargs) -> bool:
         data_changed = False
-        if (self.dec_version < Version("8.3")) and "gcc_va_list" in struct.name:
+        if self.decompiler_available and self.dec_version < Version("8.3") and "gcc_va_list" in struct.name:
             _l.critical("Syncing the struct %s in IDA Pro 8.2 <= will cause a crash. Skipping...", struct.name)
             return False
 
