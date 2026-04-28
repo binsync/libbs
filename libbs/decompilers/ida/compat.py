@@ -263,10 +263,15 @@ def get_types(structs=True, enums=True, typedefs=True) -> typing.Dict[str, Artif
 
         if structs and tif.is_struct():
             bs_struct = bs_struct_from_tif(tif)
-            types[bs_struct.name] = bs_struct
+            # IDA exposes nested types inside anonymous unions/structs as separate
+            # numbered types whose name is "$PARENT_HASH::member" — that qualified
+            # form can't be looked up via get_named_type_tid, so skip it.
+            if bs_struct.name and "::" not in bs_struct.name:
+                types[bs_struct.name] = bs_struct
         elif enums and tif.is_enum():
             bs_enum = enum_from_tif(tif)
-            types[bs_enum.name] = bs_enum
+            if bs_enum is not None:
+                types[bs_enum.name] = bs_enum
 
     return types
 
@@ -1403,10 +1408,11 @@ def _deprecated_get_enum_mmebers(_enum_id, max_size=100) -> typing.Dict[str, int
     return enum_members
 
 
-def get_enum_members(_enum: typing.Union["ida_typeinf.tinfo_t", int], max_size=100) -> typing.Dict[str, int]:
+def get_enum_members(_enum: typing.Union["ida_typeinf.tinfo_t", int], max_size=100) -> typing.Optional[typing.Dict[str, int]]:
     """
-    _enum can either be an ida_typeinf.tinfo_t or an int (the old enum id system)
-
+    _enum can either be an ida_typeinf.tinfo_t or an int (the old enum id system).
+    Returns None if the tif reports as an enum but IDA can't fetch its details
+    (e.g. typedef wrappers that pass tif.is_enum() but aren't real enums).
     """
     if not new_ida_typing_system():
         _enum_id: int = _enum
@@ -1416,8 +1422,8 @@ def get_enum_members(_enum: typing.Union["ida_typeinf.tinfo_t", int], max_size=1
     enum_tif: "ida_typeinf.tinfo_t" = _enum
     ei = ida_typeinf.enum_type_data_t()
     if not enum_tif.get_enum_details(ei):
-        _l.error("IDA failed to get enum details for %s", enum_tif)
-        return {}
+        _l.debug("IDA could not get enum details for %s; treating as non-enum", enum_tif)
+        return None
 
     enum_members = {}
     for e_memb in ei:
@@ -1442,6 +1448,8 @@ def enum_from_tif(tif):
         return None
 
     enum_members = get_enum_members(tif)
+    if enum_members is None:
+        return None
     return Enum(enum_name, enum_members)
 
 
@@ -1459,6 +1467,8 @@ def enum(name) -> typing.Optional[Enum]:
 
     enum_name = str(_enum.get_type_name()) if new_enums else idc.get_enum_name(_enum)
     enum_members = get_enum_members(_enum)
+    if enum_members is None:
+        return None
     return Enum(enum_name, enum_members)
 
 
