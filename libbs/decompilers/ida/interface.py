@@ -96,6 +96,19 @@ class IDAInterface(DecompilerInterface):
         for hook in self._ui_hooks:
             hook.hook()
 
+    def _term_gui_hooks(self):
+        """
+        Symmetric teardown for _init_gui_hooks. Must run before IDAPython tears
+        down — otherwise a still-registered hook can fire during shutdown
+        events (e.g. term_database) and try to re-enter a finalized Python.
+        """
+        for hook in self._ui_hooks:
+            try:
+                hook.unhook()
+            except Exception:
+                _l.exception("Failed to unhook %r", hook)
+        self._ui_hooks = []
+
     def _init_gui_plugin(self, *args, **kwargs):
         self.decompiler_opened_event()
         plugin_cls_name = self._plugin_name + "_cls"

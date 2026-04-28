@@ -1911,6 +1911,10 @@ def generate_generic_ida_plugic_cls(cls_name=None):
             pass
 
         def term(self):
+            try:
+                self.interface._term_gui_hooks()
+            except Exception:
+                _l.exception("Error tearing down GUI hooks")
             self.interface.decompiler_closed_event()
             del self.interface
 
