@@ -11,15 +11,18 @@ def install():
     LibBSPluginInstaller().install()
 
 
-def start_server(socket_path=None, decompiler=None, binary_path=None, headless=False):
+def start_server(
+    socket_path=None, decompiler=None, binary_path=None, headless=False,
+    server_id=None, project_dir=None,
+):
     """Start the DecompilerServer (AF_UNIX socket-based)"""
     try:
         from libbs.api.decompiler_server import DecompilerServer
         from libbs.api.decompiler_interface import DecompilerInterface
-        
+
         # Configure logging
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        
+
         # Prepare interface kwargs
         interface_kwargs = {}
         if decompiler:
@@ -28,7 +31,9 @@ def start_server(socket_path=None, decompiler=None, binary_path=None, headless=F
             interface_kwargs['binary_path'] = binary_path
         if headless:
             interface_kwargs['headless'] = headless
-        
+        if project_dir:
+            interface_kwargs['project_dir'] = project_dir
+
         # Create and start server
         if socket_path:
             _l.info(f"Starting AF_UNIX DecompilerServer on {socket_path}")
@@ -36,15 +41,15 @@ def start_server(socket_path=None, decompiler=None, binary_path=None, headless=F
             _l.info("Starting AF_UNIX DecompilerServer with auto-generated socket path")
         if interface_kwargs:
             _l.info(f"Interface options: {interface_kwargs}")
-        
-        with DecompilerServer(socket_path=socket_path, **interface_kwargs) as server:
+
+        with DecompilerServer(socket_path=socket_path, server_id=server_id, **interface_kwargs) as server:
             _l.info("Server started successfully. Press Ctrl+C to stop.")
             _l.info("Connect with: DecompilerClient.discover('unix://{}')".format(server.socket_path))
             try:
                 server.wait_for_shutdown()
             except KeyboardInterrupt:
                 _l.info("Shutting down server...")
-                
+
     except ImportError as e:
         _l.error(f"Failed to import required modules: {e}")
         sys.exit(1)
@@ -146,6 +151,19 @@ def main():
         Run the decompiler in headless mode (no GUI). Requires --binary-path.
         """
     )
+    parser.add_argument(
+        "--server-id", help="""
+        Explicit server ID to use; if omitted, a unique one is generated.
+        """
+    )
+    parser.add_argument(
+        "--project-dir", help="""
+        Directory where the backend should store its project/database files
+        (Ghidra project, IDA .id*, etc.). If omitted, backend defaults apply
+        (Ghidra creates a project next to the binary; IDA writes .id* next
+        to the binary).
+        """
+    )
     args = parser.parse_args()
 
     if args.single_decompiler_install:
@@ -160,7 +178,9 @@ def main():
             socket_path=args.socket_path,
             decompiler=args.decompiler,
             binary_path=args.binary_path,
-            headless=args.headless
+            headless=args.headless,
+            server_id=args.server_id,
+            project_dir=args.project_dir,
         )
     else:
         parser.print_help()

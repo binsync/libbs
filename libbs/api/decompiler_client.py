@@ -16,11 +16,17 @@ from libbs.artifacts import (
     Artifact, Function, Comment, Patch, GlobalVariable, Segment,
     Struct, Enum, Typedef, Context, Decompilation
 )
+from libbs.artifacts.formatting import ArtifactFormat
 from libbs.api.decompiler_server import SocketProtocol
 from libbs.api.type_parser import CTypeParser
 from libbs.configuration import LibbsConfig
+from libbs.api import server_registry
 
 _l = logging.getLogger(__name__)
+
+# Must match decompiler_server._WIRE_FMT; JSON avoids the `toml` package's
+# buggy handling of raw `\x` escapes inside decompilation text.
+_WIRE_FMT = ArtifactFormat.JSON
 
 
 class ArtLifterProxy:
@@ -167,13 +173,13 @@ class FastClientArtifactDict(dict):
                         module_name = artifact_info['module']
                         class_name = artifact_info['type']
                         serialized_data = artifact_info['data']
-                        
+
                         # Import the module and get the class
                         module = __import__(module_name, fromlist=[class_name])
                         artifact_class = getattr(module, class_name)
-                        
+
                         # Reconstruct the artifact using its loads method
-                        artifact = artifact_class.loads(serialized_data)
+                        artifact = artifact_class.loads(serialized_data, fmt=_WIRE_FMT)
                         reconstructed_artifacts[addr] = artifact
                         
                     except Exception as e:
@@ -441,13 +447,13 @@ class DecompilerClient:
                         module_name = response['module']
                         class_name = response['type']
                         serialized_data = response['data']
-                        
+
                         # Import the module and get the class
                         module = __import__(module_name, fromlist=[class_name])
                         artifact_class = getattr(module, class_name)
-                        
+
                         # Reconstruct the artifact using its loads method
-                        artifact = artifact_class.loads(serialized_data)
+                        artifact = artifact_class.loads(serialized_data, fmt=_WIRE_FMT)
                         return artifact
                         
                     except Exception as e:
@@ -532,6 +538,30 @@ class DecompilerClient:
     def xrefs_to(self, artifact: Artifact, decompile=False, only_code=False) -> List[Artifact]:
         """Get cross-references to an artifact"""
         return self._send_request({"type": "method_call", "method_name": "xrefs_to", "args": [artifact], "kwargs": {"decompile": decompile, "only_code": only_code}})
+
+    def xrefs_to_addr(self, addr: int, only_code: bool = False) -> List[Artifact]:
+        """Get references to a raw address (e.g. a string constant)"""
+        return self._send_request({"type": "method_call", "method_name": "xrefs_to_addr", "args": [addr], "kwargs": {"only_code": only_code}})
+
+    def xrefs_from(self, func_addr: int) -> List[Function]:
+        """Get the callees of a function (what the function calls)."""
+        return self._send_request({"type": "method_call", "method_name": "xrefs_from", "args": [func_addr]})
+
+    def get_callers(self, target) -> List[Function]:
+        """Get callers of a function (by target Function, address, or symbol name)"""
+        return self._send_request({"type": "method_call", "method_name": "get_callers", "args": [target]})
+
+    def list_strings(self, filter: Optional[str] = None) -> List:
+        """List strings in the binary with an optional regex filter"""
+        return self._send_request({"type": "method_call", "method_name": "list_strings", "kwargs": {"filter": filter}})
+
+    def disassemble(self, addr: int, **kwargs) -> Optional[str]:
+        """Disassemble a function"""
+        return self._send_request({"type": "method_call", "method_name": "disassemble", "args": [addr], "kwargs": kwargs})
+
+    def read_memory(self, addr: int, size: int) -> Optional[bytes]:
+        """Read raw bytes from the loaded program."""
+        return self._send_request({"type": "method_call", "method_name": "read_memory", "args": [addr, size]})
     
     def get_callgraph(self, only_names=False):
         """Get the call graph"""
@@ -712,7 +742,7 @@ class DecompilerClient:
                 artifact_class = getattr(module, class_name)
 
                 # Reconstruct the artifact
-                artifact = artifact_class.loads(serialized_data)
+                artifact = artifact_class.loads(serialized_data, fmt=_WIRE_FMT)
 
                 # Extract additional kwargs
                 kwargs = event.get("kwargs", {})
@@ -740,7 +770,13 @@ class DecompilerClient:
 
     # Lifecycle methods
     def shutdown(self) -> None:
-        """Shutdown the client"""
+        """Disconnect this client from the server.
+
+        This only tears down the *local* client; the server (and its loaded
+        decompiler project) keeps running so other clients can still connect.
+        To actually stop the server, use ``shutdown_server()`` or the
+        ``decompiler stop`` CLI.
+        """
         _l.info("DecompilerClient shutting down")
 
         # Stop event listener first
@@ -749,13 +785,24 @@ class DecompilerClient:
 
         if self._socket:
             try:
-                # Send shutdown request to server
-                self._send_request({"type": "shutdown_deci"})
-            except:
+                self._socket.close()
+            except Exception:
                 pass
-            self._socket.close()
         self._connected = False
         _l.info("DecompilerClient shut down complete")
+
+    def shutdown_server(self) -> None:
+        """Ask the server to tear down its decompiler interface, then disconnect.
+
+        Used by CLI commands like ``decompiler stop``. Regular usage should
+        prefer :meth:`shutdown`, which leaves the server running.
+        """
+        if self._socket:
+            try:
+                self._send_request({"type": "shutdown_deci"})
+            except Exception:
+                pass
+        self.shutdown()
 
     def is_connected(self) -> bool:
         """Check if connected to the server"""
@@ -782,6 +829,39 @@ class DecompilerClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.shutdown()
     
+    @staticmethod
+    def discover_from_registry(
+        server_id: Optional[str] = None,
+        binary_path: Optional[str] = None,
+        binary_hash: Optional[str] = None,
+        backend: Optional[str] = None,
+        **kwargs,
+    ) -> 'DecompilerClient':
+        """
+        Find a running server via the shared registry and connect to it.
+
+        Filters narrow the pool in the order: server_id, binary_path, binary_hash, backend.
+        If no server matches, a ConnectionError is raised.
+        """
+        record = server_registry.find_server(
+            server_id=server_id,
+            binary_path=binary_path,
+            binary_hash=binary_hash,
+            backend=backend,
+        )
+        if not record:
+            filters = {
+                "server_id": server_id,
+                "binary_path": binary_path,
+                "binary_hash": binary_hash,
+                "backend": backend,
+            }
+            active = {k: v for k, v in filters.items() if v}
+            raise ConnectionError(
+                f"No matching DecompilerServer in registry. Filters: {active or 'none'}."
+            )
+        return DecompilerClient(socket_path=record["socket_path"], **kwargs)
+
     # Static methods for compatibility
     @staticmethod
     def discover(server_url: str = None, binary_hash: str = None, **kwargs) -> 'DecompilerClient':

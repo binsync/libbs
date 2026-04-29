@@ -46,10 +46,14 @@ ghidra = [
 
 [project.scripts]
 libbs = "libbs.__main__:main"
+decompiler = "libbs.cli:main"
 
 [tool.setuptools]
 include-package-data = true
 license-files = ["LICENSE"]
+
+[tool.setuptools.package-data]
+"libbs.skills" = ["**/SKILL.md", "**/*.md"]
 
 [tool.setuptools.packages]
 find = {namespaces = false}

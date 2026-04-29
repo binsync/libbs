@@ -397,6 +397,137 @@ class DecompilerInterface:
 
         return []
 
+    def xrefs_to_addr(self, addr: int, only_code: bool = False) -> List[Artifact]:
+        """Return artifacts that reference ``addr``.
+
+        Unlike :meth:`xrefs_to`, which assumes a Function target and therefore
+        only fires on function entry points, this is a raw "who references
+        this address?" query. It's what you want after ``list_strings`` finds
+        a candidate string and you need to know which functions read it.
+
+        The default implementation turns the address into a stub Function and
+        delegates to :meth:`xrefs_to`; subclasses should override this with a
+        real data-xref query when their backend exposes one.
+
+        @param addr: Address (lifted) to find references to.
+        @param only_code: Restrict to code references if the backend supports it.
+        @return: List of referencing artifacts (typically Function stubs).
+        """
+        return self.xrefs_to(Function(addr, 0), only_code=only_code)
+
+    def xrefs_from(self, func_addr: int) -> List[Function]:
+        """Return the functions that ``func_addr`` calls (its direct callees).
+
+        The default implementation falls back to get_callgraph + out_edges,
+        which is expensive because it computes xrefs for every function in
+        the binary. Subclasses should override with a direct per-function
+        callee query when their backend exposes one.
+        """
+        try:
+            cg = self.get_callgraph(only_names=False)
+        except Exception as exc:
+            _l.debug("get_callgraph failed: %s", exc)
+            return []
+        callees: List[Function] = []
+        seen = set()
+        for caller, callee in cg.out_edges(nbunch=None):
+            if getattr(caller, "addr", None) != func_addr:
+                continue
+            callee_addr = getattr(callee, "addr", None)
+            if callee_addr in seen:
+                continue
+            seen.add(callee_addr)
+            callees.append(callee)
+        return callees
+
+    def get_callers(self, target) -> List[Function]:
+        """
+        Returns a list of Functions that call/reference the provided target.
+
+        @param target: A Function, address (int), or symbol name (str).
+        @return: List of Function objects whose bodies reference `target`. Each result is a (light)
+                 Function; only its addr (and name when resolvable) are guaranteed to be populated.
+        """
+        func: Optional[Function] = None
+        if isinstance(target, Function):
+            func = target
+        elif isinstance(target, int):
+            func = self.fast_get_function(target)
+            if func is None:
+                func = Function(target, 0)
+        elif isinstance(target, str):
+            for addr, light_func in self.functions.items():
+                if light_func.name == target:
+                    func = self.fast_get_function(addr) or Function(addr, 0)
+                    break
+            if func is None:
+                raise ValueError(f"Unable to locate function named {target!r}")
+        else:
+            raise ValueError(f"Unsupported target type for get_callers: {type(target)}")
+
+        callers: List[Function] = []
+        seen = set()
+        for xref in self.xrefs_to(func):
+            if not isinstance(xref, Function):
+                continue
+            if xref.addr in seen:
+                continue
+            seen.add(xref.addr)
+            if not xref.name:
+                resolved = self.fast_get_function(xref.addr)
+                if resolved is not None:
+                    xref = resolved
+            callers.append(xref)
+
+        return callers
+
+    def list_strings(self, filter: Optional[str] = None) -> List[Tuple[int, str]]:
+        """
+        Returns a list of (addr, string) tuples for strings found in the binary.
+
+        This reports **only what the decompiler's own string detector
+        surfaced** — it is deliberately not a substitute for a full-file
+        scan. Backend fidelity varies (angr in particular misses most of
+        ``.rodata``); callers that need an exhaustive list should fall
+        back to external tools such as ``strings(1)``, ``rabin2 -z``, or
+        ``readelf -p`` and then use the resulting addresses with the
+        other APIs (``decompile``, ``xrefs_to_addr``, etc.).
+
+        Subclasses are expected to override this with native, fast string
+        discovery. The base implementation returns an empty list.
+
+        @param filter: Optional regex string; only strings that match will be returned.
+        @return: List of (address, string) tuples.
+        """
+        return []
+
+    def disassemble(self, addr: int, **kwargs) -> Optional[str]:
+        """
+        Returns the disassembly of a function as a single string.
+
+        Subclasses should override this to emit decompiler-native disassembly. The default
+        implementation returns None.
+
+        @param addr: Address of the function (or any address inside the function).
+        @return: The disassembly string, or None if unavailable.
+        """
+        return None
+
+    def read_memory(self, addr: int, size: int) -> Optional[bytes]:
+        """Read ``size`` bytes from the loaded program at ``addr``.
+
+        Returns the raw bytes the backend has for the requested span. ``None``
+        means "I couldn't satisfy the read at all" — out-of-range, uninitialized,
+        or the backend can't reach that memory. A short read (fewer bytes than
+        requested) is still valid and returned as-is; callers should check
+        ``len(result)`` if they need an exact count.
+
+        @param addr: Lifted address to start reading from.
+        @param size: Number of bytes to read. Must be > 0.
+        @return: Bytes read, or ``None`` if the backend can't read this region.
+        """
+        raise NotImplementedError
+
     def get_callgraph(self, only_names=False) -> nx.DiGraph:
         """
         Returns the callgraph of the binary. This is a dict of function addresses to a list of function addresses
@@ -1095,10 +1226,17 @@ class DecompilerInterface:
         else:
             current_decompiler = DecompilerInterface.find_current_decompiler(force=force_decompiler)
 
+        # `project_dir` is a user-facing kwarg that translates to the
+        # backend-specific cache/project location. Backends without a concept
+        # of this simply ignore it.
+        project_dir = interface_kwargs.pop("project_dir", None)
+
         if current_decompiler == IDA_DECOMPILER:
             from libbs.decompilers.ida.interface import IDAInterface
             deci_class = IDAInterface
             extra_kwargs = {}
+            if project_dir:
+                extra_kwargs["project_dir"] = project_dir
         elif current_decompiler == BINJA_DECOMPILER:
             from libbs.decompilers.binja.interface import BinjaInterface
             deci_class = BinjaInterface
@@ -1111,6 +1249,8 @@ class DecompilerInterface:
             from libbs.decompilers.ghidra.interface import GhidraDecompilerInterface
             deci_class = GhidraDecompilerInterface
             extra_kwargs = {"flat_api": DecompilerInterface._find_global_in_call_frames('__this__')}
+            if project_dir:
+                extra_kwargs["project_location"] = project_dir
         else:
             raise ValueError("Please use LibBS with our supported decompiler set!")
 

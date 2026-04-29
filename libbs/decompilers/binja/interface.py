@@ -327,6 +327,18 @@ class BinjaInterface(DecompilerInterface):
         """
         return None
 
+    def read_memory(self, addr: int, size: int) -> Optional[bytes]:
+        if size <= 0:
+            return b""
+        lowered = self.art_lifter.lower_addr(addr)
+        try:
+            data = self.bv.read(lowered, size)
+        except Exception:
+            return None
+        if data is None:
+            return None
+        return bytes(data)
+
     def start_artifact_watchers(self):
         if not self.artifact_watchers_started:
             from .hooks import DataMonitor

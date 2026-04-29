@@ -1,8 +1,9 @@
 import logging
 import os
+import re
 from collections import defaultdict
 from functools import lru_cache
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from pathlib import Path
 
 import angr
@@ -47,7 +48,11 @@ class AngrInterface(DecompilerInterface):
     def _init_headless_components(self, *args, **kwargs):
         super()._init_headless_components(*args, **kwargs)
         self.project = angr.Project(str(self._binary_path), auto_load_libs=False)
-        self._cfg = self.project.analyses.CFG(show_progressbar=False, normalize=True, data_references=True)
+        # cross_references=True populates kb.xrefs so xrefs_to_addr (e.g.
+        # "who references this string constant?") works.
+        self._cfg = self.project.analyses.CFG(
+            show_progressbar=False, normalize=True, data_references=True, cross_references=True,
+        )
         self.project.analyses.CompleteCallingConventions(cfg=self._cfg, recover_variables=True, analyze_callsites=True)
 
     def _init_gui_components(self, *args, **kwargs):
@@ -114,7 +119,7 @@ class AngrInterface(DecompilerInterface):
             l.warning("only_code is not supported in angr.")
 
         function: Function = self.art_lifter.lower(artifact)
-        program_cfg = self.main_instance.kb.cfgs.get_most_accurate()
+        program_cfg = self.main_instance.project.kb.cfgs.get_most_accurate()
         if program_cfg is None:
             return []
 
@@ -123,14 +128,168 @@ class AngrInterface(DecompilerInterface):
             return []
 
         xrefs = []
+        seen_callers = set()
         for node in program_cfg.graph.predecessors(func_node):
             func_addr = node.function_address
-            if func_addr is None:
+            if func_addr is None or func_addr == function.addr:
                 continue
-
-            xrefs.append(Function(func_addr, 0))
+            if func_addr in seen_callers:
+                continue
+            seen_callers.add(func_addr)
+            xrefs.append(self.art_lifter.lift(Function(func_addr, 0)))
 
         return xrefs
+
+    def xrefs_from(self, func_addr: int) -> List[Function]:
+        """angr callees: use the kb.callgraph successor set.
+
+        ``kb.callgraph`` is a NetworkX digraph populated during CFG analysis;
+        its successors of a function address are the direct callees, which is
+        what we want. Unlike ``Function.transition_graph``, these are
+        deduplicated per target and come with kb function lookups.
+        """
+        lowered = self.art_lifter.lower_addr(func_addr)
+        project = self.main_instance.project
+        callgraph = getattr(project.kb, "callgraph", None)
+        if callgraph is None or lowered not in callgraph:
+            return []
+
+        kb_functions = project.kb.functions
+        callees: List[Function] = []
+        seen = set()
+        for succ_addr in callgraph.successors(lowered):
+            if succ_addr in seen:
+                continue
+            seen.add(succ_addr)
+            func_obj = kb_functions.get(succ_addr, None)
+            name = getattr(func_obj, "name", None) if func_obj is not None else None
+            header = FunctionHeader(name=name, addr=succ_addr) if name else None
+            callees.append(self.art_lifter.lift(Function(succ_addr, 0, header=header)))
+        return callees
+
+    def xrefs_to_addr(self, addr: int, only_code: bool = False) -> List[Artifact]:
+        """angr data-xref lookup: look up kb.xrefs references to ``addr``.
+
+        Falls back to the default (empty) if the xref manager isn't populated.
+        """
+        lowered = self.art_lifter.lower_addr(addr)
+        project = self.main_instance.project
+        xref_manager = getattr(project.kb, "xrefs", None)
+        if xref_manager is None:
+            return []
+
+        try:
+            xref_set = xref_manager.get_xrefs_by_dst(lowered)
+        except Exception:
+            return []
+        if not xref_set:
+            return []
+
+        program_cfg = project.kb.cfgs.get_most_accurate()
+        if program_cfg is None:
+            return []
+
+        results: List[Artifact] = []
+        seen = set()
+        for xref in xref_set:
+            node = program_cfg.get_any_node(xref.ins_addr, anyaddr=True)
+            if node is None or node.function_address is None:
+                continue
+            func_addr = node.function_address
+            if func_addr in seen:
+                continue
+            seen.add(func_addr)
+            name = None
+            try:
+                name = project.kb.functions[func_addr].name
+            except Exception:
+                pass
+            header = FunctionHeader(name=name, addr=func_addr) if name else None
+            results.append(self.art_lifter.lift(Function(func_addr, 0, header=header)))
+        return results
+
+    def list_strings(self, filter: Optional[str] = None) -> List[Tuple[int, str]]:
+        pattern = re.compile(filter) if filter else None
+        try:
+            cfg = self.main_instance.project.kb.cfgs.get_most_accurate()
+        except Exception:
+            cfg = None
+        results: List[Tuple[int, str]] = []
+        seen = set()
+        if cfg is not None:
+            for addr, mem_data in cfg.memory_data.items():
+                if mem_data.sort != "string" or not mem_data.content:
+                    continue
+                try:
+                    text = mem_data.content.decode("utf-8", errors="replace")
+                except Exception:
+                    continue
+                lifted_addr = self.art_lifter.lift_addr(addr)
+                if lifted_addr in seen:
+                    continue
+                seen.add(lifted_addr)
+                if pattern is None or pattern.search(text):
+                    results.append((lifted_addr, text))
+        results.sort(key=lambda item: item[0])
+        return results
+
+    def read_memory(self, addr: int, size: int) -> Optional[bytes]:
+        if size <= 0:
+            return b""
+        lowered = self.art_lifter.lower_addr(addr)
+        loader_memory = self.main_instance.project.loader.memory
+        try:
+            data = loader_memory.load(lowered, size)
+        except (KeyError, ValueError):
+            # cle's Clemory raises when the address isn't backed by a segment.
+            return None
+        return bytes(data)
+
+    def disassemble(self, addr: int, **kwargs) -> Optional[str]:
+        lowered = self.art_lifter.lower_addr(addr)
+        func = self.main_instance.project.kb.functions.get(lowered, None)
+        if func is None:
+            for _addr, _func in self.main_instance.project.kb.functions.items():
+                if _addr <= lowered < (_addr + (_func.size or 0)):
+                    func = _func
+                    break
+        if func is None:
+            return None
+
+        try:
+            base_addr = self.binary_base_addr
+        except Exception:
+            base_addr = 0
+        hex_re = re.compile(r"0x([0-9a-fA-F]+)")
+
+        def _rewrite_operands(op_str: str) -> str:
+            # Rewrite absolute addresses in operands to their lifted form so the
+            # output is consistent across decompilers (e.g. ghidra lifts addresses).
+            def _sub(match: "re.Match[str]") -> str:
+                try:
+                    raw = int(match.group(1), 16)
+                except ValueError:
+                    return match.group(0)
+                if base_addr and raw >= base_addr:
+                    return f"0x{raw - base_addr:x}"
+                return match.group(0)
+
+            return hex_re.sub(_sub, op_str)
+
+        lines: List[str] = []
+        try:
+            blocks = sorted(func.blocks, key=lambda b: b.addr)
+        except Exception:
+            blocks = list(func.blocks)
+        for block in blocks:
+            try:
+                for insn in block.capstone.insns:
+                    lifted = self.art_lifter.lift_addr(insn.address)
+                    op_str = _rewrite_operands(insn.op_str)
+                    lines.append(f"0x{lifted:x}:\t{insn.mnemonic}\t{op_str}".rstrip())
+            except Exception:
+                continue
+        return "\n".join(lines) if lines else None
 
     def _decompile(self, function: Function, map_lines=False, **kwargs) -> Optional[Decompilation]:
         if function.dec_obj is None:
@@ -183,11 +342,15 @@ class AngrInterface(DecompilerInterface):
         if not codegen or not codegen.cfunc or not codegen.cfunc.variable_manager:
             return False
 
+        changed = False
         for v in codegen.cfunc.variable_manager._unified_variables:
-            if v.name in name_map:
+            if v.name in name_map and v.name != name_map[v.name]:
                 v.name = name_map[v.name]
+                changed = True
 
-        return self.refresh_decompilation(func.addr)
+        if not self.headless:
+            self.refresh_decompilation(func.addr)
+        return changed
 
     @property
     def binary_arch(self) -> str | None:
