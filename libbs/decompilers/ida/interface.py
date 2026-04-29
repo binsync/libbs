@@ -82,7 +82,17 @@ class IDAInterface(DecompilerInterface):
         super()._init_headless_components(*args, **kwargs)
         binary_path = str(self.binary_path)
         extra_args = self._ida_open_args()
-        failure = idapro.open_database(binary_path, True, extra_args)
+        # IDA <= 9.1 only accepts (path, run_auto_analysis); the extra_args
+        # parameter was added in 9.2.
+        if compat.get_ida_version() <= 910:
+            if extra_args:
+                _l.warning(
+                    "project_dir/extra open args are only supported on IDA >= 9.2; ignoring %r.",
+                    extra_args,
+                )
+            failure = idapro.open_database(binary_path, True)
+        else:
+            failure = idapro.open_database(binary_path, True, extra_args)
         if failure:
             raise RuntimeError(f"Failed to open database {binary_path}")
 
