@@ -14,16 +14,12 @@ server, so repeated `decompile`/`disassemble`/`xref_*` calls are fast.
 
 ```bash
 pip install libbs          # installs the `decompiler` and `libbs` entry points
-libbs --install            # registers LibBS plugins into detected decompilers
 ```
 
-If you only want one backend (for example, Binary Ninja), use:
-```bash
-libbs --single-decompiler-install binja /Applications/Binary\ Ninja.app
-```
-
-`angr` needs no host install — it's a Python dependency and the fastest way
-to verify the pipeline end-to-end.
+That's it — the `decompiler` CLI drives every backend headlessly via LibBS
+and does **not** need any plugins installed inside IDA/Ghidra/Binary Ninja
+to run. `angr` needs no host tool at all (it's a pure Python dependency)
+and is the fastest way to verify the pipeline end-to-end.
 
 ## Mental model
 
@@ -36,12 +32,18 @@ to verify the pipeline end-to-end.
 
 ## First moves on a new binary
 
+**Always prefer IDA Pro when it's available** (`--backend ida`) — it
+generally produces the cleanest decompilation and the most accurate type
+recovery. If IDA fails to load the binary (missing license, unsupported
+file type, decompiler error), fall back to `--backend ghidra`, then
+`--backend angr` as a last resort.
+
 **Always start with `list_functions` and `list_strings`** — the same binary
 can have the entry named `main` (angr), `FUN_00101c5c` (Ghidra), or
 `sub_101c5c` (IDA). Don't assume `main` exists.
 
 ```bash
-decompiler load ./target                       # start a server (angr by default)
+decompiler load ./target --backend ida         # prefer IDA; fall back to ghidra if it fails
 decompiler list_functions                      # enumerate every function — pick a real entry
 decompiler list_functions --filter 'main|auth' # or narrow by regex
 decompiler list_strings --filter 'flag|pass'   # find interesting string constants
@@ -49,7 +51,8 @@ decompiler list_strings --filter 'flag|pass'   # find interesting string constan
 
 Typical first-hour workflow on a stripped binary:
 
-1. `decompiler load ./bin --backend ghidra` (or `angr` if no Ghidra install)
+1. `decompiler load ./bin --backend ida` (fall back to `--backend ghidra`,
+   then `--backend angr`, if IDA can't open the binary)
 2. `decompiler list_functions` → note non-stub function names + sizes
 3. `decompiler list_strings` → look for error messages, user prompts,
    format strings — they often point at the interesting code
@@ -59,7 +62,7 @@ Typical first-hour workflow on a stripped binary:
 ## Core workflow
 
 ```bash
-decompiler load ./fauxware                    # start a server
+decompiler load ./fauxware --backend ida      # start a server (prefer IDA)
 decompiler list_functions                     # enumerate functions (do this first)
 decompiler list_strings --filter 'pass|key'   # strings the decompiler identified
 decompiler xref_to SOSNEAKY                   # who references this string?
@@ -96,12 +99,23 @@ second server alongside the existing one).
 
 ## Choosing a backend
 
+**Default: IDA Pro.** Use `--backend ida` whenever IDA is installed and
+licensed — its decompilation is the most reliable across architectures.
+Only switch backends if IDA fails to load the binary (the `load` call
+errors, or analysis stalls); fall through in this order: `ida → ghidra
+→ angr`. Use `binja` only when explicitly requested.
+
 ```bash
-decompiler load ./my-binary --backend ghidra   # needs GHIDRA_INSTALL_DIR
-decompiler load ./my-binary --backend angr     # pure-Python, always available
+decompiler load ./my-binary --backend ida      # PREFERRED: IDA Pro (needs install + license)
+decompiler load ./my-binary --backend ghidra   # FALLBACK: needs GHIDRA_INSTALL_DIR
+decompiler load ./my-binary --backend angr     # LAST RESORT: pure-Python, always available
 decompiler load ./my-binary --backend binja    # Binary Ninja, needs license
-decompiler load ./my-binary --backend ida      # IDA Pro, needs install
 ```
+
+If the IDA `load` fails (e.g. unsupported file format, decompiler error),
+re-issue `load` with `--backend ghidra` — `load` is idempotent per
+backend, so this leaves any other server alone and just brings up a
+Ghidra one alongside.
 
 `--backend` is also accepted on the inspection/mutation subcommands to
 narrow which server to target when multiple backends are loaded for the
@@ -140,6 +154,41 @@ same binary.
   contain a `call` to the target. When you want "who calls this?" reach
   for `get_callers`; when you want "who touches this in any way?" reach
   for `xref_to`.
+
+### `read_memory` — raw bytes at an address
+
+`read_memory <addr> <size>` reads `<size>` bytes from the loaded binary's
+mapped memory starting at `<addr>`. It goes through the backend's own
+memory accessor, so it returns whatever the decompiler currently has
+loaded for that address (post-relocation, post-mapping) — not the raw
+bytes from the on-disk ELF/PE/Mach-O. Use it when you need to:
+
+- Inspect a constant table, jump table, or vtable that the decompiler
+  rendered as `dword_<addr>` / `unk_<addr>`.
+- Read a string the backend's string detector missed (cross-check
+  against `list_strings` first; if absent, dump bytes manually).
+- Verify the actual bytes behind a global the decompiler shows as an
+  opaque symbol.
+- Pull a magic header / signature out of `.rodata` to confirm a file
+  format or library version.
+
+```bash
+decompiler read_memory 0x4008e0 64                       # default: hexdump
+decompiler read_memory 0x4008e0 64 --format hex          # one-line hex blob
+decompiler read_memory 0x4008e0 64 --format raw > bytes  # raw bytes to a file
+decompiler read_memory 0x4008e0 64 --json                # base64-encoded payload
+```
+
+JSON output includes both `size` (actual bytes returned) and
+`requested_size` — backends may produce **short reads** when the request
+straddles the end of a mapped segment. In text mode the CLI prints a
+`# short read: ...` notice on stderr in that case. If the address is
+unmapped or uninitialized, the CLI exits non-zero with a message saying
+the backend couldn't satisfy the read; try a smaller `size` or confirm
+the address with `list_functions` / `xref_to`.
+
+Address formats follow the same rules as everywhere else: hex (`0x4008e0`),
+decimal (`4197088`), or lifted (`0x8e0`) all work.
 
 ### `list_strings` may be incomplete
 
@@ -223,5 +272,8 @@ for addr, func in client.functions.items():
 ```
 
 The new core APIs (`list_strings(filter=...)`, `get_callers(target)`,
-`disassemble(addr)`) are on both the local `DecompilerInterface` and the
-`DecompilerClient` proxy.
+`disassemble(addr)`, `read_memory(addr, size)`) are on both the local
+`DecompilerInterface` and the `DecompilerClient` proxy. `read_memory`
+returns `bytes` (or `None` if the backend can't satisfy the read), so
+you can hexdump, decode, or feed the result straight into struct
+parsers without going through the CLI.
